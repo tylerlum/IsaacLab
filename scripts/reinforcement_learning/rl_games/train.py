@@ -75,11 +75,6 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 
 @hydra_task_config(args_cli.task, "rl_games_cfg_entry_point")
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: dict):
-    breakpoint()
-    print(f"env_cfg: {env_cfg}")
-    print()
-    print(f"agent_cfg: {agent_cfg}")
-    breakpoint()
     """Train with RL-Games agent."""
     # override configurations with non-hydra CLI arguments
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
