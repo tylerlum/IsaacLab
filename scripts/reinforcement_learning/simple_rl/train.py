@@ -117,7 +117,7 @@ def match_value(key: str, *cases) -> Any:
     """
     # We expect pairs, so `cases` must have even length
     assert len(cases) % 2 == 1, (
-        f"Expected an odd number of arguments for pairs + default_value, got {len(cases)}: {cases}"
+        f"Expected an odd number of arguments for pairs + default_value, got {len(cases)}: {cases}. key: {key}"
     )
 
     n_pairs = len(cases) // 2
