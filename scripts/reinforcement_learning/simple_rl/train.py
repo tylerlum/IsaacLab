@@ -71,7 +71,6 @@ from isaaclab_rl.simple_rl.utils.dict_to_dataclass import dict_to_dataclass
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils.hydra import hydra_task_config
-from typing import Type
 
 
 # Same wrapper as RL-Games
