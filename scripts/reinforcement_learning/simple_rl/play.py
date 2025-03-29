@@ -69,6 +69,12 @@ from isaaclab_rl.simple_rl.utils.dict_to_dataclass import dict_to_dataclass
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import get_checkpoint_path, load_cfg_from_registry, parse_env_cfg
 
+from omegaconf import OmegaConf
+
+OmegaConf.register_new_resolver("eq", lambda x, y: x.lower() == y.lower())
+OmegaConf.register_new_resolver("if", lambda pred, a, b: a if pred else b)
+OmegaConf.register_new_resolver("eval", eval)
+
 # Same wrapper as RL-Games
 class SimpleRlVecEnvWrapper(RlGamesVecEnvWrapper):
     pass

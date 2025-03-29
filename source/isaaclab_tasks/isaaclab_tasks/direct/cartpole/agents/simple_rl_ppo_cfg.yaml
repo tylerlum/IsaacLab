@@ -13,6 +13,11 @@ network:
     concat_input: False
     concat_output: True
 
+player:
+  deterministic: False
+  games_num: 100_000
+  print_stats: True
+
 ppo:
   multi_gpu: False
   mixed_precision: False
@@ -47,92 +52,49 @@ ppo:
   bounds_loss_coef: 0.005
   zero_rnn_on_done: True
 
-  # Must be None if empty (else gets error looking for keys in this dict)
-  # asymmetric_critic: ${if:${eval:"'empty' in '${...asymmetric_critic.name}'"},${eval:None},${...asymmetric_critic}}
+  # Choose parameters for asymmetric critic
+  # Can't be empty dict, must be None (else gets error looking for keys in this dict)
+  asymmetric_critic: ${if:${eval:"'${..asymmetric_critic_name}' == 'mlp'"},${..asymmetric_critic_mlp},${if:${eval:"'${..asymmetric_critic_name}' == 'lstm'"},${..asymmetric_critic_lstm},${eval:None}}}
 
+# Choose asymmetric critic_name in ["mlp", "lstm", <any other string>]
+asymmetric_critic_name: ""
 
-player:
-  deterministic: True
-  games_num: 100_000
-  print_stats: True
+asymmetric_critic_mlp:
+  name: mlp
+  minibatch_size: 16384
+  mini_epochs: 4
+  learning_rate: 5e-5
+  clip_value: True
+  normalize_input: True
+  truncate_grads: True
 
+  network:
+    asymmetric_critic: True
+    separate_value_mlp: False
 
-# params:
-#   seed: 42
-# 
-#   # environment wrapper clipping
-#   env:
-#     # added to the wrapper
-#     clip_observations: 5.0
-#     # can make custom wrapper?
-#     clip_actions: 1.0
-# 
-#   algo:
-#     name: a2c_continuous
-# 
-#   model:
-#     name: continuous_a2c_logstd
-# 
-#   # doesn't have this fine grained control but made it close
-#   network:
-#     name: actor_critic
-#     separate: False
-#     space:
-#       continuous:
-#         mu_activation: None
-#         sigma_activation: None
-# 
-#         mu_init:
-#           name: default
-#         sigma_init:
-#           name: const_initializer
-#           val: 0
-#         fixed_sigma: True
-#     mlp:
-#       units: [32, 32]
-#       activation: elu
-#       d2rl: False
-# 
-#       initializer:
-#         name: default
-#       regularizer:
-#         name: None
-# 
-#   load_checkpoint: False # flag which sets whether to load the checkpoint
-#   load_path: '' # path to the checkpoint to load
-# 
-#   config:
-#     name: cartpole_direct
-#     env_name: rlgpu
-#     device: 'cuda:0'
-#     device_name: 'cuda:0'
-#     multi_gpu: False
-#     ppo: True
-#     mixed_precision: False
-#     normalize_input: True
-#     normalize_value: True
-#     num_actors: -1  # configured from the script (based on num_envs)
-#     reward_shaper:
-#       scale_value: 0.1
-#     normalize_advantage: True
-#     gamma: 0.99
-#     tau : 0.95
-#     learning_rate: 5e-4
-#     lr_schedule: adaptive
-#     kl_threshold: 0.008
-#     score_to_win: 20000
-#     max_epochs: 150
-#     save_best_after: 50
-#     save_frequency: 25
-#     grad_norm: 1.0
-#     entropy_coef: 0.0
-#     truncate_grads: True
-#     e_clip: 0.2
-#     horizon_length: 32
-#     minibatch_size: 16384
-#     mini_epochs: 8
-#     critic_coef: 4
-#     clip_value: True
-#     seq_length: 4
-#     bounds_loss_coef: 0.0001
-# 
+    mlp:
+      units: [1024, 512]
+
+asymmetric_critic_lstm:
+  name: lstm
+  minibatch_size: 16384
+  mini_epochs: 4
+  learning_rate: 5e-5
+  clip_value: True
+  normalize_input: True
+  truncate_grads: True
+
+  network:
+    asymmetric_critic: True
+    separate_value_mlp: False
+
+    mlp:
+      units: [1024, 512]
+    rnn:
+      name: lstm
+      units: 2048
+      layers: 1
+      before_mlp: False
+      layer_norm: True
+      concat_input: False
+      concat_output: True
