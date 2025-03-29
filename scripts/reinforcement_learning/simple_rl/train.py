@@ -200,22 +200,24 @@ def main(
     # set number of actors into agent config
     agent_cfg["ppo"]["num_actors"] = env.unwrapped.num_envs
 
-    wandb_name = f"{args_cli.task}_{datetime_str}"
-    wandb_config = {
-        "agent": agent_cfg,
-        "env": load_yaml(
-            os.path.join(experiment_dir, "params", "env.yaml"), unsafe=True
-        ),
-    }
-    wandb.init(
-        project="isaaclab",
-        entity="tylerlum",
-        name=wandb_name,
-        group=None,
-        config=wandb_config,
-        sync_tensorboard=True,
-        id=f"{wandb_name}_{generate_id()}",
-    )
+    USE_WANDB = True
+    if USE_WANDB:
+        wandb_name = f"{args_cli.task}_{datetime_str}"
+        wandb_config = {
+            "agent": agent_cfg,
+            "env": load_yaml(
+                os.path.join(experiment_dir, "params", "env.yaml"), unsafe=True
+            ),
+        }
+        wandb.init(
+            project="isaaclab",
+            entity="tylerlum",
+            name=wandb_name,
+            group=None,
+            config=wandb_config,
+            sync_tensorboard=True,
+            id=f"{wandb_name}_{generate_id()}",
+        )
 
     # Create agent
     network_config = dict_to_dataclass(agent_cfg["network"], NetworkConfig)
