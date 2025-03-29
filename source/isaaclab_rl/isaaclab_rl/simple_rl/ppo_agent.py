@@ -47,7 +47,6 @@ class PpoConfig:
     mini_epochs: int
     e_clip: float
     clip_value: float
-    value_bootstrap: bool
 
     # Fields with defaults (accessed via config.get(..., default))
     multi_gpu: bool = False
@@ -77,6 +76,7 @@ class PpoConfig:
     mixed_precision: bool = False
     bounds_loss_coef: Optional[float] = None
     bound_loss_type: Literal["bound", "regularisation"] = "bound"
+    value_bootstrap: bool = False
     adv_rms_momentum: float = 0.5
     clip_actions: bool = True
     schedule_entropy: bool = False
