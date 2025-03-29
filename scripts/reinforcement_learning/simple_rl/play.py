@@ -9,6 +9,7 @@
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import sys
 
 from isaaclab.app import AppLauncher
 
@@ -60,10 +61,13 @@ parser.add_argument(
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
-args_cli = parser.parse_args()
+args_cli, hydra_args = parser.parse_known_args()
 # always enable cameras to record video
 if args_cli.video:
     args_cli.enable_cameras = True
+
+# clear out sys.argv for Hydra
+sys.argv = [sys.argv[0]] + hydra_args
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
@@ -79,7 +83,13 @@ from pathlib import Path
 import gymnasium as gym
 import isaaclab_tasks  # noqa: F401
 import torch
-from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent
+from isaaclab.envs import (
+    DirectMARLEnv,
+    DirectMARLEnvCfg,
+    DirectRLEnvCfg,
+    ManagerBasedRLEnvCfg,
+    multi_agent_to_single_agent,
+)
 from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
 from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
@@ -88,11 +98,8 @@ from isaaclab_rl.simple_rl.ppo_agent import PpoConfig
 from isaaclab_rl.simple_rl.ppo_player import PlayerConfig, PpoPlayer
 from isaaclab_rl.simple_rl.utils.dict_to_dataclass import dict_to_dataclass
 from isaaclab_rl.simple_rl.utils.network import NetworkConfig
-from isaaclab_tasks.utils import (
-    get_checkpoint_path,
-    load_cfg_from_registry,
-    parse_env_cfg,
-)
+from isaaclab_tasks.utils import get_checkpoint_path
+from isaaclab_tasks.utils.hydra import hydra_task_config
 from omegaconf import OmegaConf
 
 OmegaConf.register_new_resolver("eq", lambda x, y: x.lower() == y.lower())
@@ -108,16 +115,18 @@ class SimpleRlVecEnvWrapper(RlGamesVecEnvWrapper):
 # PLACEHOLDER: Extension template (do not remove this comment)
 
 
-def main():
+@hydra_task_config(args_cli.task, "simple_rl_cfg_entry_point")
+def main(
+    env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: dict
+):
     """Play with Simple-RL player."""
-    # parse env configuration
-    env_cfg = parse_env_cfg(
-        args_cli.task,
-        device=args_cli.device,
-        num_envs=args_cli.num_envs,
-        use_fabric=not args_cli.disable_fabric,
-    )
-    agent_cfg = load_cfg_from_registry(args_cli.task, "simple_rl_cfg_entry_point")
+    # override configurations with non-hydra CLI arguments
+    if args_cli.num_envs is not None:
+        env_cfg.scene.num_envs = args_cli.num_envs
+    if args_cli.device is not None:
+        env_cfg.sim.device = args_cli.device
+    if args_cli.disable_fabric:
+        env_cfg.sim.use_fabric = False
 
     # find checkpoint
     if args_cli.use_pretrained_checkpoint:
