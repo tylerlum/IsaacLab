@@ -321,7 +321,7 @@ class PpoAgent:
 
         self.mini_epochs_num = ppo_config.mini_epochs
         self.mixed_precision = ppo_config.mixed_precision
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self.mixed_precision)
+        self.scaler = torch.amp.GradScaler(device=str(self.device), enabled=self.mixed_precision)
 
         self.last_lr = ppo_config.learning_rate
         self.frame = 0
@@ -960,7 +960,7 @@ class PpoAgent:
             returns = self.value_mean_std(returns)
             self.value_mean_std.eval()
 
-        advantages = torch.sum(advantages, axis=1)
+        advantages = torch.sum(advantages, dim=1)
 
         if self.normalize_advantage:
             if self.is_rnn:
@@ -1152,7 +1152,7 @@ class PpoAgent:
             if self.zero_rnn_on_done:
                 batch_dict["dones"] = input_dict["dones"]
 
-        with torch.cuda.amp.autocast(enabled=self.mixed_precision):
+        with torch.amp.autocast(device_type=str(self.device), enabled=self.mixed_precision):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict["prev_neglogp"]
             values = res_dict["values"]
@@ -1175,7 +1175,7 @@ class PpoAgent:
 
             if self.bounds_loss_coef is not None:
                 if self.bound_loss_type == "regularisation":
-                    b_losses = (mu * mu).sum(axis=-1)
+                    b_losses = (mu * mu).sum(dim=-1)
                 elif self.bound_loss_type == "bound":
                     soft_bound = 1.1
                     mu_loss_high = torch.clamp_min(mu - soft_bound, 0.0) ** 2
