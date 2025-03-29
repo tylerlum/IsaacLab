@@ -93,24 +93,13 @@ from isaaclab.envs import (
 from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
 from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
-from isaaclab_rl.rl_games import RlGamesVecEnvWrapper
 from isaaclab_rl.simple_rl.ppo_agent import PpoConfig
 from isaaclab_rl.simple_rl.ppo_player import PlayerConfig, PpoPlayer
 from isaaclab_rl.simple_rl.utils.dict_to_dataclass import dict_to_dataclass
 from isaaclab_rl.simple_rl.utils.network import NetworkConfig
+from isaaclab_rl.simple_rl_helpers import SimpleRlVecEnvWrapper, add_omegaconf_resolvers
 from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
-from omegaconf import OmegaConf
-
-OmegaConf.register_new_resolver("eq", lambda x, y: x.lower() == y.lower())
-OmegaConf.register_new_resolver("if", lambda pred, a, b: a if pred else b)
-OmegaConf.register_new_resolver("eval", eval)
-
-
-# Same wrapper as RL-Games
-class SimpleRlVecEnvWrapper(RlGamesVecEnvWrapper):
-    pass
-
 
 # PLACEHOLDER: Extension template (do not remove this comment)
 
@@ -274,6 +263,8 @@ def main(
 
 
 if __name__ == "__main__":
+    add_omegaconf_resolvers()
+
     # run the main function
     main()
     # close sim app
