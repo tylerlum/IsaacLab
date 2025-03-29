@@ -203,7 +203,7 @@ def main(
     wandb_name = f"{args_cli.task}_{datetime_str}"
     wandb_config = {
         "agent": agent_cfg,
-        "env": load_yaml(os.path.join(experiment_dir, "params", "env.yaml")),
+        "env": load_yaml(os.path.join(experiment_dir, "params", "env.yaml"), unsafe=True),
     }
     wandb.init(
         project="isaaclab",
