@@ -103,8 +103,6 @@ from wandb.sdk.lib.runid import generate_id
 def main(
     env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: dict
 ):
-    print(f"agent_cfg['network'] = {agent_cfg['network']}")
-    breakpoint()
     """Train with SimpleRL agent."""
     # override configurations with non-hydra CLI arguments
     if args_cli.num_envs is not None:
