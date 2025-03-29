@@ -2,6 +2,7 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
+# ruff: noqa: E402
 
 """Script to play a checkpoint of an RL player from Simple-RL."""
 
@@ -12,16 +13,34 @@ import argparse
 from isaaclab.app import AppLauncher
 
 # add argparse arguments
-parser = argparse.ArgumentParser(description="Play a checkpoint of an RL player from Simple-RL.")
-parser.add_argument("--video", action="store_true", default=False, help="Record videos during training.")
-parser.add_argument("--video_length", type=int, default=200, help="Length of the recorded video (in steps).")
-parser.add_argument(
-    "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
+parser = argparse.ArgumentParser(
+    description="Play a checkpoint of an RL player from Simple-RL."
 )
-parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
+parser.add_argument(
+    "--video", action="store_true", default=False, help="Record videos during training."
+)
+parser.add_argument(
+    "--video_length",
+    type=int,
+    default=200,
+    help="Length of the recorded video (in steps).",
+)
+parser.add_argument(
+    "--disable_fabric",
+    action="store_true",
+    default=False,
+    help="Disable fabric and use USD I/O operations.",
+)
+parser.add_argument(
+    "--num_envs", type=int, default=None, help="Number of environments to simulate."
+)
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
-parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint.")
-parser.add_argument("--sigma", type=str, default=None, help="The policy's standard deviation.")
+parser.add_argument(
+    "--checkpoint", type=str, default=None, help="Path to model checkpoint."
+)
+parser.add_argument(
+    "--sigma", type=str, default=None, help="The policy's standard deviation."
+)
 parser.add_argument(
     "--use_pretrained_checkpoint",
     action="store_true",
@@ -32,7 +51,12 @@ parser.add_argument(
     action="store_true",
     help="When no checkpoint provided, use the last saved model. Otherwise use the best saved model.",
 )
-parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+parser.add_argument(
+    "--real-time",
+    action="store_true",
+    default=False,
+    help="Run in real-time, if possible.",
+)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -48,36 +72,38 @@ simulation_app = app_launcher.app
 """Rest everything follows."""
 
 
-from pathlib import Path
-import gymnasium as gym
-import math
 import os
 import time
-import torch
+from pathlib import Path
 
+import gymnasium as gym
+import isaaclab_tasks  # noqa: F401
+import torch
 from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent
 from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
 from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
-
 from isaaclab_rl.rl_games import RlGamesVecEnvWrapper
 from isaaclab_rl.simple_rl.ppo_agent import PpoConfig
 from isaaclab_rl.simple_rl.ppo_player import PlayerConfig, PpoPlayer
-from isaaclab_rl.simple_rl.utils.network import NetworkConfig
 from isaaclab_rl.simple_rl.utils.dict_to_dataclass import dict_to_dataclass
-
-import isaaclab_tasks  # noqa: F401
-from isaaclab_tasks.utils import get_checkpoint_path, load_cfg_from_registry, parse_env_cfg
-
+from isaaclab_rl.simple_rl.utils.network import NetworkConfig
+from isaaclab_tasks.utils import (
+    get_checkpoint_path,
+    load_cfg_from_registry,
+    parse_env_cfg,
+)
 from omegaconf import OmegaConf
 
 OmegaConf.register_new_resolver("eq", lambda x, y: x.lower() == y.lower())
 OmegaConf.register_new_resolver("if", lambda pred, a, b: a if pred else b)
 OmegaConf.register_new_resolver("eval", eval)
 
+
 # Same wrapper as RL-Games
 class SimpleRlVecEnvWrapper(RlGamesVecEnvWrapper):
     pass
+
 
 # PLACEHOLDER: Extension template (do not remove this comment)
 
@@ -86,15 +112,22 @@ def main():
     """Play with Simple-RL player."""
     # parse env configuration
     env_cfg = parse_env_cfg(
-        args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs, use_fabric=not args_cli.disable_fabric
+        args_cli.task,
+        device=args_cli.device,
+        num_envs=args_cli.num_envs,
+        use_fabric=not args_cli.disable_fabric,
     )
     agent_cfg = load_cfg_from_registry(args_cli.task, "simple_rl_cfg_entry_point")
 
     # find checkpoint
     if args_cli.use_pretrained_checkpoint:
-        checkpoint_path = get_published_pretrained_checkpoint("simple_rl", args_cli.task)
+        checkpoint_path = get_published_pretrained_checkpoint(
+            "simple_rl", args_cli.task
+        )
         if not checkpoint_path:
-            print("[INFO] Unfortunately a pre-trained checkpoint is currently unavailable for this task.")
+            print(
+                "[INFO] Unfortunately a pre-trained checkpoint is currently unavailable for this task."
+            )
             return
     elif args_cli.checkpoint is not None:
         checkpoint_path = retrieve_file_path(args_cli.checkpoint)
@@ -110,7 +143,9 @@ def main():
             # this loads the best checkpoint
             checkpoint_file = "best.pth"
         # get path to previous checkpoint
-        checkpoint_path = get_checkpoint_path(log_root_path, ".*", checkpoint_file, other_dirs=["nn"])
+        checkpoint_path = get_checkpoint_path(
+            log_root_path, ".*", checkpoint_file, other_dirs=["nn"]
+        )
     print(f"[INFO]: Loading model checkpoint from: {checkpoint_path}")
 
     if args_cli.sigma is not None:
@@ -123,7 +158,9 @@ def main():
     print(f"[INFO]: Logging experiment in directory: {experiment_dir}")
 
     # create isaac environment
-    env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+    env = gym.make(
+        args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None
+    )
 
     # convert to single-agent instance if required by the RL algorithm
     if isinstance(env.unwrapped, DirectMARLEnv):
@@ -232,4 +269,3 @@ if __name__ == "__main__":
     main()
     # close sim app
     simulation_app.close()
-
