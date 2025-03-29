@@ -8,8 +8,10 @@ player:
 # Choose ppo_name in ["mlp", "lstm", "small_mlp"]
 ppo_name: mlp
 
-network: ${if:${eval:"'${.ppo_name}' == 'mlp'"},${.network_mlp},${if:${eval:"'${.ppo_name}' == 'lstm'"},${.network_lstm},${.network_small_mlp}}}
-ppo: ${if:${eval:"'${.ppo_name}' == 'mlp'"},${.ppo_mlp},${if:${eval:"'${.ppo_name}' == 'lstm'"},${.ppo_lstm},${.ppo_small_mlp}}}
+network: ${match_value:"${.ppo_name}","mlp",${.network_mlp},"lstm",${.network_lstm},"small_mlp",${.network_small_mlp},${eval:None}}
+ppo: ${match_value:"${.ppo_name}","mlp",${.ppo_mlp},"lstm",${.ppo_lstm},"small_mlp",${.ppo_small_mlp},${eval:None}}
+# network: ${if:${eval:"'${.ppo_name}' == 'mlp'"},${.network_mlp},${if:${eval:"'${.ppo_name}' == 'lstm'"},${.network_lstm},${.network_small_mlp}}}
+# ppo: ${if:${eval:"'${.ppo_name}' == 'mlp'"},${.ppo_mlp},${if:${eval:"'${.ppo_name}' == 'lstm'"},${.ppo_lstm},${.ppo_small_mlp}}}
 
 # Choose asymmetric critic_name in ["mlp", "lstm", ""]
 asymmetric_critic_name: ""

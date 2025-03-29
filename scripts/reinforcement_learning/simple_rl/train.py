@@ -74,7 +74,7 @@ import os
 import random
 from datetime import datetime
 from pathlib import Path
-
+from typing import Any
 import gymnasium as gym
 import isaaclab_tasks  # noqa: F401
 from isaaclab.envs import (
@@ -97,8 +97,46 @@ from omegaconf import OmegaConf
 import wandb
 from wandb.sdk.lib.runid import generate_id
 
+
+def match_value(key: str, *cases) -> Any:
+    """
+    Return a corresponding result for the given `key` by matching it
+    against pairs in `cases` (each pair is (possible_key, result_value)) and a default_value.
+
+    If no match is found in `(possible_key, result_value)`, return `default_value`.
+
+    Args:
+        key: The key to match on.
+        *cases: A sequence of alternating (match_key, result_value) pairs and a default_value.
+
+    Returns:
+        The first matching result_value in `cases`, or `default_value` otherwise.
+
+    Raises:
+        AssertionError: If the `cases` argument doesn't have an even number of items.
+    """
+    # We expect pairs, so `cases` must have even length
+    assert len(cases) % 2 == 1, (
+        f"Expected an odd number of arguments for pairs + default_value, got {len(cases)}: {cases}"
+    )
+
+    n_pairs = len(cases) // 2
+    possible_keys = [cases[2*i] for i in range(n_pairs)]
+    result_values = [cases[2*i + 1] for i in range(n_pairs)]
+    default_value = cases[-1]
+
+    # Go through each pair: (possible_key, result_value)
+    for possible_key, result_value in zip(possible_keys, result_values):
+        if key == possible_key:
+            return result_value
+
+    # If no match, return the default
+    return default_value
+
+
 OmegaConf.register_new_resolver("eq", lambda x, y: x.lower() == y.lower())
 OmegaConf.register_new_resolver("if", lambda pred, a, b: a if pred else b)
+OmegaConf.register_new_resolver("match_value", match_value)
 OmegaConf.register_new_resolver("eval", eval)
 
 
@@ -114,6 +152,8 @@ class SimpleRlVecEnvWrapper(RlGamesVecEnvWrapper):
 def main(
     env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: dict
 ):
+    print(f"agent_cfg['network'] = {agent_cfg['network']}")
+    breakpoint()
     """Train with SimpleRL agent."""
     # override configurations with non-hydra CLI arguments
     if args_cli.num_envs is not None:
