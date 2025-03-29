@@ -88,7 +88,6 @@ class SimpleRlVecEnvWrapper(RlGamesVecEnvWrapper):
 
 @hydra_task_config(args_cli.task, "simple_rl_cfg_entry_point")
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: dict):
-    breakpoint()
     """Train with SimpleRL agent."""
     # override configurations with non-hydra CLI arguments
     if args_cli.num_envs is not None:
