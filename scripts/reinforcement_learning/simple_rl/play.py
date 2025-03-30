@@ -114,8 +114,7 @@ def main(
         env_cfg.scene.num_envs = args_cli.num_envs
     if args_cli.device is not None:
         env_cfg.sim.device = args_cli.device
-    if args_cli.disable_fabric:
-        env_cfg.sim.use_fabric = False
+    env_cfg.sim.use_fabric = not args_cli.disable_fabric
 
     # find checkpoint
     if args_cli.use_pretrained_checkpoint:
