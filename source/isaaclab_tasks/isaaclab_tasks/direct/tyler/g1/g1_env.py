@@ -11,38 +11,52 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, Articulation
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sim import SimulationCfg
+from isaaclab.sim import SimulationCfg, PhysxCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
+from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
+from isaaclab.sensors import ContactSensor, ContactSensorCfg
+from isaaclab.sim.spawners.lights import LightCfg, DomeLightCfg
 
 import torch
 
 import isaacsim.core.utils.torch as torch_utils
 from isaacsim.core.utils.torch.rotations import compute_heading_and_up, compute_rot, quat_conjugate
 
+physics_material = sim_utils.RigidBodyMaterialCfg(
+    friction_combine_mode="multiply",
+    restitution_combine_mode="multiply",
+    static_friction=1.0,
+    dynamic_friction=1.0,
+)
 
 @configclass
 class G1EnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 15.0
-    decimation = 2
+    episode_length_s = 20.0
+    decimation = 4
     action_scale = 0.5
     action_space = 37
     observation_space = 123
     state_space = 0
 
     # simulation
-    sim: SimulationCfg = SimulationCfg(dt=1 / 120, render_interval=decimation)
+    sim: SimulationCfg = SimulationCfg(dt=0.005, render_interval=decimation, physics_material=physics_material,
+    physx=PhysxCfg(
+        gpu_max_rigid_patch_count=10 * 2**15,
+    )
+    )
+
+    # terrain
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="plane",
         collision_group=-1,
-        physics_material=sim_utils.RigidBodyMaterialCfg(
-            friction_combine_mode="average",
-            restitution_combine_mode="average",
-            static_friction=1.0,
-            dynamic_friction=1.0,
-            restitution=0.0,
+        physics_material=physics_material,
+        visual_material=sim_utils.MdlFileCfg(
+            mdl_path=f"{ISAACLAB_NUCLEUS_DIR}/Materials/TilesMarbleSpiderWhiteBrickBondHoned/TilesMarbleSpiderWhiteBrickBondHoned.mdl",
+            project_uvw=True,
+            texture_scale=(0.25, 0.25),
         ),
         debug_vis=False,
     )
@@ -53,23 +67,14 @@ class G1EnvCfg(DirectRLEnvCfg):
     # robot
     robot: ArticulationCfg = G1_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
-    heading_weight: float = 0.5
-    up_weight: float = 0.1
+    # contact sensor
+    contact_sensor = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True)
 
-    energy_cost_scale: float = 0.05
-    actions_cost_scale: float = 0.005
-    alive_reward_scale: float = 0.5
-    dof_vel_scale: float = 0.2
-
-    death_cost: float = -2.0
-    termination_height: float = 0.31
-
-    angular_velocity_scale: float = 1.0
-    contact_force_scale: float = 0.1
-
-
-def normalize_angle(x):
-    return torch.atan2(torch.sin(x), torch.cos(x))
+    # light
+    light: LightCfg = DomeLightCfg(
+        intensity=750.0,
+        texture_file=f"{ISAAC_NUCLEUS_DIR}/Materials/Textures/Skies/PolyHaven/kloofendal_43d_clear_puresky_4k.hdr",
+    )
 
 
 class G1Env(DirectRLEnv):
@@ -82,23 +87,10 @@ class G1Env(DirectRLEnv):
         self.action_scale = self.cfg.action_scale
         self._joint_dof_idx, _ = self.robot.find_joints(".*")
 
-        self.potentials = torch.zeros(self.num_envs, dtype=torch.float32, device=self.sim.device)
-        self.prev_potentials = torch.zeros_like(self.potentials)
-        self.targets = torch.tensor([1000, 0, 0], dtype=torch.float32, device=self.sim.device).repeat(
-            (self.num_envs, 1)
-        )
-        self.targets += self.scene.env_origins
-        self.start_rotation = torch.tensor([1, 0, 0, 0], device=self.sim.device, dtype=torch.float32)
-        self.up_vec = torch.tensor([0, 0, 1], dtype=torch.float32, device=self.sim.device).repeat((self.num_envs, 1))
-        self.heading_vec = torch.tensor([1, 0, 0], dtype=torch.float32, device=self.sim.device).repeat(
-            (self.num_envs, 1)
-        )
-        self.inv_start_rot = quat_conjugate(self.start_rotation).repeat((self.num_envs, 1))
-        self.basis_vec0 = self.heading_vec.clone()
-        self.basis_vec1 = self.up_vec.clone()
 
     def _setup_scene(self):
         self.robot = Articulation(self.cfg.robot)
+        self.contact_sensor = ContactSensor(self.cfg.contact_sensor)
         # add ground plane
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
@@ -107,9 +99,10 @@ class G1Env(DirectRLEnv):
         self.scene.clone_environments(copy_from_source=False)
         # add articulation to scene
         self.scene.articulations["robot"] = self.robot
+        # add contact sensor to scene
+        self.scene.sensors["contact_sensor"] = self.contact_sensor
         # add lights
-        light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
-        light_cfg.func("/World/Light", light_cfg)
+        self.cfg.light.func("/World/Light", self.cfg.light)
 
     def _pre_physics_step(self, actions: torch.Tensor):
         self.actions = actions.clone()
