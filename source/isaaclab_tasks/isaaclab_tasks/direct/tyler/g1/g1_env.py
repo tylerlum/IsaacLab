@@ -52,7 +52,6 @@ class G1EnvCfg(DirectRLEnvCfg):
 
     # robot
     robot: ArticulationCfg = G1_CFG.replace(prim_path="/World/envs/env_.*/Robot")
-    joint_gears: list = [15, 15, 15, 15, 15, 15, 15, 15]
 
     heading_weight: float = 0.5
     up_weight: float = 0.1
@@ -81,8 +80,6 @@ class G1Env(DirectRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
 
         self.action_scale = self.cfg.action_scale
-        self.joint_gears = torch.tensor(self.cfg.joint_gears, dtype=torch.float32, device=self.sim.device)
-        self.motor_effort_ratio = torch.ones_like(self.joint_gears, device=self.sim.device)
         self._joint_dof_idx, _ = self.robot.find_joints(".*")
 
         self.potentials = torch.zeros(self.num_envs, dtype=torch.float32, device=self.sim.device)
@@ -118,7 +115,7 @@ class G1Env(DirectRLEnv):
         self.actions = actions.clone()
 
     def _apply_action(self):
-        forces = self.action_scale * self.joint_gears * self.actions
+        forces = self.action_scale * self.actions
         self.robot.set_joint_effort_target(forces, joint_ids=self._joint_dof_idx)
 
     def _compute_intermediate_values(self):
@@ -194,7 +191,6 @@ class G1Env(DirectRLEnv):
             self.cfg.dof_vel_scale,
             self.cfg.death_cost,
             self.cfg.alive_reward_scale,
-            self.motor_effort_ratio,
         )
         return total_reward
 
@@ -243,7 +239,6 @@ def compute_rewards(
     dof_vel_scale: float,
     death_cost: float,
     alive_reward_scale: float,
-    motor_effort_ratio: torch.Tensor,
 ):
     heading_weight_tensor = torch.ones_like(heading_proj) * heading_weight
     heading_reward = torch.where(heading_proj > 0.8, heading_weight_tensor, heading_weight * heading_proj / 0.8)
@@ -255,7 +250,7 @@ def compute_rewards(
     # energy penalty for movement
     actions_cost = torch.sum(actions**2, dim=-1)
     electricity_cost = torch.sum(
-        torch.abs(actions * dof_vel * dof_vel_scale) * motor_effort_ratio.unsqueeze(0),
+        torch.abs(actions * dof_vel * dof_vel_scale),
         dim=-1,
     )
 
