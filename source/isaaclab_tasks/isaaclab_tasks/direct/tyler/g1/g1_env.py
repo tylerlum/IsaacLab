@@ -231,6 +231,7 @@ class G1Env(DirectRLEnv):
 
     def __init__(self, cfg: G1EnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
+        self._setup_keyboard()
 
         # Robot joint idxs
         self._joint_dof_idx, self._joint_dof_names = self.robot.find_joints(".*")
@@ -628,3 +629,23 @@ class G1Env(DirectRLEnv):
             .unsqueeze(0)
             .repeat_interleave(self.num_envs, dim=0),
         )
+
+    def _setup_keyboard(self):
+        import carb
+        from isaaclab.devices.keyboard.general_keyboard import (
+            GeneralKeyboard,
+            KeyboardCommand,
+        )
+
+        # kbc = keyboard callback
+        self.keyboard = GeneralKeyboard(
+            commands=[
+                KeyboardCommand(
+                    key=carb.input.KeyboardInput.R, func=self._reset_kbc, args=[]
+                ),
+            ]
+        )
+
+    def _reset_kbc(self):
+        print("In reset_kbc")
+        self._reset_idx(env_ids=None)
