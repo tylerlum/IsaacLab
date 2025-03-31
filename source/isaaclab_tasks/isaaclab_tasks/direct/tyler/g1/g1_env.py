@@ -5,27 +5,28 @@
 
 from __future__ import annotations
 
-from isaaclab_assets.robots.unitree import G1_CFG
+import math
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, Articulation
+import isaaclab.utils.math as math_utils
+import torch
+from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
+from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
+from isaaclab.markers.config import (
+    BLUE_ARROW_X_MARKER_CFG,
+    FRAME_MARKER_CFG,
+    GREEN_ARROW_X_MARKER_CFG,
+)
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sim import SimulationCfg, PhysxCfg
+from isaaclab.sensors import ContactSensor, ContactSensorCfg
+from isaaclab.sim import PhysxCfg, SimulationCfg
+from isaaclab.sim.spawners.lights import DomeLightCfg, LightCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
-from isaaclab.sensors import ContactSensor, ContactSensorCfg
 from isaaclab.utils.math import quat_rotate_inverse, yaw_quat
-from isaaclab.sim.spawners.lights import LightCfg, DomeLightCfg
-import math
-from isaaclab.markers import VisualizationMarkersCfg
-from isaaclab.markers.config import BLUE_ARROW_X_MARKER_CFG, FRAME_MARKER_CFG, GREEN_ARROW_X_MARKER_CFG
-from isaaclab.markers import VisualizationMarkers
-
-import isaaclab.utils.math as math_utils
-
-import torch
+from isaaclab_assets.robots.unitree import G1_CFG
 
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
 
@@ -36,6 +37,7 @@ physics_material = sim_utils.RigidBodyMaterialCfg(
     static_friction=1.0,
     dynamic_friction=1.0,
 )
+
 
 @configclass
 class G1EnvCfg(DirectRLEnvCfg):
@@ -49,10 +51,13 @@ class G1EnvCfg(DirectRLEnvCfg):
     debug_vis = True
 
     # simulation
-    sim: SimulationCfg = SimulationCfg(dt=SIM_DT, render_interval=decimation, physics_material=physics_material,
-    physx=PhysxCfg(
-        gpu_max_rigid_patch_count=10 * 2**15,
-    )
+    sim: SimulationCfg = SimulationCfg(
+        dt=SIM_DT,
+        render_interval=decimation,
+        physics_material=physics_material,
+        physx=PhysxCfg(
+            gpu_max_rigid_patch_count=10 * 2**15,
+        ),
     )
 
     # terrain
@@ -70,13 +75,20 @@ class G1EnvCfg(DirectRLEnvCfg):
     )
 
     # scene
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=4.0, replicate_physics=True)
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(
+        num_envs=4096, env_spacing=4.0, replicate_physics=True
+    )
 
     # robot
     robot: ArticulationCfg = G1_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
     # contact sensor
-    contact_sensor = ContactSensorCfg(prim_path="/World/envs/env_.*/Robot/.*", history_length=3, track_air_time=True, update_period=SIM_DT)
+    contact_sensor = ContactSensorCfg(
+        prim_path="/World/envs/env_.*/Robot/.*",
+        history_length=3,
+        track_air_time=True,
+        update_period=SIM_DT,
+    )
 
     # light
     light: LightCfg = DomeLightCfg(
@@ -101,13 +113,13 @@ class G1EnvCfg(DirectRLEnvCfg):
         ),
     )
 
-    command_vel_visualizer_cfg: VisualizationMarkersCfg = GREEN_ARROW_X_MARKER_CFG.replace(
-        prim_path="/Visuals/Command/velocity_command"
+    command_vel_visualizer_cfg: VisualizationMarkersCfg = (
+        GREEN_ARROW_X_MARKER_CFG.replace(prim_path="/Visuals/Command/velocity_command")
     )
     """The configuration for the command velocity visualization marker. Defaults to GREEN_ARROW_X_MARKER_CFG."""
 
-    current_vel_visualizer_cfg: VisualizationMarkersCfg = BLUE_ARROW_X_MARKER_CFG.replace(
-        prim_path="/Visuals/Command/velocity_current"
+    current_vel_visualizer_cfg: VisualizationMarkersCfg = (
+        BLUE_ARROW_X_MARKER_CFG.replace(prim_path="/Visuals/Command/velocity_current")
     )
     """The configuration for the current velocity visualization marker. Defaults to BLUE_ARROW_X_MARKER_CFG."""
 
@@ -126,7 +138,6 @@ REWARD_NAMES = [
     "action_rate_l2",
     # "undesired_contacts",
     "flat_orientation_l2",
-
     "termination_penalty",
     "track_lin_vel_xy_exp",
     "track_ang_vel_z_exp",
@@ -140,7 +151,16 @@ REWARD_NAMES = [
 ]
 
 
-def sample_commands(num_envs: int, device: torch.device, lin_vel_x: tuple[float, float], lin_vel_y: tuple[float, float], ang_vel_z: tuple[float, float], heading: tuple[float, float], rel_heading_envs: float, rel_standing_envs: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+def sample_commands(
+    num_envs: int,
+    device: torch.device,
+    lin_vel_x: tuple[float, float],
+    lin_vel_y: tuple[float, float],
+    ang_vel_z: tuple[float, float],
+    heading: tuple[float, float],
+    rel_heading_envs: float,
+    rel_standing_envs: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Sample new commands at every reset
 
@@ -164,9 +184,18 @@ def sample_commands(num_envs: int, device: torch.device, lin_vel_x: tuple[float,
 
     return vel_commands_b, heading_commands, is_heading_env, is_standing_env
 
-def update_commands(vel_commands_b: torch.Tensor, heading_commands: torch.Tensor, heading: torch.Tensor, is_heading_env: torch.Tensor, is_standing_env: torch.Tensor, heading_control_stiffness: float, ang_vel_z: tuple[float, float]) -> torch.Tensor:
+
+def update_commands(
+    vel_commands_b: torch.Tensor,
+    heading_commands: torch.Tensor,
+    heading: torch.Tensor,
+    is_heading_env: torch.Tensor,
+    is_standing_env: torch.Tensor,
+    heading_control_stiffness: float,
+    ang_vel_z: tuple[float, float],
+) -> torch.Tensor:
     heading_error = math_utils.wrap_to_pi(heading_commands - heading)
-    
+
     new_vel_commands_b = vel_commands_b.clone()
     new_vel_commands_b[is_heading_env, 2] = torch.clip(
         heading_control_stiffness * heading_error[is_heading_env],
@@ -176,7 +205,13 @@ def update_commands(vel_commands_b: torch.Tensor, heading_commands: torch.Tensor
     new_vel_commands_b[is_standing_env, :] = 0.0
     return new_vel_commands_b
 
-def resolve_xy_velocity_to_arrow(xy_velocity_b: torch.Tensor, scale: tuple[float, float, float], device: torch.device, base_quat_w: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+
+def resolve_xy_velocity_to_arrow(
+    xy_velocity_b: torch.Tensor,
+    scale: tuple[float, float, float],
+    device: torch.device,
+    base_quat_w: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
     # scale
     arrow_scale = torch.tensor(scale, device=device).repeat(xy_velocity_b.shape[0], 1)
     arrow_scale[:, 0] *= torch.linalg.norm(xy_velocity_b, dim=1) * 3.0
@@ -194,17 +229,38 @@ def resolve_xy_velocity_to_arrow(xy_velocity_b: torch.Tensor, scale: tuple[float
 class G1Env(DirectRLEnv):
     cfg: G1EnvCfg
 
-
     def __init__(self, cfg: G1EnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
 
         # Robot joint idxs
         self._joint_dof_idx, self._joint_dof_names = self.robot.find_joints(".*")
         self._torso_joint_idx, _ = self.robot.find_joints("torso_joint")
-        self._finger_joint_idx, _ = self.robot.find_joints([".*_five_joint", ".*_three_joint", ".*_six_joint", ".*_four_joint", ".*_zero_joint", ".*_one_joint", ".*_two_joint"])
-        self._arm_joint_idx, _ = self.robot.find_joints([".*_shoulder_pitch_joint", ".*_shoulder_roll_joint", ".*_shoulder_yaw_joint", ".*_elbow_pitch_joint", ".*_elbow_roll_joint"])
-        self._hip_joint_idx, _ = self.robot.find_joints([".*_hip_yaw_joint", ".*_hip_roll_joint"])
-        self._ankle_joint_idx, _ = self.robot.find_joints([".*_ankle_pitch_joint", ".*_ankle_roll_joint"])
+        self._finger_joint_idx, _ = self.robot.find_joints(
+            [
+                ".*_five_joint",
+                ".*_three_joint",
+                ".*_six_joint",
+                ".*_four_joint",
+                ".*_zero_joint",
+                ".*_one_joint",
+                ".*_two_joint",
+            ]
+        )
+        self._arm_joint_idx, _ = self.robot.find_joints(
+            [
+                ".*_shoulder_pitch_joint",
+                ".*_shoulder_roll_joint",
+                ".*_shoulder_yaw_joint",
+                ".*_elbow_pitch_joint",
+                ".*_elbow_roll_joint",
+            ]
+        )
+        self._hip_joint_idx, _ = self.robot.find_joints(
+            [".*_hip_yaw_joint", ".*_hip_roll_joint"]
+        )
+        self._ankle_joint_idx, _ = self.robot.find_joints(
+            [".*_ankle_pitch_joint", ".*_ankle_roll_joint"]
+        )
         print("!" * 100)
         print(f"len(self._joint_dof_idx): {len(self._joint_dof_idx)}")
         print(f"self._joint_dof_names: {self._joint_dof_names}")
@@ -227,7 +283,9 @@ class G1Env(DirectRLEnv):
         # Contact sensor link idxs
         self._contact_link_idx, _ = self.contact_sensor.find_bodies(".*")
         self._contact_torso_link_idx, _ = self.contact_sensor.find_bodies("torso_link")
-        self._contact_ankle_link_idx, _ = self.contact_sensor.find_bodies(".*_ankle_roll_link")
+        self._contact_ankle_link_idx, _ = self.contact_sensor.find_bodies(
+            ".*_ankle_roll_link"
+        )
         # self._contact_thigh_link_idx, _ = self.contact_sensor.find_bodies(".*THIGH")
         print("!" * 100)
         print(f"len(self._contact_link_idx): {len(self._contact_link_idx)}")
@@ -236,11 +294,25 @@ class G1Env(DirectRLEnv):
         print("!" * 100)
 
         # State
-        self.actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
-        self.prev_actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
+        self.actions = torch.zeros(
+            self.num_envs, self.cfg.action_space, device=self.device
+        )
+        self.prev_actions = torch.zeros(
+            self.num_envs, self.cfg.action_space, device=self.device
+        )
 
         # Commands
-        self.vel_commands_b, self.heading_commands, self.is_heading_env, self.is_standing_env = torch.zeros(self.num_envs, 3, device=self.device), torch.zeros(self.num_envs, device=self.device), torch.zeros(self.num_envs, device=self.device, dtype=torch.bool), torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
+        (
+            self.vel_commands_b,
+            self.heading_commands,
+            self.is_heading_env,
+            self.is_standing_env,
+        ) = (
+            torch.zeros(self.num_envs, 3, device=self.device),
+            torch.zeros(self.num_envs, device=self.device),
+            torch.zeros(self.num_envs, device=self.device, dtype=torch.bool),
+            torch.zeros(self.num_envs, device=self.device, dtype=torch.bool),
+        )
 
         # Logging
         self._episode_sums = {
@@ -250,7 +322,6 @@ class G1Env(DirectRLEnv):
 
         # Debug
         self.set_debug_vis(self.cfg.debug_vis)
-
 
     def _setup_scene(self):
         # add articulation to scene
@@ -305,19 +376,30 @@ class G1Env(DirectRLEnv):
         over_max = (joint_pos - joint_pos_max).clip(min=0.0)
 
         # net_forces_w_history.shape == (num_envs, history_length, num_bodies, 3)
-        contacts = self.contact_sensor.data.net_forces_w_history.norm(dim=-1).max(dim=1).values > 1.0
+        contacts = (
+            self.contact_sensor.data.net_forces_w_history.norm(dim=-1).max(dim=1).values
+            > 1.0
+        )
 
         # feet air time positive biped
-        air_time = self.contact_sensor.data.current_air_time[:, self._contact_ankle_link_idx]
-        contact_time = self.contact_sensor.data.current_contact_time[:, self._contact_ankle_link_idx]
+        air_time = self.contact_sensor.data.current_air_time[
+            :, self._contact_ankle_link_idx
+        ]
+        contact_time = self.contact_sensor.data.current_contact_time[
+            :, self._contact_ankle_link_idx
+        ]
         in_contact = contact_time > 0.0
         in_mode_time = torch.where(in_contact, contact_time, air_time)
         single_stance = in_contact.int().sum(dim=1) == 1
 
         # Robot's linear velocity in gravity-aligned robot frame (z up, but x/y aligned with robot base frame)
-        robot_lin_vel_rotated = quat_rotate_inverse(yaw_quat(self.robot.data.root_quat_w), self.robot.data.root_lin_vel_w[:, :3])
+        robot_lin_vel_rotated = quat_rotate_inverse(
+            yaw_quat(self.robot.data.root_quat_w), self.robot.data.root_lin_vel_w[:, :3]
+        )
 
+        # fmt: off
         rewards = {
+            # velocity_env_cfg.py
             "lin_vel_z_l2": self.robot.data.root_lin_vel_b[:, 2].square(),  # (don't move up/down)
             "ang_vel_xy_l2": self.robot.data.root_ang_vel_b[:, :2].square().sum(dim=1), # (don't tip sideways or forwards)
             "dof_torques_l2": self.robot.data.applied_torque[:, self._joint_dof_idx].square().sum(dim=1),  # (don't apply too much torque)
@@ -326,6 +408,7 @@ class G1Env(DirectRLEnv):
             # "undesired_contacts": contacts[:, self._contact_thigh_link_idx].sum(dim=1),  # (don't contact thighs)
             "flat_orientation_l2": self.robot.data.projected_gravity_b[:, :2].square().sum(dim=1),  # (don't tip sideways or forwards)
 
+            # rough_env_cfg.py
             "termination_penalty": self.reset_terminated.float(),  # (don't terminate) This works because _get_dones() is called before _get_rewards()
             "track_lin_vel_xy_exp": torch.exp(-(self.vel_commands_b[:, :2] - robot_lin_vel_rotated[:, :2]).square().sum(dim=1) / 0.5**2),  # (track the commanded lin_vel_xy)
             "track_ang_vel_z_exp": torch.exp(-(self.vel_commands_b[:, 2] - self.robot.data.root_ang_vel_w[:, 2]).square() / 0.5**2),  #  (track the commanded ang_vel_z)
@@ -337,6 +420,7 @@ class G1Env(DirectRLEnv):
             "joint_deviation_fingers": joint_deviation[:, self._finger_joint_idx].sum(dim=1),  # (don't deviate from default finger positions)
             "joint_deviation_torso": joint_deviation[:, self._torso_joint_idx].sum(dim=1),  # (don't deviate from default torso position)
         }
+
         reward_weights = {
             # velocity_env_cfg.py
             "lin_vel_z_l2": -0.2,
@@ -359,8 +443,14 @@ class G1Env(DirectRLEnv):
             "joint_deviation_fingers": -0.05,
             "joint_deviation_torso": -0.1,
         }
-        assert set(rewards.keys()) == set(REWARD_NAMES), f"Rewards and reward weights do not match: {rewards.keys()} vs {REWARD_NAMES}\nOnly in rewards: {set(rewards.keys()) - set(REWARD_NAMES)}\nOnly in reward_weights: {set(reward_weights.keys()) - set(REWARD_NAMES)}"
-        assert set(reward_weights.keys()) == set(REWARD_NAMES), f"Rewards and reward weights do not match: {reward_weights.keys()} vs {REWARD_NAMES}\nOnly in rewards: {set(rewards.keys()) - set(REWARD_NAMES)}\nOnly in reward_weights: {set(reward_weights.keys()) - set(REWARD_NAMES)}"
+        # fmt: on
+
+        assert set(rewards.keys()) == set(REWARD_NAMES), (
+            f"Rewards and reward weights do not match: {rewards.keys()} vs {REWARD_NAMES}\nOnly in rewards: {set(rewards.keys()) - set(REWARD_NAMES)}\nOnly in reward_weights: {set(reward_weights.keys()) - set(REWARD_NAMES)}"
+        )
+        assert set(reward_weights.keys()) == set(REWARD_NAMES), (
+            f"Rewards and reward weights do not match: {reward_weights.keys()} vs {REWARD_NAMES}\nOnly in rewards: {set(rewards.keys()) - set(REWARD_NAMES)}\nOnly in reward_weights: {set(reward_weights.keys()) - set(REWARD_NAMES)}"
+        )
 
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
 
@@ -388,7 +478,7 @@ class G1Env(DirectRLEnv):
             is_heading_env=self.is_heading_env,
             is_standing_env=self.is_standing_env,
             heading_control_stiffness=self.cfg.base_velocity_command.heading_control_stiffness,
-            ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z
+            ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z,
         )
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -396,7 +486,10 @@ class G1Env(DirectRLEnv):
         time_out = self.episode_length_buf >= self.max_episode_length - 1
 
         # net_forces_w_history.shape == (num_envs, history_length, num_bodies, 3)
-        contacts = self.contact_sensor.data.net_forces_w_history.norm(dim=-1).max(dim=1).values > 1.0
+        contacts = (
+            self.contact_sensor.data.net_forces_w_history.norm(dim=-1).max(dim=1).values
+            > 1.0
+        )
         any_torso_contacts = contacts[:, self._contact_torso_link_idx].any(dim=1)
         died = any_torso_contacts
 
@@ -418,10 +511,19 @@ class G1Env(DirectRLEnv):
         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
         # Reset state
-        self.actions[env_ids] = torch.zeros(len(env_ids), self.cfg.action_space, device=self.device)
-        self.prev_actions[env_ids] = torch.zeros(len(env_ids), self.cfg.action_space, device=self.device)
+        self.actions[env_ids] = torch.zeros(
+            len(env_ids), self.cfg.action_space, device=self.device
+        )
+        self.prev_actions[env_ids] = torch.zeros(
+            len(env_ids), self.cfg.action_space, device=self.device
+        )
 
-        self.vel_commands_b[env_ids], self.heading_commands[env_ids], self.is_heading_env[env_ids], self.is_standing_env[env_ids] = sample_commands(
+        (
+            self.vel_commands_b[env_ids],
+            self.heading_commands[env_ids],
+            self.is_heading_env[env_ids],
+            self.is_standing_env[env_ids],
+        ) = sample_commands(
             num_envs=self.num_envs,
             device=self.device,
             lin_vel_x=self.cfg.base_velocity_command.ranges.lin_vel_x,
@@ -429,7 +531,7 @@ class G1Env(DirectRLEnv):
             ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z,
             heading=self.cfg.base_velocity_command.ranges.heading,
             rel_heading_envs=self.cfg.base_velocity_command.rel_heading_envs,
-            rel_standing_envs=self.cfg.base_velocity_command.rel_standing_envs
+            rel_standing_envs=self.cfg.base_velocity_command.rel_standing_envs,
         )
         self.vel_commands_b[:] = update_commands(
             vel_commands_b=self.vel_commands_b,
@@ -438,17 +540,23 @@ class G1Env(DirectRLEnv):
             is_heading_env=self.is_heading_env,
             is_standing_env=self.is_standing_env,
             heading_control_stiffness=self.cfg.base_velocity_command.heading_control_stiffness,
-            ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z
+            ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z,
         )
 
         # Logging
         extras = dict()
         for key in self._episode_sums.keys():
             episodic_sum_avg = torch.mean(self._episode_sums[key][env_ids])
-            extras["Episode_Reward/" + key] = episodic_sum_avg / self.max_episode_length_s
+            extras["Episode_Reward/" + key] = (
+                episodic_sum_avg / self.max_episode_length_s
+            )
             self._episode_sums[key][env_ids] = 0.0
-        extras["Episode_Termination/base_contact"] = torch.count_nonzero(self.reset_terminated[env_ids]).item()
-        extras["Episode_Termination/time_out"] = torch.count_nonzero(self.reset_time_outs[env_ids]).item()
+        extras["Episode_Termination/base_contact"] = torch.count_nonzero(
+            self.reset_terminated[env_ids]
+        ).item()
+        extras["Episode_Termination/time_out"] = torch.count_nonzero(
+            self.reset_time_outs[env_ids]
+        ).item()
         self.extras["log"] = extras
 
         self._compute_intermediate_values()
@@ -457,11 +565,17 @@ class G1Env(DirectRLEnv):
         # create markers if necessary for the first tome
         if debug_vis:
             if not hasattr(self, "command_vel_visualizer"):
-                self.command_vel_visualizer = VisualizationMarkers(self.cfg.command_vel_visualizer_cfg)
+                self.command_vel_visualizer = VisualizationMarkers(
+                    self.cfg.command_vel_visualizer_cfg
+                )
             if not hasattr(self, "current_vel_visualizer"):
-                self.current_vel_visualizer = VisualizationMarkers(self.cfg.current_vel_visualizer_cfg)
+                self.current_vel_visualizer = VisualizationMarkers(
+                    self.cfg.current_vel_visualizer_cfg
+                )
             if not hasattr(self, "pose_visualizer"):
-                self.pose_visualizer = VisualizationMarkers(self.cfg.pose_visualizer_cfg)
+                self.pose_visualizer = VisualizationMarkers(
+                    self.cfg.pose_visualizer_cfg
+                )
 
             # set their visibility to true
             self.command_vel_visualizer.set_visibility(True)
@@ -485,16 +599,32 @@ class G1Env(DirectRLEnv):
         base_pos_w[:, 2] += 0.5
 
         # Convert the velocity command to an arrow
-        vel_command_arrow_scale, vel_command_arrow_quat = resolve_xy_velocity_to_arrow(xy_velocity_b=self.vel_commands_b[:, :2],
-                                                                                       scale=self.command_vel_visualizer.cfg.markers["arrow"].scale,
-                                                                                       device=self.device,
-                                                                                       base_quat_w=self.robot.data.root_quat_w)
-        vel_arrow_scale, vel_arrow_quat = resolve_xy_velocity_to_arrow(xy_velocity_b=self.robot.data.root_lin_vel_b[:, :2],
-                                                                                       scale=self.current_vel_visualizer.cfg.markers["arrow"].scale,
-                                                                                       device=self.device,
-                                                                                       base_quat_w=self.robot.data.root_quat_w)
+        vel_command_arrow_scale, vel_command_arrow_quat = resolve_xy_velocity_to_arrow(
+            xy_velocity_b=self.vel_commands_b[:, :2],
+            scale=self.command_vel_visualizer.cfg.markers["arrow"].scale,
+            device=self.device,
+            base_quat_w=self.robot.data.root_quat_w,
+        )
+        vel_arrow_scale, vel_arrow_quat = resolve_xy_velocity_to_arrow(
+            xy_velocity_b=self.robot.data.root_lin_vel_b[:, :2],
+            scale=self.current_vel_visualizer.cfg.markers["arrow"].scale,
+            device=self.device,
+            base_quat_w=self.robot.data.root_quat_w,
+        )
 
         # update the markers
-        self.command_vel_visualizer.visualize(translations=base_pos_w, orientations=vel_command_arrow_quat, scales=vel_command_arrow_scale)
-        self.current_vel_visualizer.visualize(translations=base_pos_w, orientations=vel_arrow_quat, scales=vel_arrow_scale)
-        self.pose_visualizer.visualize(translations=base_pos_w, orientations=self.robot.data.root_quat_w, scales=torch.tensor([0.1, 0.1, 0.1], device=self.device).unsqueeze(0).repeat_interleave(self.num_envs, dim=0))
+        self.command_vel_visualizer.visualize(
+            translations=base_pos_w,
+            orientations=vel_command_arrow_quat,
+            scales=vel_command_arrow_scale,
+        )
+        self.current_vel_visualizer.visualize(
+            translations=base_pos_w, orientations=vel_arrow_quat, scales=vel_arrow_scale
+        )
+        self.pose_visualizer.visualize(
+            translations=base_pos_w,
+            orientations=self.robot.data.root_quat_w,
+            scales=torch.tensor([0.1, 0.1, 0.1], device=self.device)
+            .unsqueeze(0)
+            .repeat_interleave(self.num_envs, dim=0),
+        )
