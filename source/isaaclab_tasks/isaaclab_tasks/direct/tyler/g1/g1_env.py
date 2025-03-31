@@ -282,15 +282,21 @@ class G1Env(DirectRLEnv):
         print("!" * 100)
 
         # Contact sensor link idxs
-        self._contact_link_idx, _ = self.contact_sensor.find_bodies(".*")
-        self._contact_torso_link_idx, _ = self.contact_sensor.find_bodies("torso_link")
+        self._contact_link_idx, self._contact_link_names = (
+            self.contact_sensor.find_bodies(".*")
+        )
         self._contact_ankle_link_idx, _ = self.contact_sensor.find_bodies(
             ".*_ankle_roll_link"
         )
+        self._contact_undesired_link_idx = [
+            i for i in self._contact_link_idx if i not in self._contact_ankle_link_idx
+        ]
         # self._contact_thigh_link_idx, _ = self.contact_sensor.find_bodies(".*THIGH")
         print("!" * 100)
         print(f"len(self._contact_link_idx): {len(self._contact_link_idx)}")
-        print(f"len(self._contact_torso_link_idx): {len(self._contact_torso_link_idx)}")
+        print(
+            f"len(self._contact_undesired_link_idx): {len(self._contact_undesired_link_idx)}"
+        )
         print(f"len(self._contact_ankle_link_idx): {len(self._contact_ankle_link_idx)}")
         print("!" * 100)
 
@@ -491,7 +497,7 @@ class G1Env(DirectRLEnv):
             self.contact_sensor.data.net_forces_w_history.norm(dim=-1).max(dim=1).values
             > 1.0
         )
-        any_torso_contacts = contacts[:, self._contact_torso_link_idx].any(dim=1)
+        any_torso_contacts = contacts[:, self._contact_undesired_link_idx].any(dim=1)
         died = any_torso_contacts
 
         return died, time_out
