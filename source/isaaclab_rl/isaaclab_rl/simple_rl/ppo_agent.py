@@ -46,15 +46,11 @@ class PpoConfig:
     reward_shaper: RewardsShaperParams
     mini_epochs: int
     e_clip: float
-    clip_value: float
 
     # Fields with defaults (accessed via config.get(..., default))
     multi_gpu: bool = False
-    network_path: str = "./nn/"
-    log_path: str = "runs/"
     device: str = "cuda:0"
     weight_decay: float = 0.0
-    is_train: bool = True
     asymmetric_critic: Optional[AsymmetricCriticConfig] = None
     truncate_grads: bool = False
     save_frequency: int = 0
@@ -151,11 +147,9 @@ class PpoAgent:
         network_config: NetworkConfig,
         env: Any,
     ):
-        self.ppo_config = ppo_config
+        self.cfg = ppo_config
 
         ## A2CBase ##
-        self.multi_gpu = ppo_config.multi_gpu
-
         # multi-gpu/multi-node data
         self.local_rank = 0
         self.global_rank = 0
@@ -163,7 +157,7 @@ class PpoAgent:
 
         self.curr_frames = 0
 
-        if self.multi_gpu:
+        if self.cfg.multi_gpu:
             # local rank of the GPU in a node
             self.local_rank = int(os.getenv("LOCAL_RANK", "0"))
             # global rank of the GPU
@@ -176,27 +170,18 @@ class PpoAgent:
             )
 
             self.device_name = "cuda:" + str(self.local_rank)
-            ppo_config.device = self.device_name
+            self.cfg.device = self.device_name
             if self.global_rank != 0:
-                ppo_config.print_stats = False
-                ppo_config.lr_schedule = None
-
-        self.network_path = ppo_config.network_path
-        self.log_path = ppo_config.log_path
-        self.num_actors = ppo_config.num_actors
+                self.cfg.print_stats = False
+                self.cfg.lr_schedule = None
 
         self.env = env
         self.env_info = self.env.get_env_info()
 
-        self.ppo_device = ppo_config.device
         self.value_size = self.env_info.get("value_size", 1)
         self.observation_space = self.env_info["observation_space"]
-        self.weight_decay = ppo_config.weight_decay
-        self.is_train = ppo_config.is_train
 
-        self.asymmetric_critic_config = ppo_config.asymmetric_critic
-        self.has_asymmetric_critic = self.asymmetric_critic_config is not None
-        self.truncate_grads = ppo_config.truncate_grads
+        self.has_asymmetric_critic = self.cfg.asymmetric_critic is not None
 
         if self.has_asymmetric_critic:
             self.state_space = self.env_info.get("state_space", None)
@@ -207,68 +192,45 @@ class PpoAgent:
             else:
                 self.state_shape = self.state_space.shape
 
-        self.save_freq = ppo_config.save_frequency
-        self.save_best_after = ppo_config.save_best_after
-        self.print_stats = ppo_config.print_stats
         self.rnn_states = None
 
-        self.max_epochs = ppo_config.max_epochs
-        self.max_frames = ppo_config.max_frames
-
-        self.is_adaptive_lr = ppo_config.lr_schedule == "adaptive"
-        self.linear_lr = ppo_config.lr_schedule == "linear"
-        self.schedule_type = ppo_config.schedule_type
-
         # Setting learning rate scheduler
-        if self.is_adaptive_lr:
-            assert ppo_config.kl_threshold is not None
-            self.kl_threshold = ppo_config.kl_threshold
-            self.scheduler = schedulers.AdaptiveScheduler(self.kl_threshold)
+        if self.cfg.lr_schedule == "adaptive":
+            assert self.cfg.kl_threshold is not None
+            self.scheduler = schedulers.AdaptiveScheduler(self.cfg.kl_threshold)
 
-        elif self.linear_lr:
-            if self.max_epochs == -1 and self.max_frames == -1:
+        elif self.cfg.lr_schedule == "linear":
+            if self.cfg.max_epochs == -1 and self.cfg.max_frames == -1:
                 print(
                     "Max epochs and max frames are not set. Linear learning rate schedule can't be used, switching to the contstant (identity) one."
                 )
                 self.scheduler = schedulers.IdentityScheduler()
             else:
                 use_epochs = True
-                max_steps = self.max_epochs
+                max_steps = self.cfg.max_epochs
 
-                if self.max_epochs == -1:
+                if self.cfg.max_epochs == -1:
                     use_epochs = False
-                    max_steps = self.max_frames
+                    max_steps = self.cfg.max_frames
 
                 self.scheduler = schedulers.LinearScheduler(
-                    float(ppo_config.learning_rate),
+                    float(self.cfg.learning_rate),
                     max_steps=max_steps,
                     use_epochs=use_epochs,
-                    apply_to_entropy=ppo_config.schedule_entropy,
-                    start_entropy_coef=ppo_config.entropy_coef,
+                    apply_to_entropy=self.cfg.schedule_entropy,
+                    start_entropy_coef=self.cfg.entropy_coef,
                 )
         else:
             self.scheduler = schedulers.IdentityScheduler()
 
-        self.e_clip = ppo_config.e_clip
-        self.clip_value = ppo_config.clip_value
-
-        self.rewards_shaper = DefaultRewardsShaper(ppo_config.reward_shaper)
+        self.rewards_shaper = DefaultRewardsShaper(self.cfg.reward_shaper)
         self.num_agents = self.env_info.get("agents", 1)
-        self.horizon_length = ppo_config.horizon_length
 
-        self.seq_length = ppo_config.seq_length
-        print("seq_length:", self.seq_length)
         self.bptt_len = (
-            ppo_config.bptt_length
-            if ppo_config.bptt_length is not None
-            else self.seq_length
+            self.cfg.bptt_length
+            if self.cfg.bptt_length is not None
+            else self.cfg.seq_length
         )  # not used right now. Didn't show that it is usefull
-        self.zero_rnn_on_done = ppo_config.zero_rnn_on_done
-
-        self.normalize_advantage = ppo_config.normalize_advantage
-        self.normalize_rms_advantage = ppo_config.normalize_rms_advantage
-        self.normalize_input = ppo_config.normalize_input
-        self.normalize_value = ppo_config.normalize_value
 
         if isinstance(self.observation_space, gym.spaces.Dict):
             self.obs_shape = {}
@@ -277,40 +239,33 @@ class PpoAgent:
         else:
             self.obs_shape = self.observation_space.shape
 
-        self.critic_coef = ppo_config.critic_coef
-        self.grad_norm = ppo_config.grad_norm
-        self.gamma = ppo_config.gamma
-        self.tau = ppo_config.tau
-
-        self.games_to_track = ppo_config.games_to_track
-        print("current training device:", self.ppo_device)
+        print("current training device:", self.device)
         self.game_rewards = torch_ext.AverageMeter(
-            self.value_size, self.games_to_track
-        ).to(self.ppo_device)
+            self.value_size, self.cfg.games_to_track
+        ).to(self.device)
         self.game_shaped_rewards = torch_ext.AverageMeter(
-            self.value_size, self.games_to_track
-        ).to(self.ppo_device)
-        self.game_lengths = torch_ext.AverageMeter(1, self.games_to_track).to(
-            self.ppo_device
+            self.value_size, self.cfg.games_to_track
+        ).to(self.device)
+        self.game_lengths = torch_ext.AverageMeter(1, self.cfg.games_to_track).to(
+            self.device
         )
         self.obs = None
 
-        self.batch_size = self.horizon_length * self.num_actors * self.num_agents
-        self.batch_size_envs = self.horizon_length * self.num_actors
+        self.batch_size = self.cfg.horizon_length * self.cfg.num_actors * self.num_agents
+        self.batch_size_envs = self.cfg.horizon_length * self.cfg.num_actors
 
         # either minibatch_size_per_env or minibatch_size should be present in a config
         # if both are present, minibatch_size is used
         # otherwise minibatch_size_per_env is used minibatch_size_per_env is used to calculate minibatch_size
-        self.minibatch_size_per_env = ppo_config.minibatch_size_per_env
         self.minibatch_size = (
-            ppo_config.minibatch_size
-            if ppo_config.minibatch_size is not None
-            else self.num_actors * self.minibatch_size_per_env
+            self.cfg.minibatch_size
+            if self.cfg.minibatch_size is not None
+            else self.cfg.num_actors * self.cfg.minibatch_size_per_env
         )
         assert self.minibatch_size > 0
 
         self.games_num = (
-            self.minibatch_size // self.seq_length
+            self.minibatch_size // self.cfg.seq_length
         )  # it is used only for current rnn implementation
 
         self.num_minibatches = self.batch_size // self.minibatch_size
@@ -319,11 +274,9 @@ class PpoAgent:
         )
         assert self.num_minibatches > 0, f"{self.batch_size}, {self.minibatch_size}"
 
-        self.mini_epochs_num = ppo_config.mini_epochs
-        self.mixed_precision = ppo_config.mixed_precision
-        self.scaler = torch.amp.GradScaler(device=str(self.device), enabled=self.mixed_precision)
+        self.scaler = torch.amp.GradScaler(device=str(self.device), enabled=self.cfg.mixed_precision)
 
-        self.last_lr = ppo_config.learning_rate
+        self.current_lr = self.cfg.learning_rate
         self.frame = 0
         self.update_time = 0
         self.mean_rewards = self.last_mean_rewards = -1000000000
@@ -342,7 +295,7 @@ class PpoAgent:
         self.nn_dir.mkdir(parents=True, exist_ok=True)
         self.summaries_dir.mkdir(parents=True, exist_ok=True)
 
-        self.entropy_coef = ppo_config.entropy_coef
+        self.current_entropy_coef = self.cfg.entropy_coef
 
         if self.global_rank == 0:
             writer = SummaryWriter(str(self.summaries_dir))
@@ -350,13 +303,11 @@ class PpoAgent:
         else:
             self.writer = None
 
-        self.value_bootstrap = ppo_config.value_bootstrap
-
-        if self.normalize_advantage and self.normalize_rms_advantage:
-            momentum = ppo_config.adv_rms_momentum
+        if self.cfg.normalize_advantage and self.cfg.normalize_rms_advantage:
+            momentum = self.cfg.adv_rms_momentum
             self.advantage_mean_std = GeneralizedMovingStats(
                 insize=1, decay=momentum
-            ).to(self.ppo_device)
+            ).to(self.device)
 
         self.is_tensor_obses = False
 
@@ -367,15 +318,12 @@ class PpoAgent:
         self.is_discrete = False
         action_space = self.env_info["action_space"]
         self.actions_num = action_space.shape[0]
-        self.bounds_loss_coef = ppo_config.bounds_loss_coef
-
-        self.clip_actions = ppo_config.clip_actions
 
         self.actions_low = (
-            torch.from_numpy(action_space.low.copy()).float().to(self.ppo_device)
+            torch.from_numpy(action_space.low.copy()).float().to(self.device)
         )
         self.actions_high = (
-            torch.from_numpy(action_space.high.copy()).float().to(self.ppo_device)
+            torch.from_numpy(action_space.high.copy()).float().to(self.device)
         )
 
         ## A2CAgent ##
@@ -383,53 +331,51 @@ class PpoAgent:
             network_config=network_config,
             actions_num=self.actions_num,
             input_shape=self.obs_shape,
-            normalize_value=self.normalize_value,
-            normalize_input=self.normalize_input,
+            normalize_value=self.cfg.normalize_value,
+            normalize_input=self.cfg.normalize_input,
             value_size=self.env_info.get("value_size", 1),
-            num_seqs=self.num_actors * self.num_agents,
+            num_seqs=self.cfg.num_actors * self.num_agents,
         )
 
-        self.model.to(self.ppo_device)
+        self.model.to(self.device)
         self.states = None
         self.init_rnn_from_model(self.model)
-        self.last_lr = float(self.last_lr)
-        self.bound_loss_type = ppo_config.bound_loss_type
         self.optimizer = optim.Adam(
             self.model.parameters(),
-            float(self.last_lr),
+            float(self.current_lr),
             eps=1e-08,
-            weight_decay=self.weight_decay,
+            weight_decay=self.cfg.weight_decay,
         )
 
         if self.has_asymmetric_critic:
             print("Adding Asymmetric Critic Network")
-            assert self.asymmetric_critic_config is not None
+            assert self.cfg.asymmetric_critic is not None
             self.asymmetric_critic_net = asymmetric_critic.AsymmetricCriticTrain(
                 state_shape=self.state_shape,
                 value_size=self.value_size,
-                ppo_device=self.ppo_device,
+                ppo_device=self.device,
                 num_agents=self.num_agents,
-                horizon_length=self.horizon_length,
-                num_actors=self.num_actors,
+                horizon_length=self.cfg.horizon_length,
+                num_actors=self.cfg.num_actors,
                 num_actions=self.actions_num,
-                seq_length=self.seq_length,
-                normalize_value=self.normalize_value,
-                config=self.asymmetric_critic_config,
+                seq_length=self.cfg.seq_length,
+                normalize_value=self.cfg.normalize_value,
+                config=self.cfg.asymmetric_critic,
                 writer=self.writer,
-                max_epochs=self.max_epochs,
-                multi_gpu=self.multi_gpu,
-                zero_rnn_on_done=self.zero_rnn_on_done,
-            ).to(self.ppo_device)
+                max_epochs=self.cfg.max_epochs,
+                multi_gpu=self.cfg.multi_gpu,
+                zero_rnn_on_done=self.cfg.zero_rnn_on_done,
+            ).to(self.device)
 
         self.dataset = datasets.PPODataset(
             self.batch_size,
             self.minibatch_size,
             self.is_discrete,
             self.is_rnn,
-            self.ppo_device,
-            self.seq_length,
+            self.device,
+            self.cfg.seq_length,
         )
-        if self.normalize_value:
+        if self.cfg.normalize_value:
             self.value_mean_std = (
                 self.asymmetric_critic_net.model.value_mean_std
                 if self.has_asymmetric_critic
@@ -437,7 +383,7 @@ class PpoAgent:
             )
 
     def truncate_gradients_and_step(self) -> None:
-        if self.multi_gpu:
+        if self.cfg.multi_gpu:
             # batch allreduce ops: see https://github.com/entity-neural-network/incubator/pull/220
             all_grads_list = []
             for param in self.model.parameters():
@@ -457,9 +403,9 @@ class PpoAgent:
                     )
                     offset += param.numel()
 
-        if self.truncate_grads:
+        if self.cfg.truncate_grads:
             self.scaler.unscale_(self.optimizer)
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_norm)
 
         self.scaler.step(self.optimizer)
         self.scaler.update()
@@ -475,7 +421,7 @@ class PpoAgent:
         c_losses: List[torch.Tensor],
         entropies: List[torch.Tensor],
         kls: List[torch.Tensor],
-        last_lr: float,
+        current_lr: float,
         lr_mul: float,
         frame: int,
         scaled_time: float,
@@ -507,24 +453,24 @@ class PpoAgent:
         self.writer.add_scalar(
             "losses/entropy", torch.mean(torch.stack(entropies)).item(), frame
         )
-        self.writer.add_scalar("info/last_lr", last_lr * lr_mul, frame)
+        self.writer.add_scalar("info/current_lr", current_lr * lr_mul, frame)
         self.writer.add_scalar("info/lr_mul", lr_mul, frame)
-        self.writer.add_scalar("info/e_clip", self.e_clip * lr_mul, frame)
+        self.writer.add_scalar("info/e_clip", self.cfg.e_clip * lr_mul, frame)
         self.writer.add_scalar("info/kl", torch.mean(torch.stack(kls)).item(), frame)
         self.writer.add_scalar("info/epochs", epoch_num, frame)
 
     def set_eval(self) -> None:
         self.model.eval()
-        if self.normalize_rms_advantage:
+        if self.cfg.normalize_rms_advantage:
             self.advantage_mean_std.eval()
 
     def set_train(self) -> None:
         self.model.train()
-        if self.normalize_rms_advantage:
+        if self.cfg.normalize_rms_advantage:
             self.advantage_mean_std.train()
 
     def update_lr(self, lr: float) -> None:
-        if self.multi_gpu:
+        if self.cfg.multi_gpu:
             lr_tensor = torch.tensor([lr], device=self.device)
             dist.broadcast(lr_tensor, 0)
             lr = lr_tensor.item()
@@ -584,51 +530,51 @@ class PpoAgent:
 
     @property
     def device(self) -> Union[str, torch.device]:
-        return self.ppo_device
+        return self.cfg.device
 
     def reset_envs(self) -> None:
         self.obs = self.env_reset()
 
     def init_tensors(self) -> None:
         ## A2CBase ##
-        batch_size = self.num_agents * self.num_actors
+        batch_size = self.num_agents * self.cfg.num_actors
         self.experience_buffer = ExperienceBuffer(
             env_info=self.env_info,
-            num_actors=self.num_actors,
-            horizon_length=self.horizon_length,
+            num_actors=self.cfg.num_actors,
+            horizon_length=self.cfg.horizon_length,
             has_asymmetric_critic=self.has_asymmetric_critic,
-            device=self.ppo_device,
+            device=self.device,
         )
 
-        _val_shape = (self.horizon_length, batch_size, self.value_size)
+        _val_shape = (self.cfg.horizon_length, batch_size, self.value_size)
         current_rewards_shape = (batch_size, self.value_size)
         self.current_rewards = torch.zeros(
-            current_rewards_shape, dtype=torch.float32, device=self.ppo_device
+            current_rewards_shape, dtype=torch.float32, device=self.device
         )
         self.current_shaped_rewards = torch.zeros(
-            current_rewards_shape, dtype=torch.float32, device=self.ppo_device
+            current_rewards_shape, dtype=torch.float32, device=self.device
         )
         self.current_lengths = torch.zeros(
-            batch_size, dtype=torch.float32, device=self.ppo_device
+            batch_size, dtype=torch.float32, device=self.device
         )
         self.dones = torch.ones(
-            (batch_size,), dtype=torch.uint8, device=self.ppo_device
+            (batch_size,), dtype=torch.uint8, device=self.device
         )
 
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
-            self.rnn_states = [s.to(self.ppo_device) for s in self.rnn_states]
+            self.rnn_states = [s.to(self.device) for s in self.rnn_states]
 
-            total_agents = self.num_agents * self.num_actors
-            num_seqs = self.horizon_length // self.seq_length
+            total_agents = self.num_agents * self.cfg.num_actors
+            num_seqs = self.cfg.horizon_length // self.cfg.seq_length
             assert (
-                self.horizon_length * total_agents // self.num_minibatches
-            ) % self.seq_length == 0
+                self.cfg.horizon_length * total_agents // self.num_minibatches
+            ) % self.cfg.seq_length == 0
             self.mb_rnn_states = [
                 torch.zeros(
                     (num_seqs, s.size()[0], total_agents, s.size()[2]),
                     dtype=torch.float32,
-                    device=self.ppo_device,
+                    device=self.device,
                 )
                 for s in self.rnn_states
             ]
@@ -646,9 +592,9 @@ class PpoAgent:
         elif isinstance(obs, np.ndarray):
             assert obs.dtype != np.int8
             if obs.dtype == np.uint8:
-                obs = torch.ByteTensor(obs).to(self.ppo_device)
+                obs = torch.ByteTensor(obs).to(self.device)
             else:
-                obs = torch.FloatTensor(obs).to(self.ppo_device)
+                obs = torch.FloatTensor(obs).to(self.device)
         return obs
 
     def obs_to_tensors(self, obs):
@@ -673,7 +619,7 @@ class PpoAgent:
         return upd_obs
 
     def preprocess_actions(self, actions: torch.Tensor) -> torch.Tensor:
-        if self.clip_actions:
+        if self.cfg.clip_actions:
             clamped_actions = torch.clamp(actions, -1.0, 1.0)
             rescaled_actions = rescale_actions(
                 self.actions_low, self.actions_high, clamped_actions
@@ -695,8 +641,8 @@ class PpoAgent:
                 rewards = rewards.unsqueeze(1)
             return (
                 self.obs_to_tensors(obs),
-                rewards.to(self.ppo_device),
-                dones.to(self.ppo_device),
+                rewards.to(self.device),
+                dones.to(self.device),
                 infos,
             )
         else:
@@ -704,8 +650,8 @@ class PpoAgent:
                 rewards = np.expand_dims(rewards, axis=1)
             return (
                 self.obs_to_tensors(obs),
-                torch.from_numpy(rewards).to(self.ppo_device).float(),
-                torch.from_numpy(dones).to(self.ppo_device),
+                torch.from_numpy(rewards).to(self.device).float(),
+                torch.from_numpy(dones).to(self.device),
                 infos,
             )
 
@@ -725,8 +671,8 @@ class PpoAgent:
         lastgaelam = 0
         mb_advs = torch.zeros_like(mb_rewards)
 
-        for t in reversed(range(self.horizon_length)):
-            if t == self.horizon_length - 1:
+        for t in reversed(range(self.cfg.horizon_length)):
+            if t == self.cfg.horizon_length - 1:
                 nextnonterminal = 1.0 - fdones
                 nextvalues = last_extrinsic_values
             else:
@@ -736,11 +682,11 @@ class PpoAgent:
 
             delta = (
                 mb_rewards[t]
-                + self.gamma * nextvalues * nextnonterminal
+                + self.cfg.gamma * nextvalues * nextnonterminal
                 - mb_extrinsic_values[t]
             )
             mb_advs[t] = lastgaelam = (
-                delta + self.gamma * self.tau * nextnonterminal * lastgaelam
+                delta + self.cfg.gamma * self.cfg.tau * nextnonterminal * lastgaelam
             )
         return mb_advs
 
@@ -761,7 +707,7 @@ class PpoAgent:
         self.obs = self.env_reset()
         self.curr_frames = self.batch_size_envs
 
-        if self.multi_gpu:
+        if self.cfg.multi_gpu:
             torch.cuda.set_device(self.local_rank)
             print("====================broadcasting parameters")
             model_params = [self.model.state_dict()]
@@ -784,7 +730,7 @@ class PpoAgent:
                 b_losses,
                 entropies,
                 kls,
-                last_lr,
+                current_lr,
                 lr_mul,
             ) = self.train_epoch()
             total_time += sum_time
@@ -800,21 +746,21 @@ class PpoAgent:
                 scaled_play_time = self.num_agents * play_time
                 curr_frames = (
                     self.curr_frames * self.world_size
-                    if self.multi_gpu
+                    if self.cfg.multi_gpu
                     else self.curr_frames
                 )
                 self.frame += curr_frames
 
                 print_statistics(
-                    print_stats=self.print_stats,
+                    print_stats=self.cfg.print_stats,
                     curr_frames=curr_frames,
                     step_time=step_time,
                     step_inference_time=scaled_play_time,
                     total_time=scaled_time,
                     epoch_num=epoch_num,
-                    max_epochs=self.max_epochs,
+                    max_epochs=self.cfg.max_epochs,
                     frame=frame,
-                    max_frames=self.max_frames,
+                    max_frames=self.cfg.max_frames,
                 )
 
                 self.write_stats(
@@ -827,7 +773,7 @@ class PpoAgent:
                     c_losses=c_losses,
                     entropies=entropies,
                     kls=kls,
-                    last_lr=last_lr,
+                    current_lr=current_lr,
                     lr_mul=lr_mul,
                     frame=frame,
                     scaled_time=scaled_time,
@@ -883,8 +829,8 @@ class PpoAgent:
                         "episode_lengths/time", mean_lengths, total_time
                     )
 
-                    if self.save_freq > 0:
-                        if epoch_num % self.save_freq == 0:
+                    if self.cfg.save_frequency > 0:
+                        if epoch_num % self.cfg.save_frequency == 0:
                             self.save(
                                 self.nn_dir
                                 / f"ep_{epoch_num}_rew_{mean_rewards[0]}.pth"
@@ -892,13 +838,13 @@ class PpoAgent:
 
                     if (
                         mean_rewards[0] > self.last_mean_rewards
-                        and epoch_num >= self.save_best_after
+                        and epoch_num >= self.cfg.save_best_after
                     ):
                         print("saving next best rewards: ", mean_rewards)
                         self.last_mean_rewards = mean_rewards[0]
                         self.save(self.nn_dir / "best.pth")
 
-                if epoch_num >= self.max_epochs and self.max_epochs != -1:
+                if epoch_num >= self.cfg.max_epochs and self.cfg.max_epochs != -1:
                     if self.game_rewards.current_size == 0:
                         print(
                             "WARNING: Max epochs reached before any env terminated at least once"
@@ -912,7 +858,7 @@ class PpoAgent:
                     print("MAX EPOCHS NUM!")
                     should_exit = True
 
-                if self.frame >= self.max_frames and self.max_frames != -1:
+                if self.frame >= self.cfg.max_frames and self.cfg.max_frames != -1:
                     if self.game_rewards.current_size == 0:
                         print(
                             "WARNING: Max frames reached before any env terminated at least once"
@@ -928,7 +874,7 @@ class PpoAgent:
 
                 update_time = 0
 
-            if self.multi_gpu:
+            if self.cfg.multi_gpu:
                 should_exit_t = torch.tensor(should_exit, device=self.device).float()
                 dist.broadcast(should_exit_t, 0)
                 should_exit = should_exit_t.float().item()
@@ -951,8 +897,8 @@ class PpoAgent:
 
         advantages = returns - values
 
-        if self.normalize_value:
-            if self.ppo_config.freeze_critic:
+        if self.cfg.normalize_value:
+            if self.cfg.freeze_critic:
                 self.value_mean_std.eval()
             else:
                 self.value_mean_std.train()
@@ -962,16 +908,16 @@ class PpoAgent:
 
         advantages = torch.sum(advantages, dim=1)
 
-        if self.normalize_advantage:
+        if self.cfg.normalize_advantage:
             if self.is_rnn:
-                if self.normalize_rms_advantage:
+                if self.cfg.normalize_rms_advantage:
                     advantages = self.advantage_mean_std(advantages)
                 else:
                     advantages = (advantages - advantages.mean()) / (
                         advantages.std() + 1e-8
                     )
             else:
-                if self.normalize_rms_advantage:
+                if self.cfg.normalize_rms_advantage:
                     advantages = self.advantage_mean_std(advantages)
                 else:
                     advantages = (advantages - advantages.mean()) / (
@@ -1044,46 +990,46 @@ class PpoAgent:
         entropies = []
         kls = []
 
-        for mini_ep in range(0, self.mini_epochs_num):
+        for mini_ep in range(0, self.cfg.mini_epochs):
             ep_kls = []
             for i in range(len(self.dataset)):
-                a_loss, c_loss, entropy, kl, last_lr, lr_mul, cmu, csigma, b_loss = (
+                a_loss, c_loss, entropy, kl, current_lr, lr_mul, cmu, csigma, b_loss = (
                     self.train_actor_critic(self.dataset[i])
                 )
                 a_losses.append(a_loss)
                 c_losses.append(c_loss)
                 ep_kls.append(kl)
                 entropies.append(entropy)
-                if self.bounds_loss_coef is not None:
+                if self.cfg.bounds_loss_coef is not None:
                     b_losses.append(b_loss)
 
                 self.dataset.update_mu_sigma(cmu, csigma)
-                if self.schedule_type == "legacy":
+                if self.cfg.schedule_type == "legacy":
                     av_kls = kl
-                    if self.multi_gpu:
+                    if self.cfg.multi_gpu:
                         dist.all_reduce(kl, op=dist.ReduceOp.SUM)
                         av_kls /= self.world_size
-                    self.last_lr, self.entropy_coef = self.scheduler.update(
-                        self.last_lr,
-                        self.entropy_coef,
+                    self.current_lr, self.current_entropy_coef = self.scheduler.update(
+                        self.current_lr,
+                        self.current_entropy_coef,
                         self.epoch_num,
                         0,
                         av_kls.item(),
                     )
-                    self.update_lr(self.last_lr)
+                    self.update_lr(self.current_lr)
 
             av_kls = torch.mean(torch.stack(ep_kls))
-            if self.multi_gpu:
+            if self.cfg.multi_gpu:
                 dist.all_reduce(av_kls, op=dist.ReduceOp.SUM)
                 av_kls /= self.world_size
-            if self.schedule_type == "standard":
-                self.last_lr, self.entropy_coef = self.scheduler.update(
-                    self.last_lr, self.entropy_coef, self.epoch_num, 0, av_kls.item()
+            if self.cfg.schedule_type == "standard":
+                self.current_lr, self.current_entropy_coef = self.scheduler.update(
+                    self.current_lr, self.current_entropy_coef, self.epoch_num, 0, av_kls.item()
                 )
-                self.update_lr(self.last_lr)
+                self.update_lr(self.current_lr)
 
             kls.append(av_kls)
-            if self.normalize_input:
+            if self.cfg.normalize_input:
                 self.model.running_mean_std.eval()  # don't need to update statstics more than one miniepoch
 
         update_time_end = time.perf_counter()
@@ -1101,7 +1047,7 @@ class PpoAgent:
             b_losses,
             entropies,
             kls,
-            last_lr,
+            current_lr,
             lr_mul,
         )
 
@@ -1137,7 +1083,7 @@ class PpoAgent:
         obs_batch = self._preproc_obs(obs_batch)
 
         lr_mul = 1.0
-        curr_e_clip = self.e_clip
+        curr_e_clip = self.cfg.e_clip
 
         batch_dict = {
             "is_train": True,
@@ -1147,12 +1093,12 @@ class PpoAgent:
 
         if self.is_rnn:
             batch_dict["rnn_states"] = input_dict["rnn_states"]
-            batch_dict["seq_length"] = self.seq_length
+            batch_dict["seq_length"] = self.cfg.seq_length
 
-            if self.zero_rnn_on_done:
+            if self.cfg.zero_rnn_on_done:
                 batch_dict["dones"] = input_dict["dones"]
 
-        with torch.amp.autocast(device_type=str(self.device), enabled=self.mixed_precision):
+        with torch.amp.autocast(device_type=str(self.device), enabled=self.cfg.mixed_precision):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict["prev_neglogp"]
             values = res_dict["values"]
@@ -1173,18 +1119,18 @@ class PpoAgent:
             c_losses = torch.max(value_losses, value_losses_clipped)
             c_losses = c_losses.squeeze(dim=1)
 
-            if self.bounds_loss_coef is not None:
-                if self.bound_loss_type == "regularisation":
+            if self.cfg.bounds_loss_coef is not None:
+                if self.cfg.bound_loss_type == "regularisation":
                     b_losses = (mu * mu).sum(dim=-1)
-                elif self.bound_loss_type == "bound":
+                elif self.cfg.bound_loss_type == "bound":
                     soft_bound = 1.1
                     mu_loss_high = torch.clamp_min(mu - soft_bound, 0.0) ** 2
                     mu_loss_low = torch.clamp_max(mu + soft_bound, 0.0) ** 2
                     b_losses = (mu_loss_low + mu_loss_high).sum(dim=-1)
                 else:
-                    raise ValueError(f"Unknown bound loss type {self.bound_loss_type}")
+                    raise ValueError(f"Unknown bound loss type {self.cfg.bound_loss_type}")
             else:
-                b_losses = torch.zeros(1, device=self.ppo_device)
+                b_losses = torch.zeros(1, device=self.device)
 
             a_loss, c_loss, entropy, b_loss = (
                 a_losses.mean(),
@@ -1194,11 +1140,11 @@ class PpoAgent:
             )
             loss = (
                 a_loss
-                + 0.5 * c_loss * self.critic_coef
-                - entropy * self.entropy_coef
-                + b_loss * self.bounds_loss_coef
+                + 0.5 * c_loss * self.cfg.critic_coef
+                - entropy * self.current_entropy_coef
+                + b_loss * self.cfg.bounds_loss_coef
             )
-            if self.multi_gpu:
+            if self.cfg.multi_gpu:
                 self.optimizer.zero_grad()
             else:
                 for param in self.model.parameters():
@@ -1219,7 +1165,7 @@ class PpoAgent:
             c_loss,
             entropy,
             kl_dist,
-            self.last_lr,
+            self.current_lr,
             lr_mul,
             mu.detach(),
             sigma.detach(),
@@ -1275,28 +1221,28 @@ class PpoAgent:
 
     def get_stats_weights(self, model_stats=False) -> Dict[str, Any]:
         state = {}
-        if self.mixed_precision:
+        if self.cfg.mixed_precision:
             state["scaler"] = self.scaler.state_dict()
         if self.has_asymmetric_critic:
             state["central_val_stats"] = self.asymmetric_critic_net.get_stats_weights(
                 model_stats
             )
         if model_stats:
-            if self.normalize_input:
+            if self.cfg.normalize_input:
                 state["running_mean_std"] = self.model.running_mean_std.state_dict()
-            if self.normalize_value:
+            if self.cfg.normalize_value:
                 state["reward_mean_std"] = self.model.value_mean_std.state_dict()
 
         return state
 
     def set_stats_weights(self, weights) -> None:
-        if self.normalize_rms_advantage:
+        if self.cfg.normalize_rms_advantage:
             self.advantage_mean_std.load_state_dict(weights["advantage_mean_std"])
-        if self.normalize_input and "running_mean_std" in weights:
+        if self.cfg.normalize_input and "running_mean_std" in weights:
             self.model.running_mean_std.load_state_dict(weights["running_mean_std"])
-        if self.normalize_value and "normalize_value" in weights:
+        if self.cfg.normalize_value and "normalize_value" in weights:
             self.model.value_mean_std.load_state_dict(weights["reward_mean_std"])
-        if self.mixed_precision and "scaler" in weights:
+        if self.cfg.mixed_precision and "scaler" in weights:
             self.scaler.load_state_dict(weights["scaler"])
 
     def set_weights(self, weights) -> None:
@@ -1321,7 +1267,7 @@ class PpoAgent:
 
         step_time = 0.0
 
-        for n in range(self.horizon_length):
+        for n in range(self.cfg.horizon_length):
             res_dict = self.get_action_values(self.obs)
             self.experience_buffer.update_data("obses", n, self.obs["obs"])
             self.experience_buffer.update_data("dones", n, self.dones)
@@ -1338,9 +1284,9 @@ class PpoAgent:
             step_time += step_time_end - step_time_start
 
             shaped_rewards = self.rewards_shaper(rewards)
-            if self.value_bootstrap and "time_outs" in infos:
+            if self.cfg.value_bootstrap and "time_outs" in infos:
                 shaped_rewards += (
-                    self.gamma
+                    self.cfg.gamma
                     * res_dict["values"]
                     * self.cast_obs(infos["time_outs"]).unsqueeze(1).float()
                 )
@@ -1396,10 +1342,10 @@ class PpoAgent:
         mb_rnn_states = self.mb_rnn_states
         step_time = 0.0
 
-        for n in range(self.horizon_length):
-            if n % self.seq_length == 0:
+        for n in range(self.cfg.horizon_length):
+            if n % self.cfg.seq_length == 0:
                 for s, mb_s in zip(self.rnn_states, mb_rnn_states):
-                    mb_s[n // self.seq_length, :, :, :] = s
+                    mb_s[n // self.cfg.seq_length, :, :, :] = s
 
             if self.has_asymmetric_critic:
                 self.asymmetric_critic_net.pre_step_rnn(n)
@@ -1423,9 +1369,9 @@ class PpoAgent:
 
             shaped_rewards = self.rewards_shaper(rewards)
 
-            if self.value_bootstrap and "time_outs" in infos:
+            if self.cfg.value_bootstrap and "time_outs" in infos:
                 shaped_rewards += (
-                    self.gamma
+                    self.cfg.gamma
                     * res_dict["values"]
                     * self.cast_obs(infos["time_outs"]).unsqueeze(1).float()
                 )
@@ -1439,7 +1385,7 @@ class PpoAgent:
             env_done_indices = all_done_indices[:: self.num_agents]
 
             if len(all_done_indices) > 0:
-                if self.zero_rnn_on_done:
+                if self.cfg.zero_rnn_on_done:
                     for s in self.rnn_states:
                         s[:, all_done_indices, :] = s[:, all_done_indices, :] * 0.0
                 if self.has_asymmetric_critic:
