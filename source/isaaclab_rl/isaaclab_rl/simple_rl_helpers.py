@@ -1,6 +1,8 @@
-from isaaclab_rl.rl_games import RlGamesVecEnvWrapper
-from omegaconf import OmegaConf
 from typing import Any
+
+from omegaconf import OmegaConf
+
+from isaaclab_rl.rl_games import RlGamesVecEnvWrapper
 
 
 # Same wrapper as RL-Games
@@ -31,8 +33,8 @@ def match_value(key: str, *cases) -> Any:
     )
 
     n_pairs = len(cases) // 2
-    possible_keys = [cases[2*i] for i in range(n_pairs)]
-    result_values = [cases[2*i + 1] for i in range(n_pairs)]
+    possible_keys = [cases[2 * i] for i in range(n_pairs)]
+    result_values = [cases[2 * i + 1] for i in range(n_pairs)]
     default_value = cases[-1]
 
     # Go through each pair: (possible_key, result_value)
@@ -43,9 +45,9 @@ def match_value(key: str, *cases) -> Any:
     # If no match, return the default
     return default_value
 
+
 def add_omegaconf_resolvers() -> None:
     OmegaConf.register_new_resolver("eq", lambda x, y: x.lower() == y.lower())
     OmegaConf.register_new_resolver("if", lambda pred, a, b: a if pred else b)
     OmegaConf.register_new_resolver("match_value", match_value)
     OmegaConf.register_new_resolver("eval", eval)
-

@@ -251,7 +251,9 @@ class PpoAgent:
         )
         self.obs = None
 
-        self.batch_size = self.cfg.horizon_length * self.cfg.num_actors * self.num_agents
+        self.batch_size = (
+            self.cfg.horizon_length * self.cfg.num_actors * self.num_agents
+        )
         self.batch_size_envs = self.cfg.horizon_length * self.cfg.num_actors
 
         # either minibatch_size_per_env or minibatch_size should be present in a config
@@ -274,7 +276,9 @@ class PpoAgent:
         )
         assert self.num_minibatches > 0, f"{self.batch_size}, {self.minibatch_size}"
 
-        self.scaler = torch.amp.GradScaler(device=str(self.device), enabled=self.cfg.mixed_precision)
+        self.scaler = torch.amp.GradScaler(
+            device=str(self.device), enabled=self.cfg.mixed_precision
+        )
 
         self.current_lr = self.cfg.learning_rate
         self.frame = 0
@@ -557,9 +561,7 @@ class PpoAgent:
         self.current_lengths = torch.zeros(
             batch_size, dtype=torch.float32, device=self.device
         )
-        self.dones = torch.ones(
-            (batch_size,), dtype=torch.uint8, device=self.device
-        )
+        self.dones = torch.ones((batch_size,), dtype=torch.uint8, device=self.device)
 
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
@@ -1024,7 +1026,11 @@ class PpoAgent:
                 av_kls /= self.world_size
             if self.cfg.schedule_type == "standard":
                 self.current_lr, self.current_entropy_coef = self.scheduler.update(
-                    self.current_lr, self.current_entropy_coef, self.epoch_num, 0, av_kls.item()
+                    self.current_lr,
+                    self.current_entropy_coef,
+                    self.epoch_num,
+                    0,
+                    av_kls.item(),
                 )
                 self.update_lr(self.current_lr)
 
@@ -1098,7 +1104,9 @@ class PpoAgent:
             if self.cfg.zero_rnn_on_done:
                 batch_dict["dones"] = input_dict["dones"]
 
-        with torch.amp.autocast(device_type=str(self.device), enabled=self.cfg.mixed_precision):
+        with torch.amp.autocast(
+            device_type=str(self.device), enabled=self.cfg.mixed_precision
+        ):
             res_dict = self.model(batch_dict)
             action_log_probs = res_dict["prev_neglogp"]
             values = res_dict["values"]
@@ -1128,7 +1136,9 @@ class PpoAgent:
                     mu_loss_low = torch.clamp_max(mu + soft_bound, 0.0) ** 2
                     b_losses = (mu_loss_low + mu_loss_high).sum(dim=-1)
                 else:
-                    raise ValueError(f"Unknown bound loss type {self.cfg.bound_loss_type}")
+                    raise ValueError(
+                        f"Unknown bound loss type {self.cfg.bound_loss_type}"
+                    )
             else:
                 b_losses = torch.zeros(1, device=self.device)
 
