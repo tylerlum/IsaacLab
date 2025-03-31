@@ -24,6 +24,10 @@ class KeyboardCommand:
     description: str = ""
 
     def __post_init__(self):
+        assert isinstance(self.key, carb.input.KeyboardInput), (
+            f"Invalid key: {self.key}, must be in carb.input.KeyboardInput.{[x for x in dir(carb.input.KeyboardInput) if not x.startswith('_') and x.isupper()]}."
+        )
+
         assert self.type in [
             carb.input.KeyboardEventType.KEY_PRESS,
             carb.input.KeyboardEventType.KEY_RELEASE,
