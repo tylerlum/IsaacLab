@@ -19,11 +19,13 @@ from isaaclab.sensors import ContactSensor, ContactSensorCfg
 from isaaclab.utils.math import quat_rotate_inverse, yaw_quat
 from isaaclab.sim.spawners.lights import LightCfg, DomeLightCfg
 import math
+from isaaclab.markers import VisualizationMarkersCfg
+from isaaclab.markers.config import BLUE_ARROW_X_MARKER_CFG, FRAME_MARKER_CFG, GREEN_ARROW_X_MARKER_CFG
+from isaaclab.markers import VisualizationMarkers
+
+import isaaclab.utils.math as math_utils
 
 import torch
-
-import isaacsim.core.utils.torch as torch_utils
-from isaacsim.core.utils.torch.rotations import compute_heading_and_up, compute_rot, quat_conjugate
 
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
 
@@ -44,6 +46,7 @@ class G1EnvCfg(DirectRLEnvCfg):
     action_space = 37
     observation_space = 123
     state_space = 0
+    debug_vis = True
 
     # simulation
     sim: SimulationCfg = SimulationCfg(dt=SIM_DT, render_interval=decimation, physics_material=physics_material,
@@ -82,7 +85,6 @@ class G1EnvCfg(DirectRLEnvCfg):
     )
 
     # command
-    # TODO: Figure out how to use this or not use
     base_velocity_command = mdp.UniformVelocityCommandCfg(
         asset_name="robot",
         resampling_time_range=(10.0, 10.0),
@@ -98,6 +100,23 @@ class G1EnvCfg(DirectRLEnvCfg):
             heading=(-math.pi, math.pi),
         ),
     )
+
+    command_vel_visualizer_cfg: VisualizationMarkersCfg = GREEN_ARROW_X_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/velocity_command"
+    )
+    """The configuration for the command velocity visualization marker. Defaults to GREEN_ARROW_X_MARKER_CFG."""
+
+    current_vel_visualizer_cfg: VisualizationMarkersCfg = BLUE_ARROW_X_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/velocity_current"
+    )
+    """The configuration for the current velocity visualization marker. Defaults to BLUE_ARROW_X_MARKER_CFG."""
+
+    pose_visualizer_cfg: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/pose"
+    )
+    """The configuration for the pose visualization marker. Defaults to FRAME_MARKER_CFG."""
+    pose_visualizer_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+
 
 REWARD_NAMES = [
     "lin_vel_z_l2",
@@ -119,6 +138,58 @@ REWARD_NAMES = [
     "joint_deviation_fingers",
     "joint_deviation_torso",
 ]
+
+
+def sample_commands(num_envs: int, device: torch.device, lin_vel_x: tuple[float, float], lin_vel_y: tuple[float, float], ang_vel_z: tuple[float, float], heading: tuple[float, float], rel_heading_envs: float, rel_standing_envs: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Sample new commands at every reset
+
+    There are 3 types of envs:
+    * Heading envs: follow heading command (vel_commands_b will be changing at each timestep to track the heading)
+    * Standing envs: zero velocity command
+    * Normal envs: follow fixed randomly-sampled velocity command
+    """
+    # Sample vel commands to be used for normal envs
+    r = torch.empty(num_envs, device=device)
+    vel_commands_b = torch.zeros(num_envs, 3, device=device)
+    vel_commands_b[:, 0] = r.uniform_(*lin_vel_x)
+    vel_commands_b[:, 1] = r.uniform_(*lin_vel_y)
+    vel_commands_b[:, 2] = r.uniform_(*ang_vel_z)
+
+    # Sample which envs are heading envs or standing envs
+    heading_commands = r.uniform_(*heading)
+    is_heading_env = r.uniform_(0.0, 1.0) <= rel_heading_envs
+    is_standing_env = r.uniform_(0.0, 1.0) <= rel_standing_envs
+    is_heading_env[is_standing_env] = False
+
+    return vel_commands_b, heading_commands, is_heading_env, is_standing_env
+
+def update_commands(vel_commands_b: torch.Tensor, heading_commands: torch.Tensor, heading: torch.Tensor, is_heading_env: torch.Tensor, is_standing_env: torch.Tensor, heading_control_stiffness: float, ang_vel_z: tuple[float, float]) -> torch.Tensor:
+    heading_error = math_utils.wrap_to_pi(heading_commands - heading)
+    
+    new_vel_commands_b = vel_commands_b.clone()
+    new_vel_commands_b[is_heading_env, 2] = torch.clip(
+        heading_control_stiffness * heading_error[is_heading_env],
+        min=ang_vel_z[0],
+        max=ang_vel_z[1],
+    )
+    new_vel_commands_b[is_standing_env, :] = 0.0
+    return new_vel_commands_b
+
+def resolve_xy_velocity_to_arrow(xy_velocity_b: torch.Tensor, scale: tuple[float, float, float], device: torch.device, base_quat_w: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    # scale
+    arrow_scale = torch.tensor(scale, device=device).repeat(xy_velocity_b.shape[0], 1)
+    arrow_scale[:, 0] *= torch.linalg.norm(xy_velocity_b, dim=1) * 3.0
+
+    # diretion
+    heading_angle = torch.atan2(xy_velocity_b[:, 1], xy_velocity_b[:, 0])
+    zeros = torch.zeros_like(heading_angle)
+    arrow_quat = math_utils.quat_from_euler_xyz(zeros, zeros, heading_angle)
+
+    # convert everything back from base to world frame
+    arrow_quat = math_utils.quat_mul(base_quat_w, arrow_quat)
+    return arrow_scale, arrow_quat
+
 
 class G1Env(DirectRLEnv):
     cfg: G1EnvCfg
@@ -165,16 +236,20 @@ class G1Env(DirectRLEnv):
         print("!" * 100)
 
         # State
+        self.actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
         self.prev_actions = torch.zeros(self.num_envs, self.cfg.action_space, device=self.device)
 
         # Commands
-        self.command = torch.zeros(self.num_envs, 3, device=self.device)
+        self.vel_commands_b, self.heading_commands, self.is_heading_env, self.is_standing_env = torch.zeros(self.num_envs, 3, device=self.device), torch.zeros(self.num_envs, device=self.device), torch.zeros(self.num_envs, device=self.device, dtype=torch.bool), torch.zeros(self.num_envs, device=self.device, dtype=torch.bool)
 
         # Logging
         self._episode_sums = {
             key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
             for key in REWARD_NAMES
         }
+
+        # Debug
+        self.set_debug_vis(self.cfg.debug_vis)
 
 
     def _setup_scene(self):
@@ -197,9 +272,7 @@ class G1Env(DirectRLEnv):
         self.cfg.light.func("/World/Light", self.cfg.light)
 
     def _pre_physics_step(self, actions: torch.Tensor):
-        if hasattr(self, "actions"):
-            self.prev_actions = self.actions.clone()
-
+        self.prev_actions = self.actions.clone()
         self.actions = actions.clone()
 
     def _apply_action(self):
@@ -254,15 +327,15 @@ class G1Env(DirectRLEnv):
             "flat_orientation_l2": self.robot.data.projected_gravity_b[:, :2].square().sum(dim=1),  # (don't tip sideways or forwards)
 
             "termination_penalty": self.reset_terminated.float(),  # (don't terminate) This works because _get_dones() is called before _get_rewards()
-            "track_lin_vel_xy_exp": torch.exp(-(self.command[:, :2] - robot_lin_vel_rotated[:, :2]).square().sum(dim=1) / 0.5**2),
-            "track_ang_vel_z_exp": torch.exp(-(self.command[:, 2] - self.robot.data.root_ang_vel_w[:, 2]).square() / 0.5**2),
-            "feet_air_time": torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0).min(dim=1).values.clamp(max=0.4) * (self.command[:, :2].norm(dim=1) > 0.1),
-            "feet_slide": (self.robot.data.body_lin_vel_w[:, self._ankle_link_idx, :2].norm(dim=-1) * contacts[:, self._contact_ankle_link_idx]).sum(dim=1),
-            "dof_pos_limits_ankle": (under_min + over_max)[:, self._ankle_joint_idx].sum(dim=1),
-            "joint_deviation_hip": joint_deviation[:, self._hip_joint_idx].sum(dim=1),
-            "joint_deviation_arms": joint_deviation[:, self._arm_joint_idx].sum(dim=1),
-            "joint_deviation_fingers": joint_deviation[:, self._finger_joint_idx].sum(dim=1),
-            "joint_deviation_torso": joint_deviation[:, self._torso_joint_idx].sum(dim=1),
+            "track_lin_vel_xy_exp": torch.exp(-(self.vel_commands_b[:, :2] - robot_lin_vel_rotated[:, :2]).square().sum(dim=1) / 0.5**2),  # (track the commanded lin_vel_xy)
+            "track_ang_vel_z_exp": torch.exp(-(self.vel_commands_b[:, 2] - self.robot.data.root_ang_vel_w[:, 2]).square() / 0.5**2),  #  (track the commanded ang_vel_z)
+            "feet_air_time": torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0).min(dim=1).values.clamp(max=0.4) * (self.vel_commands_b[:, :2].norm(dim=1) > 0.1),  # (Promote stable single-stance gait)
+            "feet_slide": (self.robot.data.body_lin_vel_w[:, self._ankle_link_idx, :2].norm(dim=-1) * contacts[:, self._contact_ankle_link_idx]).sum(dim=1),  # (don't slide feet)
+            "dof_pos_limits_ankle": (under_min + over_max)[:, self._ankle_joint_idx].sum(dim=1),  # (don't exceed dof pos limits of ankles)
+            "joint_deviation_hip": joint_deviation[:, self._hip_joint_idx].sum(dim=1),  # (don't deviate from default hip positions)
+            "joint_deviation_arms": joint_deviation[:, self._arm_joint_idx].sum(dim=1),  # (don't deviate from default arm positions)
+            "joint_deviation_fingers": joint_deviation[:, self._finger_joint_idx].sum(dim=1),  # (don't deviate from default finger positions)
+            "joint_deviation_torso": joint_deviation[:, self._torso_joint_idx].sum(dim=1),  # (don't deviate from default torso position)
         }
         reward_weights = {
             # velocity_env_cfg.py
@@ -290,10 +363,33 @@ class G1Env(DirectRLEnv):
         assert set(reward_weights.keys()) == set(REWARD_NAMES), f"Rewards and reward weights do not match: {reward_weights.keys()} vs {REWARD_NAMES}\nOnly in rewards: {set(rewards.keys()) - set(REWARD_NAMES)}\nOnly in reward_weights: {set(reward_weights.keys()) - set(REWARD_NAMES)}"
 
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
+
         # Logging
         for key, value in rewards.items():
             self._episode_sums[key] += value
+
+        # HACK: The typical step looks like:
+        # 1. _pre_physics_step() (comput actions)
+        # 2. _apply_action() (apply actions)
+        # 3. physics_step() (simulate)
+        # 4. _compute_intermediate_values() (compute intermediate values)
+        # 5. _get_dones() (compute done/time_out)
+        # 6. _get_rewards() (compute rewards)
+        # 7. _get_observations() (compute observations)
+        # In this pipeline, we want to update some internal state after each physics step, but before the observation step.
+        self._update_internal_state()
         return reward
+
+    def _update_internal_state(self):
+        self.vel_commands_b[:] = update_commands(
+            vel_commands_b=self.vel_commands_b,
+            heading_commands=self.heading_commands,
+            heading=self.robot.data.heading_w,
+            is_heading_env=self.is_heading_env,
+            is_standing_env=self.is_standing_env,
+            heading_control_stiffness=self.cfg.base_velocity_command.heading_control_stiffness,
+            ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z
+        )
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         self._compute_intermediate_values()
@@ -322,7 +418,28 @@ class G1Env(DirectRLEnv):
         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
         # Reset state
+        self.actions[env_ids] = torch.zeros(len(env_ids), self.cfg.action_space, device=self.device)
         self.prev_actions[env_ids] = torch.zeros(len(env_ids), self.cfg.action_space, device=self.device)
+
+        self.vel_commands_b[env_ids], self.heading_commands[env_ids], self.is_heading_env[env_ids], self.is_standing_env[env_ids] = sample_commands(
+            num_envs=self.num_envs,
+            device=self.device,
+            lin_vel_x=self.cfg.base_velocity_command.ranges.lin_vel_x,
+            lin_vel_y=self.cfg.base_velocity_command.ranges.lin_vel_y,
+            ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z,
+            heading=self.cfg.base_velocity_command.ranges.heading,
+            rel_heading_envs=self.cfg.base_velocity_command.rel_heading_envs,
+            rel_standing_envs=self.cfg.base_velocity_command.rel_standing_envs
+        )
+        self.vel_commands_b[:] = update_commands(
+            vel_commands_b=self.vel_commands_b,
+            heading_commands=self.heading_commands,
+            heading=self.robot.data.heading_w,
+            is_heading_env=self.is_heading_env,
+            is_standing_env=self.is_standing_env,
+            heading_control_stiffness=self.cfg.base_velocity_command.heading_control_stiffness,
+            ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z
+        )
 
         # Logging
         extras = dict()
@@ -336,3 +453,48 @@ class G1Env(DirectRLEnv):
 
         self._compute_intermediate_values()
 
+    def _set_debug_vis_impl(self, debug_vis: bool):
+        # create markers if necessary for the first tome
+        if debug_vis:
+            if not hasattr(self, "command_vel_visualizer"):
+                self.command_vel_visualizer = VisualizationMarkers(self.cfg.command_vel_visualizer_cfg)
+            if not hasattr(self, "current_vel_visualizer"):
+                self.current_vel_visualizer = VisualizationMarkers(self.cfg.current_vel_visualizer_cfg)
+            if not hasattr(self, "pose_visualizer"):
+                self.pose_visualizer = VisualizationMarkers(self.cfg.pose_visualizer_cfg)
+
+            # set their visibility to true
+            self.command_vel_visualizer.set_visibility(True)
+            self.current_vel_visualizer.set_visibility(True)
+            self.pose_visualizer.set_visibility(True)
+        else:
+            if hasattr(self, "command_vel_visualizer"):
+                self.command_vel_visualizer.set_visibility(False)
+            if hasattr(self, "current_vel_visualizer"):
+                self.current_vel_visualizer.set_visibility(False)
+            if hasattr(self, "pose_visualizer"):
+                self.pose_visualizer.set_visibility(False)
+
+    def _debug_vis_callback(self, event):
+        # Make sure the robot is initialized
+        if not self.robot.is_initialized:
+            return
+
+        # Place marker above the robot
+        base_pos_w = self.robot.data.root_pos_w.clone()
+        base_pos_w[:, 2] += 0.5
+
+        # Convert the velocity command to an arrow
+        vel_command_arrow_scale, vel_command_arrow_quat = resolve_xy_velocity_to_arrow(xy_velocity_b=self.vel_commands_b[:, :2],
+                                                                                       scale=self.command_vel_visualizer.cfg.markers["arrow"].scale,
+                                                                                       device=self.device,
+                                                                                       base_quat_w=self.robot.data.root_quat_w)
+        vel_arrow_scale, vel_arrow_quat = resolve_xy_velocity_to_arrow(xy_velocity_b=self.robot.data.root_lin_vel_b[:, :2],
+                                                                                       scale=self.current_vel_visualizer.cfg.markers["arrow"].scale,
+                                                                                       device=self.device,
+                                                                                       base_quat_w=self.robot.data.root_quat_w)
+
+        # update the markers
+        self.command_vel_visualizer.visualize(translations=base_pos_w, orientations=vel_command_arrow_quat, scales=vel_command_arrow_scale)
+        self.current_vel_visualizer.visualize(translations=base_pos_w, orientations=vel_arrow_quat, scales=vel_arrow_scale)
+        self.pose_visualizer.visualize(translations=base_pos_w, orientations=self.robot.data.root_quat_w, scales=torch.tensor([0.1, 0.1, 0.1], device=self.device).unsqueeze(0).repeat_interleave(self.num_envs, dim=0))
