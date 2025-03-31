@@ -155,8 +155,6 @@ class PpoAgent:
         self.global_rank = 0
         self.world_size = 1
 
-        self.curr_frames = 0
-
         if self.cfg.multi_gpu:
             # local rank of the GPU in a node
             self.local_rank = int(os.getenv("LOCAL_RANK", "0"))
@@ -177,12 +175,11 @@ class PpoAgent:
 
         self.env = env
         self.env_info = self.env.get_env_info()
-
         self.value_size = self.env_info.get("value_size", 1)
         self.observation_space = self.env_info["observation_space"]
+        self.num_agents = self.env_info.get("agents", 1)
 
         self.has_asymmetric_critic = self.cfg.asymmetric_critic is not None
-
         if self.has_asymmetric_critic:
             self.state_space = self.env_info.get("state_space", None)
             if isinstance(self.state_space, gym.spaces.Dict):
@@ -197,7 +194,9 @@ class PpoAgent:
         # Setting learning rate scheduler
         if self.cfg.lr_schedule == "adaptive":
             assert self.cfg.kl_threshold is not None
-            self.scheduler = schedulers.AdaptiveScheduler(self.cfg.kl_threshold)
+            self.scheduler = schedulers.AdaptiveScheduler(
+                kl_threshold=self.cfg.kl_threshold
+            )
 
         elif self.cfg.lr_schedule == "linear":
             if self.cfg.max_epochs == -1 and self.cfg.max_frames == -1:
@@ -224,7 +223,6 @@ class PpoAgent:
             self.scheduler = schedulers.IdentityScheduler()
 
         self.rewards_shaper = DefaultRewardsShaper(self.cfg.reward_shaper)
-        self.num_agents = self.env_info.get("agents", 1)
 
         self.bptt_len = (
             self.cfg.bptt_length
@@ -241,14 +239,14 @@ class PpoAgent:
 
         print("current training device:", self.device)
         self.game_rewards = torch_ext.AverageMeter(
-            self.value_size, self.cfg.games_to_track
+            in_shape=self.value_size, max_size=self.cfg.games_to_track
         ).to(self.device)
         self.game_shaped_rewards = torch_ext.AverageMeter(
-            self.value_size, self.cfg.games_to_track
+            in_shape=self.value_size, max_size=self.cfg.games_to_track
         ).to(self.device)
-        self.game_lengths = torch_ext.AverageMeter(1, self.cfg.games_to_track).to(
-            self.device
-        )
+        self.game_lengths = torch_ext.AverageMeter(
+            in_shape=1, max_size=self.cfg.games_to_track
+        ).to(self.device)
         self.obs = None
 
         self.batch_size = (
@@ -265,10 +263,6 @@ class PpoAgent:
             else self.cfg.num_actors * self.cfg.minibatch_size_per_env
         )
         assert self.minibatch_size > 0
-
-        self.games_num = (
-            self.minibatch_size // self.cfg.seq_length
-        )  # it is used only for current rnn implementation
 
         self.num_minibatches = self.batch_size // self.minibatch_size
         assert self.batch_size % self.minibatch_size == 0, (
@@ -288,10 +282,7 @@ class PpoAgent:
         self.epoch_num = 0
         self.curr_frames = 0
 
-        # a folder inside of train_dir containing everything related to a particular experiment
         self.experiment_dir = experiment_dir
-
-        # folders inside <train_dir>/<experiment_dir> for a specific purpose
         self.nn_dir = self.experiment_dir / "nn"
         self.summaries_dir = self.experiment_dir / "summaries"
 
@@ -372,12 +363,12 @@ class PpoAgent:
             ).to(self.device)
 
         self.dataset = datasets.PPODataset(
-            self.batch_size,
-            self.minibatch_size,
-            self.is_discrete,
-            self.is_rnn,
-            self.device,
-            self.cfg.seq_length,
+            batch_size=self.batch_size,
+            minibatch_size=self.minibatch_size,
+            is_discrete=self.is_discrete,
+            is_rnn=self.is_rnn,
+            device=self.device,
+            seq_length=self.cfg.seq_length,
         )
         if self.cfg.normalize_value:
             self.value_mean_std = (
