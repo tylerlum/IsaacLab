@@ -96,9 +96,7 @@ class AsymmetricCritic(nn.Module):
         )
         assert self.minibatch_size > 0
         self.batch_size = self.horizon_length * self.num_actors
-        self.num_minibatches = (
-            self.batch_size // self.minibatch_size
-        )
+        self.num_minibatches = self.batch_size // self.minibatch_size
 
         self.writer = writer
         self.optimizer = torch.optim.Adam(
@@ -147,7 +145,6 @@ class AsymmetricCritic(nn.Module):
         self.dataset = datasets.PPODataset(
             batch_size=self.batch_size,
             minibatch_size=self.minibatch_size,
-            is_discrete=True,
             is_rnn=self.is_rnn,
             device=self.ppo_device,
             seq_length=self.seq_length,

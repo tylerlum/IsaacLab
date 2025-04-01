@@ -250,9 +250,7 @@ class PpoAgent:
         self.obs = None
 
         self.batch_size_envs = self.cfg.horizon_length * self.cfg.num_actors
-        self.batch_size = (
-            self.batch_size_envs * self.num_agents
-        )
+        self.batch_size = self.batch_size_envs * self.num_agents
 
         # either minibatch_size_per_env or minibatch_size should be present in a config
         # if both are present, minibatch_size is used
@@ -310,7 +308,6 @@ class PpoAgent:
         self.last_state_indices = None
 
         ## ContinuousA2CBase ##
-        self.is_discrete = False
         action_space = self.env_info["action_space"]
         self.actions_num = action_space.shape[0]
 
@@ -365,7 +362,6 @@ class PpoAgent:
         self.dataset = datasets.PPODataset(
             batch_size=self.batch_size,
             minibatch_size=self.minibatch_size,
-            is_discrete=self.is_discrete,
             is_rnn=self.is_rnn,
             device=self.device,
             seq_length=self.cfg.seq_length,
