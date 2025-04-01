@@ -390,7 +390,8 @@ class G1Env(DirectRLEnv):
             [obs_dict[key] for key in obs_dict],
             dim=-1,
         )
-        obs = torch.zeros(self.num_envs, self.cfg.observation_space, device=self.device)
+
+        # obs = torch.zeros(self.num_envs, self.cfg.observation_space, device=self.device)
 
         assert obs.shape == (self.num_envs, self.cfg.observation_space), (
             f"obs.shape: {obs.shape} != (self.num_envs, self.cfg.observation_space): {(self.num_envs, self.cfg.observation_space)}"
@@ -563,7 +564,7 @@ class G1Env(DirectRLEnv):
             self.is_heading_env[env_ids],
             self.is_standing_env[env_ids],
         ) = sample_commands(
-            num_envs=self.num_envs,
+            num_envs=len(env_ids),
             device=self.device,
             lin_vel_x=self.cfg.base_velocity_command.ranges.lin_vel_x,
             lin_vel_y=self.cfg.base_velocity_command.ranges.lin_vel_y,
