@@ -249,10 +249,10 @@ class PpoAgent:
         ).to(self.device)
         self.obs = None
 
-        self.batch_size = (
-            self.cfg.horizon_length * self.cfg.num_actors * self.num_agents
-        )
         self.batch_size_envs = self.cfg.horizon_length * self.cfg.num_actors
+        self.batch_size = (
+            self.batch_size_envs * self.num_agents
+        )
 
         # either minibatch_size_per_env or minibatch_size should be present in a config
         # if both are present, minibatch_size is used
@@ -345,7 +345,7 @@ class PpoAgent:
         if self.has_asymmetric_critic:
             print("Adding Asymmetric Critic Network")
             assert self.cfg.asymmetric_critic is not None
-            self.asymmetric_critic_net = asymmetric_critic.AsymmetricCriticTrain(
+            self.asymmetric_critic_net = asymmetric_critic.AsymmetricCritic(
                 state_shape=self.state_shape,
                 value_size=self.value_size,
                 ppo_device=self.device,

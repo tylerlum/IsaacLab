@@ -18,7 +18,6 @@ class AsymmetricCriticConfig:
     normalize_input: bool  # Required (no default given in code)
     learning_rate: float  # Required
     mini_epochs: int  # Required
-    clip_value: float  # Required
 
     # Optional fields with defaults based on get(..., default)
     truncate_grads: bool = False
@@ -32,7 +31,7 @@ class AsymmetricCriticConfig:
     freeze_critic: bool = False
 
 
-class AsymmetricCriticTrain(nn.Module):
+class AsymmetricCritic(nn.Module):
     def __init__(
         self,
         state_shape: Tuple[int, ...],
@@ -51,7 +50,7 @@ class AsymmetricCriticTrain(nn.Module):
         zero_rnn_on_done: bool,
     ) -> None:
         nn.Module.__init__(self)
-        self.config = config
+        self.cfg = config
 
         self.ppo_device = ppo_device
         self.num_agents, self.horizon_length, self.num_actors, self.seq_length = (
@@ -66,25 +65,21 @@ class AsymmetricCriticTrain(nn.Module):
         self.value_size = value_size
         self.max_epochs = max_epochs
         self.multi_gpu = multi_gpu
-        self.truncate_grads = config.truncate_grads
-        self.config = config
-        self.normalize_input = config.normalize_input
         self.zero_rnn_on_done = zero_rnn_on_done
 
         self.model = models.ModelAsymmetricCritic(
-            network_config=config.network,
+            network_config=self.cfg.network,
             actions_num=num_actions,
             input_shape=state_shape,
             normalize_value=self.normalize_value,
-            normalize_input=self.normalize_input,
+            normalize_input=self.cfg.normalize_input,
             value_size=value_size,
             num_seqs=num_actors,
         )
-        self.lr = float(config.learning_rate)
-        self.linear_lr = config.lr_schedule == "linear"
+        self.lr = float(self.cfg.learning_rate)
 
         # todo: support max frames as well
-        if self.linear_lr:
+        if self.cfg.lr_schedule == "linear":
             self.scheduler = schedulers.LinearScheduler(
                 self.lr,
                 max_steps=self.max_epochs,
@@ -94,38 +89,30 @@ class AsymmetricCriticTrain(nn.Module):
         else:
             self.scheduler = schedulers.IdentityScheduler()
 
-        self.mini_epoch = config.mini_epochs
-        self.minibatch_size_per_env = config.minibatch_size_per_env
         self.minibatch_size = (
             config.minibatch_size
             if config.minibatch_size is not None
-            else self.num_actors * self.minibatch_size_per_env
+            else self.num_actors * self.cfg.minibatch_size_per_env
         )
         assert self.minibatch_size > 0
+        self.batch_size = self.horizon_length * self.num_actors
         self.num_minibatches = (
-            self.horizon_length * self.num_actors // self.minibatch_size
+            self.batch_size // self.minibatch_size
         )
-        self.clip_value = config.clip_value
 
         self.writer = writer
-        self.weight_decay = config.weight_decay
         self.optimizer = torch.optim.Adam(
             self.model.parameters(),
             float(self.lr),
             eps=1e-08,
-            weight_decay=self.weight_decay,
+            weight_decay=self.cfg.weight_decay,
         )
         self.frame = 0
         self.epoch_num = 0
         self.running_mean_std = None
-        self.grad_norm = config.grad_norm
-        self.truncate_grads = config.truncate_grads
-        self.e_clip = config.e_clip
-        self.truncate_grad = self.config.truncate_grads
 
         self.is_rnn = self.model.is_rnn()
         self.rnn_states = None
-        self.batch_size = self.horizon_length * self.num_actors
 
         if self.is_rnn:
             self.rnn_states = self.model.get_default_rnn_state()
@@ -158,12 +145,12 @@ class AsymmetricCriticTrain(nn.Module):
             self.device_name = "cuda:" + str(self.local_rank)
 
         self.dataset = datasets.PPODataset(
-            self.batch_size,
-            self.minibatch_size,
-            True,
-            self.is_rnn,
-            self.ppo_device,
-            self.seq_length,
+            batch_size=self.batch_size,
+            minibatch_size=self.minibatch_size,
+            is_discrete=True,
+            is_rnn=self.is_rnn,
+            device=self.ppo_device,
+            seq_length=self.seq_length,
         )
 
     def update_lr(self, lr: float) -> None:
@@ -178,7 +165,7 @@ class AsymmetricCriticTrain(nn.Module):
     def get_stats_weights(self, model_stats: bool = False) -> Dict[str, Any]:
         state = {}
         if model_stats:
-            if self.normalize_input:
+            if self.cfg.normalize_input:
                 state["running_mean_std"] = self.model.running_mean_std.state_dict()
             if self.normalize_value:
                 state["reward_mean_std"] = self.model.value_mean_std.state_dict()
@@ -295,15 +282,15 @@ class AsymmetricCriticTrain(nn.Module):
     def train_net(self) -> float:
         self.train()
         loss = 0
-        for _ in range(self.mini_epoch):
-            if self.config.freeze_critic:
+        for _ in range(self.cfg.mini_epochs):
+            if self.cfg.freeze_critic:
                 break
             for idx in range(len(self.dataset)):
                 loss += self.train_critic(self.dataset[idx])
-            if self.normalize_input:
+            if self.cfg.normalize_input:
                 self.model.running_mean_std.eval()  # don't need to update statstics more than one miniepoch
 
-        avg_loss = loss / (self.mini_epoch * self.num_minibatches)
+        avg_loss = loss / (self.cfg.mini_epochs * self.num_minibatches)
 
         self.epoch_num += 1
         self.lr, _ = self.scheduler.update(self.lr, 0, self.epoch_num, 0, 0)
@@ -334,7 +321,7 @@ class AsymmetricCriticTrain(nn.Module):
         values = res_dict["values"]
 
         value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(
-            -self.e_clip, self.e_clip
+            -self.cfg.e_clip, self.cfg.e_clip
         )
         value_losses = (values - returns_batch) ** 2
         value_losses_clipped = (value_pred_clipped - returns_batch) ** 2
@@ -368,8 +355,8 @@ class AsymmetricCriticTrain(nn.Module):
                     )
                     offset += param.numel()
 
-        if self.truncate_grads:
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm)
+        if self.cfg.truncate_grads:
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_norm)
 
         self.optimizer.step()
 
