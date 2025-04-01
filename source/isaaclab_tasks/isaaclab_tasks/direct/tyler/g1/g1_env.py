@@ -9,7 +9,9 @@ import math
 
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
+import numpy as np
 import torch
+import torch.nn as nn
 from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
@@ -29,6 +31,7 @@ from isaaclab.utils.math import quat_rotate_inverse, yaw_quat
 from isaaclab_assets.robots.unitree import G1_CFG
 
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
+import wandb
 
 SIM_DT = 0.005
 physics_material = sim_utils.RigidBodyMaterialCfg(
@@ -226,6 +229,38 @@ def resolve_xy_velocity_to_arrow(
     return arrow_scale, arrow_quat
 
 
+class AverageMeter(nn.Module):
+    def __init__(self, in_shape: int = 1, max_size: int = 1000) -> None:
+        super().__init__()
+        self.max_size = max_size
+
+        self.current_size = 0
+        self.register_buffer("mean", torch.zeros(in_shape, dtype=torch.float32))
+
+    def update(self, values: torch.Tensor) -> None:
+        assert len(values.shape) == 1, f"values.shape: {values.shape}"
+        size = values.size()[0]
+        if size == 0:
+            return
+
+        new_mean = torch.mean(values.float(), dim=0)
+        size = np.clip(size, 0, self.max_size)
+        old_size = min(self.max_size - size, self.current_size)
+        size_sum = old_size + size
+        self.current_size = size_sum
+        self.mean = (self.mean * old_size + new_mean * size) / size_sum
+
+    def clear(self) -> None:
+        self.current_size = 0
+        self.mean.fill_(0.0)
+
+    def __len__(self) -> int:
+        return self.current_size
+
+    def get_mean(self) -> np.ndarray:
+        return self.mean.squeeze(0).cpu().numpy()
+
+
 class G1Env(DirectRLEnv):
     cfg: G1EnvCfg
 
@@ -316,6 +351,16 @@ class G1Env(DirectRLEnv):
             self.num_envs, self.cfg.action_space, device=self.device
         )
 
+        self.aggregated_reward_buf = torch.zeros(self.num_envs, device=self.device)
+        self.individual_aggregated_reward_bufs = {
+            reward_name: torch.zeros(self.num_envs, device=self.device)
+            for reward_name in REWARD_NAMES
+        }
+        self.individual_weighted_aggregated_reward_bufs = {
+            reward_name: torch.zeros(self.num_envs, device=self.device)
+            for reward_name in REWARD_NAMES
+        }
+
         # Commands
         (
             self.vel_commands_b,
@@ -330,10 +375,15 @@ class G1Env(DirectRLEnv):
         )
 
         # Logging
-        self._episode_sums = {
-            key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
-            for key in REWARD_NAMES
+        self.wandb_dict = {}
+        self.reward_metric = AverageMeter().to(self.device)
+        self.individual_reward_metrics = {
+            reward_name: AverageMeter().to(self.device) for reward_name in REWARD_NAMES
         }
+        self.individual_weighted_reward_metrics = {
+            reward_name: AverageMeter().to(self.device) for reward_name in REWARD_NAMES
+        }
+        self.episode_length_metric = AverageMeter().to(self.device)
 
         # Debug
         self.set_debug_vis(self.cfg.debug_vis)
@@ -437,7 +487,7 @@ class G1Env(DirectRLEnv):
         )
 
         # fmt: off
-        rewards = {
+        self.individual_reward_bufs = {
             # velocity_env_cfg.py
             "lin_vel_z_l2": self.robot.data.root_lin_vel_b[:, 2].square(),  # (don't move up/down)
             "ang_vel_xy_l2": self.robot.data.root_ang_vel_b[:, :2].square().sum(dim=1), # (don't tip sideways or forwards)
@@ -459,43 +509,55 @@ class G1Env(DirectRLEnv):
             "joint_deviation_fingers": joint_deviation[:, self._finger_joint_idxs].sum(dim=1),  # (don't deviate from default finger positions)
             "joint_deviation_torso": joint_deviation[:, self._torso_joint_idxs].sum(dim=1),  # (don't deviate from default torso position)
         }
+        assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
+            f"Individual reward buffers and reward names do not match: {self.individual_reward_bufs.keys()} vs {REWARD_NAMES}\nOnly in individual reward buffers: {set(self.individual_reward_bufs.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_bufs.keys())}"
+        )
 
-        reward_weights = {
-            # velocity_env_cfg.py
-            "lin_vel_z_l2": -0.2,
-            "ang_vel_xy_l2": -0.05,
-            "dof_torques_l2": -2.0e-6,
-            "dof_acc_l2": -1.0e-7,
-            "action_rate_l2": -0.005,
-            # "undesired_contacts": -1.0,
-            "flat_orientation_l2": -1.0,
+        if not hasattr(self, "reward_weights"):
+            self.individual_reward_weights = {
+                # velocity_env_cfg.py
+                "lin_vel_z_l2": -0.2,
+                "ang_vel_xy_l2": -0.05,
+                "dof_torques_l2": -2.0e-6,
+                "dof_acc_l2": -1.0e-7,
+                "action_rate_l2": -0.005,
+                # "undesired_contacts": -1.0,
+                "flat_orientation_l2": -1.0,
 
-            # rough_env_cfg.py
-            "termination_penalty": -200.0,
-            "track_lin_vel_xy_exp": 1.0,
-            "track_ang_vel_z_exp": 1.0,
-            "feet_air_time": 0.75,
-            "feet_slide": -0.1,
-            "dof_pos_limits_ankle": -1.0,
-            "joint_deviation_hip": -0.1,
-            "joint_deviation_arms": -0.1,
-            "joint_deviation_fingers": -0.05,
-            "joint_deviation_torso": -0.1,
-        }
+                # rough_env_cfg.py
+                "termination_penalty": -200.0,
+                "track_lin_vel_xy_exp": 1.0,
+                "track_ang_vel_z_exp": 1.0,
+                "feet_air_time": 0.75,
+                "feet_slide": -0.1,
+                "dof_pos_limits_ankle": -1.0,
+                "joint_deviation_hip": -0.1,
+                "joint_deviation_arms": -0.1,
+                "joint_deviation_fingers": -0.05,
+                "joint_deviation_torso": -0.1,
+            }
+            assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
+                f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
+            )
+
+            self.reward_weights = torch.tensor(
+                [self.individual_reward_weights[name] for name in REWARD_NAMES],
+                device=self.device,
+            ).reshape(1, -1)
         # fmt: on
 
-        assert set(rewards.keys()) == set(REWARD_NAMES), (
-            f"Rewards and reward weights do not match: {rewards.keys()} vs {REWARD_NAMES}\nOnly in rewards: {set(rewards.keys()) - set(REWARD_NAMES)}\nOnly in reward_weights: {set(reward_weights.keys()) - set(REWARD_NAMES)}"
+        self.reward_matrix = torch.stack(
+            [self.individual_reward_bufs[name] for name in REWARD_NAMES], dim=1
         )
-        assert set(reward_weights.keys()) == set(REWARD_NAMES), (
-            f"Rewards and reward weights do not match: {reward_weights.keys()} vs {REWARD_NAMES}\nOnly in rewards: {set(rewards.keys()) - set(REWARD_NAMES)}\nOnly in reward_weights: {set(reward_weights.keys()) - set(REWARD_NAMES)}"
+        assert self.reward_matrix.shape == (self.num_envs, len(REWARD_NAMES)), (
+            f"reward_matrix.shape: {self.reward_matrix.shape} != (self.num_envs, len(REWARD_NAMES)): {(self.num_envs, len(REWARD_NAMES))}"
         )
 
-        reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
+        self.weighted_reward_matrix = self.reward_matrix * self.reward_weights
+        total_reward = self.weighted_reward_matrix.sum(dim=1)
 
-        # Logging
-        for key, value in rewards.items():
-            self._episode_sums[key] += value
+        # HACK: Set the self.reward_buf to the total_reward now so that _end_of_step() can use it
+        self.reward_buf = total_reward
 
         # HACK: The typical step looks like:
         # 1. _pre_physics_step() (comput actions)
@@ -505,11 +567,12 @@ class G1Env(DirectRLEnv):
         # 5. _get_dones() (compute done/time_out)
         # 6. _get_rewards() (compute rewards)
         # 7. _get_observations() (compute observations)
-        # In this pipeline, we want to update some internal state after each physics step, but before the observation step.
-        self._update_internal_state()
-        return reward
+        # In this pipeline, we add _end_of_step() to update some internal state after each physics step, but before the observation step.
+        self._end_of_step()
+        return total_reward
 
-    def _update_internal_state(self):
+    #### END OF STEP START  ####
+    def _end_of_step(self):
         self.vel_commands_b[:] = update_commands(
             vel_commands_b=self.vel_commands_b,
             heading_commands=self.heading_commands,
@@ -520,6 +583,66 @@ class G1Env(DirectRLEnv):
             ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z,
         )
 
+        # Update metrics
+        self.aggregated_reward_buf += self.reward_buf
+        for reward_name in REWARD_NAMES:
+            self.individual_aggregated_reward_bufs[reward_name] += (
+                self.individual_reward_bufs[reward_name]
+            )
+            self.individual_weighted_aggregated_reward_bufs[reward_name] += (
+                self.individual_reward_bufs[reward_name]
+                * self.individual_reward_weights[reward_name]
+            )
+
+        self.populate_wandb_dict()
+        self.log_wandb_dict()
+
+    def populate_wandb_dict(self) -> None:
+        if self.common_step_counter % 10 != 0:
+            return
+
+        self.wandb_dict.update(
+            {
+                "common_step_counter": self.common_step_counter,
+                "episode_length_buf (mean)": self.episode_length_buf.float()
+                .mean()
+                .item(),
+            }
+        )
+
+        self.wandb_dict.update(
+            {
+                "metrics/mean/reward": self.reward_metric.get_mean().item(),
+                "metrics/mean/episode_length": self.episode_length_metric.get_mean().item(),
+            }
+        )
+        self.wandb_dict.update(
+            {
+                f"metrics/mean/{reward_name}": metric.get_mean().item()
+                for reward_name, metric in self.individual_reward_metrics.items()
+            }
+        )
+        self.wandb_dict.update(
+            {
+                f"metrics/mean/weighted_{reward_name}": metric.get_mean().item()
+                for reward_name, metric in self.individual_weighted_reward_metrics.items()
+            }
+        )
+
+    def log_wandb_dict(self) -> None:
+        if wandb.run is None:
+            return
+
+        # Skip if empty
+        if len(self.wandb_dict) == 0:
+            return
+
+        wandb.log(self.wandb_dict)
+        self.wandb_dict = {}
+
+    #### END OF STEP END  ####
+
+    #### DONES START ####
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         self._compute_intermediate_values()
         time_out = self.episode_length_buf >= self.max_episode_length - 1
@@ -534,12 +657,33 @@ class G1Env(DirectRLEnv):
 
         return died, time_out
 
+    #### DONES END ####
+
+    #### RESET START ####
     def _reset_idx(self, env_ids: torch.Tensor | None):
         if env_ids is None or len(env_ids) == self.num_envs:
             env_ids = self.robot._ALL_INDICES
+
+        # Update metrics
+        self.reward_metric.update(self.aggregated_reward_buf[env_ids])
+        for reward_name, metric in self.individual_reward_metrics.items():
+            metric.update(self.individual_aggregated_reward_bufs[reward_name][env_ids])
+        for reward_name, metric in self.individual_weighted_reward_metrics.items():
+            metric.update(
+                self.individual_weighted_aggregated_reward_bufs[reward_name][env_ids]
+            )
+        self.episode_length_metric.update(self.episode_length_buf[env_ids])
+
         self.robot.reset(env_ids)
         super()._reset_idx(env_ids)
 
+        # Reset metrics
+        self.aggregated_reward_buf[env_ids] = 0
+        for reward_name in REWARD_NAMES:
+            self.individual_aggregated_reward_bufs[reward_name][env_ids] = 0
+            self.individual_weighted_aggregated_reward_bufs[reward_name][env_ids] = 0
+
+        # Reset robot
         root_state = self.robot.data.default_root_state[env_ids].clone()
         default_position = root_state[:, :3] + self.scene.env_origins[env_ids]
         default_orientation = root_state[:, 3:7]
@@ -627,24 +771,11 @@ class G1Env(DirectRLEnv):
             ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z,
         )
 
-        # Logging
-        extras = dict()
-        for key in self._episode_sums.keys():
-            episodic_sum_avg = torch.mean(self._episode_sums[key][env_ids])
-            extras["Episode_Reward/" + key] = (
-                episodic_sum_avg / self.max_episode_length_s
-            )
-            self._episode_sums[key][env_ids] = 0.0
-        extras["Episode_Termination/base_contact"] = torch.count_nonzero(
-            self.reset_terminated[env_ids]
-        ).item()
-        extras["Episode_Termination/time_out"] = torch.count_nonzero(
-            self.reset_time_outs[env_ids]
-        ).item()
-        self.extras["log"] = extras
-
         self._compute_intermediate_values()
 
+    #### RESET END ####
+
+    #### DEBUG START ####
     def _set_debug_vis_impl(self, debug_vis: bool):
         # create markers if necessary for the first tome
         if debug_vis:
@@ -713,6 +844,9 @@ class G1Env(DirectRLEnv):
             .repeat_interleave(self.num_envs, dim=0),
         )
 
+    #### DEBUG END ####
+
+    #### KEYBOARD START ####
     def _setup_keyboard(self):
         try:
             import carb
@@ -739,3 +873,5 @@ class G1Env(DirectRLEnv):
     def _reset_kbc(self):
         print("In reset_kbc")
         self._reset_idx(env_ids=None)
+
+    #### KEYBOARD END ####
