@@ -536,18 +536,38 @@ class G1Env(DirectRLEnv):
         self.robot.reset(env_ids)
         super()._reset_idx(env_ids)
 
-        # HACK
-        env_origins = self.scene.env_origins[env_ids]
-        print(f"env_origins: {env_origins}")
-        # HACK
+        root_state = self.robot.data.default_root_state[env_ids].clone()
+        default_position = root_state[:, :3] + self.scene.env_origins[env_ids]
+        default_orientation = root_state[:, 3:7]
+        default_velocity = root_state[:, 7:13]
 
-        joint_pos = self.robot.data.default_joint_pos[env_ids]
-        joint_vel = self.robot.data.default_joint_vel[env_ids]
+        x_rand = math_utils.sample_uniform(*(0.5, 1.5), default_position[:, 0].shape, default_position[:, 0].device)
+        y_rand = math_utils.sample_uniform(*(0.5, 1.5), default_position[:, 1].shape, default_position[:, 1].device)
+        z_rand = math_utils.sample_uniform(*(0.0, 0.0), default_position[:, 2].shape, default_position[:, 2].device)
+        position = default_position + torch.stack([x_rand, y_rand, z_rand], dim=-1)
+
+        R_rand = math_utils.sample_uniform(*(0.0, 0.0), default_position[:, 0].shape, default_position[:, 0].device)
+        P_rand = math_utils.sample_uniform(*(0.0, 0.0), default_position[:, 1].shape, default_position[:, 1].device)
+        Y_rand = math_utils.sample_uniform(*(-3.14, 3.14), default_position[:, 2].shape, default_position[:, 2].device)
+        orientation = math_utils.quat_mul(default_orientation, math_utils.quat_from_euler_xyz(R_rand, P_rand, Y_rand))
+
+        velocity = default_velocity
+
+        joint_pos = self.robot.data.default_joint_pos[env_ids].clone()
+        joint_pos *= math_utils.sample_uniform(*(0.5, 1.5), joint_pos.shape, joint_pos.device)
+        joint_vel = self.robot.data.default_joint_vel[env_ids].clone()
+        joint_vel *= math_utils.sample_uniform(*(0.0, 0.0), joint_vel.shape, joint_vel.device)
+
+        joint_pos_limits = self.robot.data.soft_joint_pos_limits[env_ids].clone()
+        joint_pos = joint_pos.clamp_(joint_pos_limits[..., 0], joint_pos_limits[..., 1])
+        joint_vel_limits = self.robot.data.soft_joint_vel_limits[env_ids].clone()
+        joint_vel = joint_vel.clamp_(-joint_vel_limits, joint_vel_limits)
+
         default_root_state = self.robot.data.default_root_state[env_ids]
         default_root_state[:, :3] += self.scene.env_origins[env_ids]
 
-        self.robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
-        self.robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
+        self.robot.write_root_pose_to_sim(torch.cat([position, orientation], dim=-1), env_ids)
+        self.robot.write_root_velocity_to_sim(velocity, env_ids)
         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
         # Reset state
