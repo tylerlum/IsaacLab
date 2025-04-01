@@ -429,30 +429,66 @@ class PpoAgent:
 
         # do we need scaled time?
         self.writer.add_scalar(
-            "performance/step_inference_rl_update_fps", curr_frames / scaled_time, frame
+            tag="performance/step_inference_rl_update_fps",
+            scalar_value=curr_frames / scaled_time,
+            global_step=frame,
         )
         self.writer.add_scalar(
-            "performance/step_inference_fps", curr_frames / scaled_play_time, frame
-        )
-        self.writer.add_scalar("performance/step_fps", curr_frames / step_time, frame)
-        self.writer.add_scalar("performance/rl_update_time", update_time, frame)
-        self.writer.add_scalar("performance/step_inference_time", play_time, frame)
-        self.writer.add_scalar("performance/step_time", step_time, frame)
-        self.writer.add_scalar(
-            "losses/a_loss", torch.mean(torch.stack(a_losses)).item(), frame
+            tag="performance/step_inference_fps",
+            scalar_value=curr_frames / scaled_play_time,
+            global_step=frame,
         )
         self.writer.add_scalar(
-            "losses/c_loss", torch.mean(torch.stack(c_losses)).item(), frame
+            tag="performance/step_fps",
+            scalar_value=curr_frames / step_time,
+            global_step=frame,
+        )
+        self.writer.add_scalar(
+            tag="performance/rl_update_time",
+            scalar_value=update_time,
+            global_step=frame,
+        )
+        self.writer.add_scalar(
+            tag="performance/step_inference_time",
+            scalar_value=play_time,
+            global_step=frame,
+        )
+        self.writer.add_scalar(
+            tag="performance/step_time", scalar_value=step_time, global_step=frame
+        )
+        self.writer.add_scalar(
+            tag="losses/a_loss",
+            scalar_value=torch.mean(torch.stack(a_losses)).item(),
+            global_step=frame,
+        )
+        self.writer.add_scalar(
+            tag="losses/c_loss",
+            scalar_value=torch.mean(torch.stack(c_losses)).item(),
+            global_step=frame,
         )
 
         self.writer.add_scalar(
-            "losses/entropy", torch.mean(torch.stack(entropies)).item(), frame
+            tag="losses/entropy",
+            scalar_value=torch.mean(torch.stack(entropies)).item(),
+            global_step=frame,
         )
-        self.writer.add_scalar("info/current_lr", current_lr * lr_mul, frame)
-        self.writer.add_scalar("info/lr_mul", lr_mul, frame)
-        self.writer.add_scalar("info/e_clip", self.cfg.e_clip * lr_mul, frame)
-        self.writer.add_scalar("info/kl", torch.mean(torch.stack(kls)).item(), frame)
-        self.writer.add_scalar("info/epochs", epoch_num, frame)
+        self.writer.add_scalar(
+            tag="info/current_lr", scalar_value=current_lr * lr_mul, global_step=frame
+        )
+        self.writer.add_scalar(
+            tag="info/lr_mul", scalar_value=lr_mul, global_step=frame
+        )
+        self.writer.add_scalar(
+            tag="info/e_clip", scalar_value=self.cfg.e_clip * lr_mul, global_step=frame
+        )
+        self.writer.add_scalar(
+            tag="info/kl",
+            scalar_value=torch.mean(torch.stack(kls)).item(),
+            global_step=frame,
+        )
+        self.writer.add_scalar(
+            tag="info/epochs", scalar_value=epoch_num, global_step=frame
+        )
 
     def set_eval(self) -> None:
         self.model.eval()
@@ -776,9 +812,9 @@ class PpoAgent:
 
                 if len(b_losses) > 0:
                     self.writer.add_scalar(
-                        "losses/bounds_loss",
-                        torch.mean(torch.stack(b_losses)).item(),
-                        frame,
+                        tag="losses/bounds_loss",
+                        scalar_value=torch.mean(torch.stack(b_losses)).item(),
+                        global_step=frame,
                     )
 
                 if self.game_rewards.current_size > 0:
@@ -790,36 +826,50 @@ class PpoAgent:
                     for i in range(self.value_size):
                         rewards_name = "rewards" if i == 0 else "rewards{0}".format(i)
                         self.writer.add_scalar(
-                            rewards_name + "/step".format(), mean_rewards[i], frame
+                            tag=rewards_name + "/step".format(),
+                            scalar_value=mean_rewards[i],
+                            global_step=frame,
                         )
                         self.writer.add_scalar(
-                            rewards_name + "/iter".format(), mean_rewards[i], epoch_num
+                            tag=rewards_name + "/iter".format(),
+                            scalar_value=mean_rewards[i],
+                            global_step=epoch_num,
                         )
                         self.writer.add_scalar(
-                            rewards_name + "/time".format(), mean_rewards[i], total_time
+                            tag=rewards_name + "/time".format(),
+                            scalar_value=mean_rewards[i],
+                            global_step=total_time,
                         )
                         self.writer.add_scalar(
-                            "shaped_" + rewards_name + "/step".format(),
-                            mean_shaped_rewards[i],
-                            frame,
+                            tag="shaped_" + rewards_name + "/step".format(),
+                            scalar_value=mean_shaped_rewards[i],
+                            global_step=frame,
                         )
                         self.writer.add_scalar(
-                            "shaped_" + rewards_name + "/iter".format(),
-                            mean_shaped_rewards[i],
-                            epoch_num,
+                            tag="shaped_" + rewards_name + "/iter".format(),
+                            scalar_value=mean_shaped_rewards[i],
+                            global_step=epoch_num,
                         )
                         self.writer.add_scalar(
-                            "shaped_" + rewards_name + "/time".format(),
-                            mean_shaped_rewards[i],
-                            total_time,
+                            tag="shaped_" + rewards_name + "/time".format(),
+                            scalar_value=mean_shaped_rewards[i],
+                            global_step=total_time,
                         )
 
-                    self.writer.add_scalar("episode_lengths/step", mean_lengths, frame)
                     self.writer.add_scalar(
-                        "episode_lengths/iter", mean_lengths, epoch_num
+                        tag="episode_lengths/step",
+                        scalar_value=mean_lengths,
+                        global_step=frame,
                     )
                     self.writer.add_scalar(
-                        "episode_lengths/time", mean_lengths, total_time
+                        tag="episode_lengths/iter",
+                        scalar_value=mean_lengths,
+                        global_step=epoch_num,
+                    )
+                    self.writer.add_scalar(
+                        tag="episode_lengths/time",
+                        scalar_value=mean_lengths,
+                        global_step=total_time,
                     )
 
                     if self.cfg.save_frequency > 0:
@@ -1418,7 +1468,7 @@ class PpoAgent:
         )
         mb_returns = mb_advs + mb_values
         batch_dict = self.experience_buffer.get_transformed_list(
-            swap_and_flatten01, self.tensor_list
+            transform_op=swap_and_flatten01, tensor_list=self.tensor_list
         )
 
         batch_dict["returns"] = swap_and_flatten01(mb_returns)

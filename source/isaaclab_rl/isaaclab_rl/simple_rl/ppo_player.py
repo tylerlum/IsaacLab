@@ -55,7 +55,6 @@ class PpoPlayer:
         # Base part
         self.ppo_player_config = ppo_player_config
         self.player_config = player_config
-        self.clip_actions = ppo_player_config.clip_actions
         self.env = env
         self.env_info = env.get_env_info()
 
@@ -76,33 +75,20 @@ class PpoPlayer:
         self.use_cuda = True
         self.batch_size = 1
         self.has_batch_dimension = False
-        self.device = self.ppo_player_config.device
-        self.device = torch.device(self.device)
-        self.render_env = self.player_config.render
-        self.games_num = self.player_config.games_num
 
-        self.is_deterministic = self.player_config.deterministic
-
-        self.n_game_life = self.player_config.n_game_life
-        self.print_stats = self.player_config.print_stats
-        self.render_sleep = self.player_config.render_sleep
         self.max_steps = 108000 // 4
 
-        self.evaluation = self.player_config.evaluation
-        self.update_checkpoint_freq = self.player_config.update_checkpoint_freq
-
         # if we run player as evaluation worker this will take care of loading new checkpoints
-        self.dir_to_monitor = (
-            Path(self.player_config.dir_to_monitor)
-            if self.player_config.dir_to_monitor
-            else None
-        )
         # path to the newest checkpoint
         self.checkpoint_to_load: Optional[Path] = None
-
-        if self.evaluation and self.dir_to_monitor is not None:
+        if (
+            self.player_config.evaluation
+            and self.player_config.dir_to_monitor is not None
+        ):
             self.checkpoint_mutex = threading.Lock()
-            self.eval_checkpoint_dir = Path(self.dir_to_monitor) / "eval_checkpoints"
+            self.eval_checkpoint_dir = (
+                Path(self.player_config.dir_to_monitor) / "eval_checkpoints"
+            )
             self.eval_checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
             patterns = ["*.pth"]
@@ -115,7 +101,7 @@ class PpoPlayer:
 
             self.file_observer = Observer()
             self.file_observer.schedule(
-                self.file_events, str(self.dir_to_monitor), recursive=False
+                self.file_events, self.player_config.dir_to_monitor, recursive=False
             )
             self.file_observer.start()
 
@@ -167,11 +153,11 @@ class PpoPlayer:
         if not self.has_batch_dimension:
             current_action = torch.squeeze(current_action.detach())
 
-        if self.clip_actions:
+        if self.ppo_player_config.clip_actions:
             return rescale_actions(
-                self.actions_low,
-                self.actions_high,
-                torch.clamp(current_action, -1.0, 1.0),
+                low=self.actions_low,
+                high=self.actions_high,
+                action=torch.clamp(current_action, -1.0, 1.0),
             )
         else:
             return current_action
@@ -201,7 +187,7 @@ class PpoPlayer:
         self.init_rnn()
 
     def wait_for_checkpoint(self) -> None:
-        if self.dir_to_monitor is None:
+        if self.player_config.dir_to_monitor is None:
             return
 
         attempt = 0
@@ -211,7 +197,7 @@ class PpoPlayer:
                 if self.checkpoint_to_load is not None:
                     if attempt % 10 == 0:
                         print(
-                            f"Evaluation: waiting for new checkpoint in {self.dir_to_monitor}..."
+                            f"Evaluation: waiting for new checkpoint in {self.player_config.dir_to_monitor}..."
                         )
                     break
             time.sleep(1.0)
@@ -370,14 +356,10 @@ class PpoPlayer:
             ]
 
     def run(self) -> None:
-        n_games = self.games_num
-        render = self.render_env
-        n_game_life = self.n_game_life
-        is_deterministic = self.is_deterministic
         sum_rewards = 0
         sum_steps = 0
         sum_game_res = 0
-        n_games = n_games * n_game_life
+        n_games = self.player_config.games_num * self.player_config.n_game_life
         games_played = 0
 
         self.wait_for_checkpoint()
@@ -389,7 +371,7 @@ class PpoPlayer:
 
             obses = self.env_reset(self.env)
             batch_size = 1
-            batch_size = self.get_batch_size(obses, batch_size)
+            batch_size = self.get_batch_size(obses=obses, batch_size=batch_size)
 
             if need_init_rnn:
                 self.init_rnn()
@@ -401,18 +383,23 @@ class PpoPlayer:
             print_game_res = False
 
             for n in range(self.max_steps):
-                if self.evaluation and n % self.update_checkpoint_freq == 0:
+                if (
+                    self.player_config.evaluation
+                    and n % self.player_config.update_checkpoint_freq == 0
+                ):
                     self.maybe_load_new_checkpoint()
 
-                action = self.get_action(obses, is_deterministic)
+                action = self.get_action(
+                    obs=obses, is_deterministic=self.player_config.deterministic
+                )
 
-                obses, r, done, info = self.env_step(self.env, action)
+                obses, r, done, info = self.env_step(env=self.env, actions=action)
                 cr += r
                 steps += 1
 
-                if render:
+                if self.player_config.render:
                     self.env.render(mode="human")
-                    time.sleep(self.render_sleep)
+                    time.sleep(self.player_config.render_sleep)
 
                 all_done_indices = done.nonzero(as_tuple=False)
                 done_indices = all_done_indices[:: self.num_agents]
@@ -441,7 +428,7 @@ class PpoPlayer:
                             print_game_res = True
                             game_res = info.get("scores", 0.5)
 
-                    if self.print_stats:
+                    if self.player_config.print_stats:
                         cur_rewards_done = cur_rewards / done_count
                         cur_steps_done = cur_steps / done_count
                         if print_game_res:
@@ -461,18 +448,18 @@ class PpoPlayer:
         if print_game_res:
             print(
                 "av reward:",
-                sum_rewards / games_played * n_game_life,
+                sum_rewards / games_played * self.player_config.n_game_life,
                 "av steps:",
-                sum_steps / games_played * n_game_life,
+                sum_steps / games_played * self.player_config.n_game_life,
                 "winrate:",
-                sum_game_res / games_played * n_game_life,
+                sum_game_res / games_played * self.player_config.n_game_life,
             )
         else:
             print(
                 "av reward:",
-                sum_rewards / games_played * n_game_life,
+                sum_rewards / games_played * self.player_config.n_game_life,
                 "av steps:",
-                sum_steps / games_played * n_game_life,
+                sum_steps / games_played * self.player_config.n_game_life,
             )
 
     def get_batch_size(self, obses, batch_size: int) -> int:
@@ -496,3 +483,7 @@ class PpoPlayer:
         self.batch_size = batch_size
 
         return batch_size
+
+    @property
+    def device(self) -> torch.device:
+        return torch.device(self.ppo_player_config.device)
