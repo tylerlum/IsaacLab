@@ -234,9 +234,9 @@ class G1Env(DirectRLEnv):
         self._setup_keyboard()
 
         # Robot joint idxs
-        self._joint_dof_idx, self._joint_dof_names = self.robot.find_joints(".*")
-        self._torso_joint_idx, _ = self.robot.find_joints("torso_joint")
-        self._finger_joint_idx, _ = self.robot.find_joints(
+        self._joint_dof_idxs, self._joint_dof_names = self.robot.find_joints(".*")
+        self._torso_joint_idxs, _ = self.robot.find_joints("torso_joint")
+        self._finger_joint_idxs, _ = self.robot.find_joints(
             [
                 ".*_five_joint",
                 ".*_three_joint",
@@ -247,7 +247,7 @@ class G1Env(DirectRLEnv):
                 ".*_two_joint",
             ]
         )
-        self._arm_joint_idx, _ = self.robot.find_joints(
+        self._arm_joint_idxs, _ = self.robot.find_joints(
             [
                 ".*_shoulder_pitch_joint",
                 ".*_shoulder_roll_joint",
@@ -256,55 +256,61 @@ class G1Env(DirectRLEnv):
                 ".*_elbow_roll_joint",
             ]
         )
-        self._hip_joint_idx, _ = self.robot.find_joints(
+        self._hip_joint_idxs, _ = self.robot.find_joints(
             [".*_hip_yaw_joint", ".*_hip_roll_joint"]
         )
-        self._ankle_joint_idx, _ = self.robot.find_joints(
+        self._ankle_joint_idxs, _ = self.robot.find_joints(
             [".*_ankle_pitch_joint", ".*_ankle_roll_joint"]
         )
         print("!" * 100)
-        print(f"len(self._joint_dof_idx): {len(self._joint_dof_idx)}")
+        print(f"len(self._joint_dof_idxs): {len(self._joint_dof_idxs)}")
         print(f"self._joint_dof_names: {self._joint_dof_names}")
-        print(f"len(self._torso_joint_idx): {len(self._torso_joint_idx)}")
-        print(f"len(self._finger_joint_idx): {len(self._finger_joint_idx)}")
-        print(f"len(self._arm_joint_idx): {len(self._arm_joint_idx)}")
-        print(f"len(self._hip_joint_idx): {len(self._hip_joint_idx)}")
-        print(f"len(self._ankle_joint_idx): {len(self._ankle_joint_idx)}")
+        print(f"len(self._torso_joint_idxs): {len(self._torso_joint_idxs)}")
+        print(f"len(self._finger_joint_idxs): {len(self._finger_joint_idxs)}")
+        print(f"len(self._arm_joint_idxs): {len(self._arm_joint_idxs)}")
+        print(f"len(self._hip_joint_idxs): {len(self._hip_joint_idxs)}")
+        print(f"len(self._ankle_joint_idxs): {len(self._ankle_joint_idxs)}")
         print("!" * 100)
 
         # Robot link idxs
-        self._link_idx, self._link_names = self.robot.find_bodies(".*")
-        self._ankle_link_idx, _ = self.robot.find_bodies(".*_ankle_roll_link")
+        self._link_idxs, self._link_names = self.robot.find_bodies(".*")
+        self._ankle_link_idxs, _ = self.robot.find_bodies(".*_ankle_roll_link")
         print("!" * 100)
-        print(f"len(self._link_idx): {len(self._link_idx)}")
+        print(f"len(self._link_idxs): {len(self._link_idxs)}")
         print(f"self._link_names: {self._link_names}")
-        print(f"len(self._ankle_link_idx): {len(self._ankle_link_idx)}")
+        print(f"len(self._ankle_link_idxs): {len(self._ankle_link_idxs)}")
         print("!" * 100)
 
         # Contact sensor link idxs
-        self._contact_link_idx, self._contact_link_names = (
+        self._contact_link_idxs, self._contact_link_names = (
             self.contact_sensor.find_bodies(".*")
         )
-        self._contact_ankle_link_idx, _ = self.contact_sensor.find_bodies(
+        self._contact_ankle_link_idxs, _ = self.contact_sensor.find_bodies(
             ".*_ankle_roll_link"
         )
-        self._contact_undesired_link_idx = [
-            i for i in self._contact_link_idx if i not in self._contact_ankle_link_idx
+        self._contact_undesired_link_idxs = [
+            i for i in self._contact_link_idxs if i not in self._contact_ankle_link_idxs
         ]
-        # self._contact_thigh_link_idx, _ = self.contact_sensor.find_bodies(".*THIGH")
+        # self._contact_thigh_link_idxs, _ = self.contact_sensor.find_bodies(".*THIGH")
         print("!" * 100)
-        print(f"len(self._contact_link_idx): {len(self._contact_link_idx)}")
+        print(f"len(self._contact_link_idxs): {len(self._contact_link_idxs)}")
         print(
-            f"len(self._contact_undesired_link_idx): {len(self._contact_undesired_link_idx)}"
+            f"len(self._contact_undesired_link_idxs): {len(self._contact_undesired_link_idxs)}"
         )
-        print(f"len(self._contact_ankle_link_idx): {len(self._contact_ankle_link_idx)}")
+        print(f"len(self._contact_ankle_link_idxs): {len(self._contact_ankle_link_idxs)}")
         print("!" * 100)
 
+        # Action offset
+        self.action_offset = self.robot.data.default_joint_pos[:, self._joint_dof_idxs]
+        assert self.action_offset.shape == (self.num_envs, self.cfg.action_space), (
+            f"self.action_offset.shape: {self.action_offset.shape} != (self.num_envs, self.cfg.action_space): {(self.num_envs, self.cfg.action_space)}"
+        )
+
         # State
-        self.actions = torch.zeros(
+        self.raw_actions = torch.zeros(
             self.num_envs, self.cfg.action_space, device=self.device
         )
-        self.prev_actions = torch.zeros(
+        self.prev_raw_actions = torch.zeros(
             self.num_envs, self.cfg.action_space, device=self.device
         )
 
@@ -350,24 +356,45 @@ class G1Env(DirectRLEnv):
         self.cfg.light.func("/World/Light", self.cfg.light)
 
     def _pre_physics_step(self, actions: torch.Tensor):
-        self.prev_actions = self.actions.clone()
-        self.actions = actions.clone()
+        self.prev_raw_actions = self.raw_actions.clone()
+        self.raw_actions = actions.clone()
+        assert self.raw_actions.shape == self.prev_raw_actions.shape, (
+            f"self.raw_actions.shape: {self.raw_actions.shape} != self.prev_raw_actions.shape: {self.prev_raw_actions.shape}"
+        )
+        assert self.raw_actions.shape == self.action_offset.shape, (
+            f"self.raw_actions.shape: {self.raw_actions.shape} != self.action_offset.shape: {self.action_offset.shape}"
+        )
+        assert self.raw_actions.shape == (self.num_envs, self.cfg.action_space), (
+            f"self.raw_actions.shape: {self.raw_actions.shape} != (self.num_envs, self.cfg.action_space): {(self.num_envs, self.cfg.action_space)}"
+        )
 
     def _apply_action(self):
-        forces = self.cfg.action_scale * self.actions
-        self.robot.set_joint_effort_target(forces, joint_ids=self._joint_dof_idx)
+        position_targets = self.cfg.action_scale * self.raw_actions + self.action_offset
+        self.robot.set_joint_position_target(position_targets, joint_ids=self._joint_dof_idxs)
 
     def _compute_intermediate_values(self):
         pass
 
     def _get_observations(self) -> dict:
-        # obs = torch.cat(
-        #     (
-        #         # TODO: add observations
-        #     ),
-        #     dim=-1,
-        # )
+        obs_dict = {
+            "base_lin_vel": self.robot.data.root_lin_vel_b,
+            "base_ang_vel": self.robot.data.root_ang_vel_b,
+            "projected_gravity": self.robot.data.projected_gravity_b,
+            "velocity_commands": self.vel_commands_b,
+            "joint_pos": self.robot.data.joint_pos - self.robot.data.default_joint_pos,
+            "joint_vel": self.robot.data.joint_vel - self.robot.data.default_joint_vel,
+            "actions": self.raw_actions,
+        }
+
+        obs = torch.cat(
+            [obs_dict[key] for key in obs_dict],
+            dim=-1,
+        )
         obs = torch.zeros(self.num_envs, self.cfg.observation_space, device=self.device)
+
+        assert obs.shape == (self.num_envs, self.cfg.observation_space), (
+            f"obs.shape: {obs.shape} != (self.num_envs, self.cfg.observation_space): {(self.num_envs, self.cfg.observation_space)}"
+        )
         observations = {"policy": obs}
         return observations
 
@@ -390,10 +417,10 @@ class G1Env(DirectRLEnv):
 
         # feet air time positive biped
         air_time = self.contact_sensor.data.current_air_time[
-            :, self._contact_ankle_link_idx
+            :, self._contact_ankle_link_idxs
         ]
         contact_time = self.contact_sensor.data.current_contact_time[
-            :, self._contact_ankle_link_idx
+            :, self._contact_ankle_link_idxs
         ]
         in_contact = contact_time > 0.0
         in_mode_time = torch.where(in_contact, contact_time, air_time)
@@ -409,10 +436,10 @@ class G1Env(DirectRLEnv):
             # velocity_env_cfg.py
             "lin_vel_z_l2": self.robot.data.root_lin_vel_b[:, 2].square(),  # (don't move up/down)
             "ang_vel_xy_l2": self.robot.data.root_ang_vel_b[:, :2].square().sum(dim=1), # (don't tip sideways or forwards)
-            "dof_torques_l2": self.robot.data.applied_torque[:, self._joint_dof_idx].square().sum(dim=1),  # (don't apply too much torque)
-            "dof_acc_l2": self.robot.data.joint_acc[:, self._joint_dof_idx].square().sum(dim=1),  # (don't apply too much acceleration)
-            "action_rate_l2": (self.actions - self.prev_actions).square().sum(dim=1),  # (don't change actions too quickly)
-            # "undesired_contacts": contacts[:, self._contact_thigh_link_idx].sum(dim=1),  # (don't contact thighs)
+            "dof_torques_l2": self.robot.data.applied_torque[:, self._joint_dof_idxs].square().sum(dim=1),  # (don't apply too much torque)
+            "dof_acc_l2": self.robot.data.joint_acc[:, self._joint_dof_idxs].square().sum(dim=1),  # (don't apply too much acceleration)
+            "action_rate_l2": (self.raw_actions - self.prev_raw_actions).square().sum(dim=1),  # (don't change actions too quickly)
+            # "undesired_contacts": contacts[:, self._contact_thigh_link_idxs].sum(dim=1),  # (don't contact thighs)
             "flat_orientation_l2": self.robot.data.projected_gravity_b[:, :2].square().sum(dim=1),  # (don't tip sideways or forwards)
 
             # rough_env_cfg.py
@@ -420,12 +447,12 @@ class G1Env(DirectRLEnv):
             "track_lin_vel_xy_exp": torch.exp(-(self.vel_commands_b[:, :2] - robot_lin_vel_rotated[:, :2]).square().sum(dim=1) / 0.5**2),  # (track the commanded lin_vel_xy)
             "track_ang_vel_z_exp": torch.exp(-(self.vel_commands_b[:, 2] - self.robot.data.root_ang_vel_w[:, 2]).square() / 0.5**2),  #  (track the commanded ang_vel_z)
             "feet_air_time": torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0).min(dim=1).values.clamp(max=0.4) * (self.vel_commands_b[:, :2].norm(dim=1) > 0.1),  # (Promote stable single-stance gait)
-            "feet_slide": (self.robot.data.body_lin_vel_w[:, self._ankle_link_idx, :2].norm(dim=-1) * contacts[:, self._contact_ankle_link_idx]).sum(dim=1),  # (don't slide feet)
-            "dof_pos_limits_ankle": (under_min + over_max)[:, self._ankle_joint_idx].sum(dim=1),  # (don't exceed dof pos limits of ankles)
-            "joint_deviation_hip": joint_deviation[:, self._hip_joint_idx].sum(dim=1),  # (don't deviate from default hip positions)
-            "joint_deviation_arms": joint_deviation[:, self._arm_joint_idx].sum(dim=1),  # (don't deviate from default arm positions)
-            "joint_deviation_fingers": joint_deviation[:, self._finger_joint_idx].sum(dim=1),  # (don't deviate from default finger positions)
-            "joint_deviation_torso": joint_deviation[:, self._torso_joint_idx].sum(dim=1),  # (don't deviate from default torso position)
+            "feet_slide": (self.robot.data.body_lin_vel_w[:, self._ankle_link_idxs, :2].norm(dim=-1) * contacts[:, self._contact_ankle_link_idxs]).sum(dim=1),  # (don't slide feet)
+            "dof_pos_limits_ankle": (under_min + over_max)[:, self._ankle_joint_idxs].sum(dim=1),  # (don't exceed dof pos limits of ankles)
+            "joint_deviation_hip": joint_deviation[:, self._hip_joint_idxs].sum(dim=1),  # (don't deviate from default hip positions)
+            "joint_deviation_arms": joint_deviation[:, self._arm_joint_idxs].sum(dim=1),  # (don't deviate from default arm positions)
+            "joint_deviation_fingers": joint_deviation[:, self._finger_joint_idxs].sum(dim=1),  # (don't deviate from default finger positions)
+            "joint_deviation_torso": joint_deviation[:, self._torso_joint_idxs].sum(dim=1),  # (don't deviate from default torso position)
         }
 
         reward_weights = {
@@ -497,7 +524,7 @@ class G1Env(DirectRLEnv):
             self.contact_sensor.data.net_forces_w_history.norm(dim=-1).max(dim=1).values
             > 1.0
         )
-        any_torso_contacts = contacts[:, self._contact_undesired_link_idx].any(dim=1)
+        any_torso_contacts = contacts[:, self._contact_undesired_link_idxs].any(dim=1)
         died = any_torso_contacts
 
         return died, time_out
@@ -507,6 +534,11 @@ class G1Env(DirectRLEnv):
             env_ids = self.robot._ALL_INDICES
         self.robot.reset(env_ids)
         super()._reset_idx(env_ids)
+
+        # HACK
+        env_origins = self.scene.env_origins[env_ids]
+        print(f"env_origins: {env_origins}")
+        # HACK
 
         joint_pos = self.robot.data.default_joint_pos[env_ids]
         joint_vel = self.robot.data.default_joint_vel[env_ids]
@@ -518,10 +550,10 @@ class G1Env(DirectRLEnv):
         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
         # Reset state
-        self.actions[env_ids] = torch.zeros(
+        self.raw_actions[env_ids] = torch.zeros(
             len(env_ids), self.cfg.action_space, device=self.device
         )
-        self.prev_actions[env_ids] = torch.zeros(
+        self.prev_raw_actions[env_ids] = torch.zeros(
             len(env_ids), self.cfg.action_space, device=self.device
         )
 
