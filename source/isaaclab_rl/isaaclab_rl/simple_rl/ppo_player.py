@@ -487,3 +487,7 @@ class PpoPlayer:
     @property
     def device(self) -> torch.device:
         return torch.device(self.ppo_player_config.device)
+
+    @property
+    def is_deterministic(self) -> bool:
+        return self.player_config.deterministic
