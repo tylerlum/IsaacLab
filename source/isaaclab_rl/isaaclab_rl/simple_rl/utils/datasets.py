@@ -9,7 +9,6 @@ class PPODataset(Dataset):
         self,
         batch_size: int,
         minibatch_size: int,
-        is_discrete: bool,
         is_rnn: bool,
         device: Union[str, torch.device],
         seq_length: int,
@@ -20,8 +19,6 @@ class PPODataset(Dataset):
         self.minibatch_size = minibatch_size
         self.device = device
         self.length = self.batch_size // self.minibatch_size
-        self.is_discrete = is_discrete
-        self.is_continuous = not is_discrete
         total_games = self.batch_size // self.seq_length
         self.num_games_batch = self.minibatch_size // self.seq_length
         self.game_indexes = torch.arange(
