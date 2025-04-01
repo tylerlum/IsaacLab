@@ -272,7 +272,7 @@ class PpoAgent:
             device=str(self.device), enabled=self.cfg.mixed_precision
         )
 
-        self.current_lr = self.cfg.learning_rate
+        self.current_lr = float(self.cfg.learning_rate)
         self.frame = 0
         self.update_time = 0
         self.mean_rewards = self.last_mean_rewards = -1000000000
