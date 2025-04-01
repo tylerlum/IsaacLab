@@ -5,14 +5,39 @@ player:
   games_num: 100_000
   print_stats: True
 
-# Choose ppo_name in ["mlp", "lstm"]
+# Choose ppo_name in ["mlp", "lstm", "small_mlp"]
 ppo_name: mlp
 
-network: ${if:${eval:"'${.ppo_name}' == 'mlp'"},${.network_mlp},${.network_lstm}}
-ppo: ${if:${eval:"'${.ppo_name}' == 'mlp'"},${.ppo_mlp},${.ppo_lstm}}
+network: ${match_value:"${.ppo_name}",
+                       "mlp",
+                       ${.network_mlp},
+                       "lstm",
+                       ${.network_lstm},
+                       "small_mlp",
+                       ${.network_small_mlp},
+                       ${eval:None}}
+ppo: ${match_value:"${.ppo_name}",
+                   "mlp",
+                   ${.ppo_mlp},
+                   "lstm",
+                   ${.ppo_lstm},
+                   "small_mlp",
+                   ${.ppo_small_mlp},
+                   ${eval:None}}
 
 # Choose asymmetric critic_name in ["mlp", "lstm", ""]
 asymmetric_critic_name: ""
+
+# Choose parameters for asymmetric critic
+# Can't be empty dict, must be None (else gets error looking for keys in this dict)
+asymmetric_critic: ${match_value:"${.asymmetric_critic_name}",
+                                 "mlp",
+                                 ${.asymmetric_critic_mlp},
+                                 "lstm",
+                                 ${.asymmetric_critic_lstm},
+                                 ${eval:None}}
+
+### LSTM START  ###
 
 network_lstm:
   separate_value_mlp: False
@@ -61,9 +86,11 @@ ppo_lstm:
   bounds_loss_coef: 0.005
   zero_rnn_on_done: True
 
-  # Choose parameters for asymmetric critic
-  # Can't be empty dict, must be None (else gets error looking for keys in this dict)
-  asymmetric_critic: ${if:${eval:"'${..asymmetric_critic_name}' == 'mlp'"},${..asymmetric_critic_mlp},${if:${eval:"'${..asymmetric_critic_name}' == 'lstm'"},${..asymmetric_critic_lstm},${eval:None}}}
+  asymmetric_critic: ${..asymmetric_critic}
+
+### LSTM END  ###
+
+### MLP START  ###
 
 network_mlp:
   separate_value_mlp: False
@@ -102,9 +129,52 @@ ppo_mlp:
   seq_length: 4
   bounds_loss_coef: 0.0001
 
-  # Choose parameters for asymmetric critic
-  # Can't be empty dict, must be None (else gets error looking for keys in this dict)
-  asymmetric_critic: ${if:${eval:"'${..asymmetric_critic_name}' == 'mlp'"},${..asymmetric_critic_mlp},${if:${eval:"'${..asymmetric_critic_name}' == 'lstm'"},${..asymmetric_critic_lstm},${eval:None}}}
+  asymmetric_critic: ${..asymmetric_critic}
+
+
+
+### MLP END  ###
+
+### SMALL MLP START  ###
+network_small_mlp:
+  separate_value_mlp: False
+
+  mlp:
+    units: [32, 32]
+
+ppo_small_mlp:
+  multi_gpu: False
+  mixed_precision: False
+  normalize_input: True
+  normalize_value: True
+  num_actors: -1  # configured from the script (based on num_envs)
+  reward_shaper:
+    scale_value: 0.1
+  normalize_advantage: True
+  gamma: 0.99
+  tau : 0.95
+  learning_rate: 5e-4
+  lr_schedule: adaptive
+  kl_threshold: 0.008
+  max_epochs: 200_000 # 150
+  save_best_after: 50
+  save_frequency: 25
+  grad_norm: 1.0
+  entropy_coef: 0.0
+  truncate_grads: True
+  e_clip: 0.2
+  horizon_length: 32
+  minibatch_size: 16384
+  mini_epochs: 8
+  critic_coef: 4
+  seq_length: 4
+  bounds_loss_coef: 0.0001
+
+  asymmetric_critic: ${..asymmetric_critic}
+
+### SMALL MLP END  ###
+
+### ASYMMETRIC CRITIC MLP START  ###
 
 asymmetric_critic_mlp:
   name: mlp
@@ -120,6 +190,10 @@ asymmetric_critic_mlp:
 
     mlp:
       units: [1024, 512]
+
+### ASYMMETRIC CRITIC MLP END  ###
+
+### ASYMMETRIC CRITIC LSTM START  ###
 
 asymmetric_critic_lstm:
   name: lstm
@@ -143,3 +217,4 @@ asymmetric_critic_lstm:
       layer_norm: True
       concat_input: False
       concat_output: True
+### ASYMMETRIC CRITIC LSTM END  ###
