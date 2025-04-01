@@ -297,7 +297,9 @@ class G1Env(DirectRLEnv):
         print(
             f"len(self._contact_undesired_link_idxs): {len(self._contact_undesired_link_idxs)}"
         )
-        print(f"len(self._contact_ankle_link_idxs): {len(self._contact_ankle_link_idxs)}")
+        print(
+            f"len(self._contact_ankle_link_idxs): {len(self._contact_ankle_link_idxs)}"
+        )
         print("!" * 100)
 
         # Action offset
@@ -370,7 +372,9 @@ class G1Env(DirectRLEnv):
 
     def _apply_action(self):
         position_targets = self.cfg.action_scale * self.raw_actions + self.action_offset
-        self.robot.set_joint_position_target(position_targets, joint_ids=self._joint_dof_idxs)
+        self.robot.set_joint_position_target(
+            position_targets, joint_ids=self._joint_dof_idxs
+        )
 
     def _compute_intermediate_values(self):
         pass
@@ -541,22 +545,40 @@ class G1Env(DirectRLEnv):
         default_orientation = root_state[:, 3:7]
         default_velocity = root_state[:, 7:13]
 
-        x_rand = math_utils.sample_uniform(*(0.5, 1.5), default_position[:, 0].shape, default_position[:, 0].device)
-        y_rand = math_utils.sample_uniform(*(0.5, 1.5), default_position[:, 1].shape, default_position[:, 1].device)
-        z_rand = math_utils.sample_uniform(*(0.0, 0.0), default_position[:, 2].shape, default_position[:, 2].device)
+        x_rand = math_utils.sample_uniform(
+            *(0.5, 1.5), default_position[:, 0].shape, default_position[:, 0].device
+        )
+        y_rand = math_utils.sample_uniform(
+            *(0.5, 1.5), default_position[:, 1].shape, default_position[:, 1].device
+        )
+        z_rand = math_utils.sample_uniform(
+            *(0.0, 0.0), default_position[:, 2].shape, default_position[:, 2].device
+        )
         position = default_position + torch.stack([x_rand, y_rand, z_rand], dim=-1)
 
-        R_rand = math_utils.sample_uniform(*(0.0, 0.0), default_position[:, 0].shape, default_position[:, 0].device)
-        P_rand = math_utils.sample_uniform(*(0.0, 0.0), default_position[:, 1].shape, default_position[:, 1].device)
-        Y_rand = math_utils.sample_uniform(*(-3.14, 3.14), default_position[:, 2].shape, default_position[:, 2].device)
-        orientation = math_utils.quat_mul(default_orientation, math_utils.quat_from_euler_xyz(R_rand, P_rand, Y_rand))
+        R_rand = math_utils.sample_uniform(
+            *(0.0, 0.0), default_position[:, 0].shape, default_position[:, 0].device
+        )
+        P_rand = math_utils.sample_uniform(
+            *(0.0, 0.0), default_position[:, 1].shape, default_position[:, 1].device
+        )
+        Y_rand = math_utils.sample_uniform(
+            *(-3.14, 3.14), default_position[:, 2].shape, default_position[:, 2].device
+        )
+        orientation = math_utils.quat_mul(
+            default_orientation, math_utils.quat_from_euler_xyz(R_rand, P_rand, Y_rand)
+        )
 
         velocity = default_velocity
 
         joint_pos = self.robot.data.default_joint_pos[env_ids].clone()
-        joint_pos *= math_utils.sample_uniform(*(0.5, 1.5), joint_pos.shape, joint_pos.device)
+        joint_pos *= math_utils.sample_uniform(
+            *(0.5, 1.5), joint_pos.shape, joint_pos.device
+        )
         joint_vel = self.robot.data.default_joint_vel[env_ids].clone()
-        joint_vel *= math_utils.sample_uniform(*(0.0, 0.0), joint_vel.shape, joint_vel.device)
+        joint_vel *= math_utils.sample_uniform(
+            *(0.0, 0.0), joint_vel.shape, joint_vel.device
+        )
 
         joint_pos_limits = self.robot.data.soft_joint_pos_limits[env_ids].clone()
         joint_pos = joint_pos.clamp_(joint_pos_limits[..., 0], joint_pos_limits[..., 1])
@@ -566,7 +588,9 @@ class G1Env(DirectRLEnv):
         default_root_state = self.robot.data.default_root_state[env_ids]
         default_root_state[:, :3] += self.scene.env_origins[env_ids]
 
-        self.robot.write_root_pose_to_sim(torch.cat([position, orientation], dim=-1), env_ids)
+        self.robot.write_root_pose_to_sim(
+            torch.cat([position, orientation], dim=-1), env_ids
+        )
         self.robot.write_root_velocity_to_sim(velocity, env_ids)
         self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
@@ -690,11 +714,18 @@ class G1Env(DirectRLEnv):
         )
 
     def _setup_keyboard(self):
-        import carb
-        from isaaclab.devices.keyboard.general_keyboard import (
-            GeneralKeyboard,
-            KeyboardCommand,
-        )
+        try:
+            import carb
+            from isaaclab.devices.keyboard.general_keyboard import (
+                GeneralKeyboard,
+                KeyboardCommand,
+            )
+        except AttributeError as e:
+            print("~" * 100)
+            print(f"Error importing keyboard: {e}")
+            print("Keyboard not available, likely because we are in headless mode.")
+            print("~" * 100)
+            return
 
         # kbc = keyboard callback
         self.keyboard = GeneralKeyboard(
