@@ -16,7 +16,15 @@ set -e
 tabs 4
 
 # get source directory
-export ISAACLAB_PATH="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+# HACK: Sometimes the BASH_SOURCE[0] way is not getting the parent directory of this file
+# so we can use the current directory instead
+export ISAACLAB_PATH_V1="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+export ISAACLAB_PATH_V2="$(pwd)"
+echo "#################"
+echo $ISAACLAB_PATH_V1
+echo $ISAACLAB_PATH_V2
+echo "#################"
+export ISAACLAB_PATH=$ISAACLAB_PATH_V2
 
 #==
 # Helper functions
@@ -282,6 +290,9 @@ while [[ $# -gt 0 ]]; do
             export -f extract_python_exe
             export -f install_isaaclab_extension
             # source directory
+            echo "======================="
+            echo "${ISAACLAB_PATH}/source"
+            echo "======================="
             find -L "${ISAACLAB_PATH}/source" -mindepth 1 -maxdepth 1 -type d -exec bash -c 'install_isaaclab_extension "{}"' \;
             # install the python packages for supported reinforcement learning frameworks
             echo "[INFO] Installing extra requirements such as learning frameworks..."
