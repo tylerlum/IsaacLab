@@ -28,7 +28,7 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.math import quat_rotate_inverse, yaw_quat
-from isaaclab_assets.robots.unitree import G1_CFG
+from isaaclab_assets.robots.unitree import G1_DEX3_CFG
 
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
 import wandb
@@ -43,13 +43,13 @@ physics_material = sim_utils.RigidBodyMaterialCfg(
 
 
 @configclass
-class G1EnvCfg(DirectRLEnvCfg):
+class G1Dex3EnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 20.0
     decimation = 4
     action_scale = 0.5
-    action_space = 37
-    observation_space = 123
+    action_space = 43
+    observation_space = 141
     state_space = 0
     debug_vis = True
 
@@ -83,7 +83,7 @@ class G1EnvCfg(DirectRLEnvCfg):
     )
 
     # robot
-    robot: ArticulationCfg = G1_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    robot: ArticulationCfg = G1_DEX3_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
     # contact sensor
     contact_sensor = ContactSensorCfg(
@@ -264,34 +264,21 @@ class AverageMeter(nn.Module):
         return self.mean.squeeze(0).cpu().numpy()
 
 
-class G1Env(DirectRLEnv):
-    cfg: G1EnvCfg
+class G1Dex3Env(DirectRLEnv):
+    cfg: G1Dex3EnvCfg
 
-    def __init__(self, cfg: G1EnvCfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: G1Dex3EnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
         self._setup_keyboard()
 
         # Robot joint idxs
         self._joint_dof_idxs, self._joint_dof_names = self.robot.find_joints(".*")
-        self._torso_joint_idxs, _ = self.robot.find_joints("torso_joint")
-        self._finger_joint_idxs, _ = self.robot.find_joints(
-            [
-                ".*_five_joint",
-                ".*_three_joint",
-                ".*_six_joint",
-                ".*_four_joint",
-                ".*_zero_joint",
-                ".*_one_joint",
-                ".*_two_joint",
-            ]
-        )
+        self._torso_joint_idxs, _ = self.robot.find_joints("waist_.*_joint")
+        self._finger_joint_idxs, _ = self.robot.find_joints(".*_hand_.*")
         self._arm_joint_idxs, _ = self.robot.find_joints(
             [
-                ".*_shoulder_pitch_joint",
-                ".*_shoulder_roll_joint",
-                ".*_shoulder_yaw_joint",
-                ".*_elbow_pitch_joint",
-                ".*_elbow_roll_joint",
+                ".*_shoulder_.*",
+                ".*_elbow_.*",
             ]
         )
         self._hip_joint_idxs, _ = self.robot.find_joints(

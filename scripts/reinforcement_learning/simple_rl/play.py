@@ -27,6 +27,18 @@ parser.add_argument(
     help="Length of the recorded video (in steps).",
 )
 parser.add_argument(
+    "--video_interval",
+    type=int,
+    default=2000,
+    help="Interval between video recordings (in steps).",
+)
+parser.add_argument(
+    "--single_video",
+    action="store_true",
+    default=False,
+    help="Record only one video and then terminate.",
+)
+parser.add_argument(
     "--disable_fabric",
     action="store_true",
     default=False,
@@ -167,11 +179,11 @@ def main(
     if args_cli.video:
         video_kwargs = {
             "video_folder": os.path.join(experiment_dir, "videos", "play"),
-            "step_trigger": lambda step: step == 0,
+            "step_trigger": lambda step: step % args_cli.video_interval == 0,
             "video_length": args_cli.video_length,
             "disable_logger": True,
         }
-        print("[INFO] Recording videos during training.")
+        print("[INFO] Recording videos during playing.")
         print_dict(video_kwargs, nesting=4)
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
@@ -249,7 +261,7 @@ def main(
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video
-            if timestep == args_cli.video_length:
+            if timestep == args_cli.video_length and args_cli.single_video:
                 break
 
         # time delay for real-time evaluation
