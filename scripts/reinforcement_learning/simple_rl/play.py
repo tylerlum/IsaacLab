@@ -242,6 +242,8 @@ def main(
     # note: We simplified the logic in simple-rl player.py (:func:`BasePlayer.run()`) function in an
     #   attempt to have complete control over environment stepping.
     while simulation_app.is_running():
+        print(f"timestep: {timestep}")
+
         start_time = time.time()
         # run everything in inference mode
         with torch.inference_mode():
@@ -265,9 +267,13 @@ def main(
                 break
 
         # time delay for real-time evaluation
-        sleep_time = dt - (time.time() - start_time)
-        if args_cli.real_time and sleep_time > 0:
-            time.sleep(sleep_time)
+        actual_dt = time.time() - start_time
+        sleep_time = dt - actual_dt
+        if args_cli.real_time:
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            else:
+                print(f"[INFO] Real-time mode is not possible, dt: {dt*1000:.2f} ms, actual dt: {actual_dt*1000:.2f} ms")
 
     # close the simulator
     env.close()
