@@ -120,11 +120,13 @@ class G1EnvCfg(DirectRLEnvCfg):
         GREEN_ARROW_X_MARKER_CFG.replace(prim_path="/Visuals/Command/velocity_command")
     )
     """The configuration for the command velocity visualization marker. Defaults to GREEN_ARROW_X_MARKER_CFG."""
+    command_vel_visualizer_cfg.markers["arrow"].scale = (1.0, 0.4, 0.4)
 
     current_vel_visualizer_cfg: VisualizationMarkersCfg = (
         BLUE_ARROW_X_MARKER_CFG.replace(prim_path="/Visuals/Command/velocity_current")
     )
     """The configuration for the current velocity visualization marker. Defaults to BLUE_ARROW_X_MARKER_CFG."""
+    current_vel_visualizer_cfg.markers["arrow"].scale = (1.0, 0.4, 0.4)
 
     pose_visualizer_cfg: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
         prim_path="/Visuals/Command/pose"
@@ -217,9 +219,10 @@ def resolve_xy_velocity_to_arrow(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     # scale
     arrow_scale = torch.tensor(scale, device=device).repeat(xy_velocity_b.shape[0], 1)
-    arrow_scale[:, 0] *= torch.linalg.norm(xy_velocity_b, dim=1) * 3.0
+    SCALE_FACTOR = 5.0
+    arrow_scale[:, 0] *= torch.linalg.norm(xy_velocity_b, dim=1) * SCALE_FACTOR
 
-    # diretion
+    # direction
     heading_angle = torch.atan2(xy_velocity_b[:, 1], xy_velocity_b[:, 0])
     zeros = torch.zeros_like(heading_angle)
     arrow_quat = math_utils.quat_from_euler_xyz(zeros, zeros, heading_angle)
@@ -811,7 +814,7 @@ class G1Env(DirectRLEnv):
 
         # Place marker above the robot
         base_pos_w = self.robot.data.root_pos_w.clone()
-        base_pos_w[:, 2] += 0.5
+        base_pos_w[:, 2] += 1.0
 
         # Convert the velocity command to an arrow
         vel_command_arrow_scale, vel_command_arrow_quat = resolve_xy_velocity_to_arrow(
