@@ -139,9 +139,9 @@ def main():
 
     # get environment (physics) dt for real-time evaluation
     try:
-        dt = env.physics_dt
+        dt = env.step_dt
     except AttributeError:
-        dt = env.unwrapped.physics_dt
+        dt = env.unwrapped.step_dt
 
     # wrap for video recording
     if args_cli.video:

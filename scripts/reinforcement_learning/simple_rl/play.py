@@ -223,7 +223,7 @@ def main(
     # Run player
     # player.run()
 
-    dt = env.unwrapped.physics_dt
+    dt = env.unwrapped.step_dt
 
     # reset environment
     obs = env.reset()
