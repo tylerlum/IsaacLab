@@ -516,7 +516,7 @@ class G1Dex3Env(DirectRLEnv):
 
                 # rough_env_cfg.py
                 "termination_penalty": -200.0,
-                "track_lin_vel_xy_exp": 1.0,
+                "track_lin_vel_xy_exp": 5.0,
                 "track_ang_vel_z_exp": 1.0,
                 "feet_air_time": 0.75,
                 "feet_slide": -0.1,
