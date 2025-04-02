@@ -260,8 +260,9 @@ def main(
                 if player.is_rnn and player.states is not None:
                     for s in player.states:
                         s[:, dones, :] = 0.0
+
+        timestep += 1
         if args_cli.video:
-            timestep += 1
             # Exit the play loop after recording one video
             if timestep == args_cli.video_length and args_cli.single_video:
                 break
@@ -271,6 +272,7 @@ def main(
         sleep_time = dt - actual_dt
         if args_cli.real_time:
             if sleep_time > 0:
+                print(f"[INFO] Sleeping for {sleep_time*1000:.2f} ms, dt: {dt*1000:.2f} ms, actual dt: {actual_dt*1000:.2f} ms")
                 time.sleep(sleep_time)
             else:
                 print(f"[INFO] Real-time mode is not possible, dt: {dt*1000:.2f} ms, actual dt: {actual_dt*1000:.2f} ms")
