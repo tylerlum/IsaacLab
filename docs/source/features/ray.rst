@@ -40,8 +40,7 @@ Both resource-wrapped and tuning aggregate jobs dispatch individual jobs to a de
 cluster, which leverages the cluster's resources (e.g., a single workstation node or multiple nodes)
 to execute these jobs with workers in parallel and/or sequentially.
 
-By default, jobs use all \
-available resources on each available GPU-enabled node for each sub-job worker. This can be changed through
+By default, jobs use all available resources on each available GPU-enabled node for each sub-job worker. This can be changed through
 specifying the ``--num_workers`` argument for resource-wrapped jobs, or ``--num_workers_per_node``
 for tuning jobs, which is especially critical for parallel aggregate
 job processing on local/virtual multi-GPU machines. Tuning jobs assume homogeneous node resource composition for nodes with GPUs.

@@ -28,7 +28,7 @@ We recommend using these versions or newer.
 * To install Docker Compose, please follow the instructions for your operating system on the `docker compose`_ page.
 * Follow the post-installation steps for Docker on the `post-installation steps`_ page. These steps allow you to run
   Docker without using ``sudo``.
-* To build and run GPU-accelerated containers, you also need install the `NVIDIA Container Toolkit`_.
+* To build and run GPU-accelerated containers, you also need to install the `NVIDIA Container Toolkit`_.
   Please follow the instructions on the `Container Toolkit website`_ for installation steps.
 
 .. note::
@@ -76,7 +76,7 @@ or else they will default to the ``base`` image extension. These commands are:
 * **start**: This builds the image and brings up the container in detached mode (i.e. in the background).
 * **enter**: This begins a new bash process in an existing Isaac Lab container, and which can be exited
   without bringing down the container.
-* **config**: This outputs the compose.yaml which would be result from the inputs given to ``container.py start``. This command is useful
+* **config**: This outputs the compose.yaml which would result from the inputs given to ``container.py start``. This command is useful
   for debugging a compose configuration.
 * **copy**: This copies the ``logs``, ``data_storage`` and ``docs/_build`` artifacts, from the ``isaac-lab-logs``, ``isaac-lab-data`` and ``isaac-lab-docs``
   volumes respectively, to the ``docker/artifacts`` directory. These artifacts persist between docker container instances and are shared between image extensions.

@@ -42,7 +42,7 @@ A detailed overview of the installation procedure for ``apptainer`` can be found
 
 For simplicity, we recommend that an SSH connection is set up between the local
 development machine and the cluster. Such a connection will simplify the file transfer and prevent
-the user cluster password from being requested multiple times.
+the user's cluster password from being requested multiple times.
 
 .. attention::
   The workflow has been tested with:
@@ -78,7 +78,7 @@ The following describes the parameters that need to be configured:
        end on ``isaaclab``. It will be copied to the compute node and mounted into
        the singularity container. When a job is submitted, the latest local changes will
        be copied to the cluster to a new directory in the format ``${CLUSTER_ISAACLAB_DIR}_${datetime}``
-       with the date and time of the job submission. This allows to run multiple jobs with different code versions at
+       with the date and time of the job submission. This allows multiple jobs with different code versions to be run at
        the same time.
    * - CLUSTER_LOGIN
      - The login to the cluster. Typically, this is the user and cluster names,
@@ -190,8 +190,8 @@ your Python executable's output is stored under ``isaaclab/logs`` as this direct
 node and ``CLUSTER_ISAACLAB_DIR``.
 
 ``[profile]`` is an optional argument that specifies which singularity image corresponding to the  container profile
-will be used. If no profile is specified, the default profile ``base`` will be used. The profile has be defined
-directlty after the ``job`` command. All other arguments are passed to the Python executable. If no profile is
+will be used. If no profile is specified, the default profile ``base`` will be used. The profile has to be defined
+directly after the ``job`` command. All other arguments are passed to the Python executable. If no profile is
 defined, all arguments are passed to the Python executable.
 
 The training arguments are passed to the Python executable. As an example, the standard
