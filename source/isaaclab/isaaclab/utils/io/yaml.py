@@ -11,12 +11,12 @@ import yaml
 from isaaclab.utils import class_to_dict
 
 
-def load_yaml(filename: str) -> dict:
+def load_yaml(filename: str, unsafe: bool = False) -> dict:
     """Loads an input PKL file safely.
 
     Args:
         filename: The path to pickled file.
-
+        unsafe: Whether to use unsafe loading. Defaults to False.
     Raises:
         FileNotFoundError: When the specified file does not exist.
 
@@ -26,7 +26,10 @@ def load_yaml(filename: str) -> dict:
     if not os.path.exists(filename):
         raise FileNotFoundError(f"File not found: {filename}")
     with open(filename) as f:
-        data = yaml.full_load(f)
+        if unsafe:
+            data = yaml.unsafe_load(f)
+        else:
+            data = yaml.full_load(f)
     return data
 
 

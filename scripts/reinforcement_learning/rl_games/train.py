@@ -63,12 +63,15 @@ from isaaclab.envs import (
 )
 from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
-from isaaclab.utils.io import dump_pickle, dump_yaml
+from isaaclab.utils.io import dump_pickle, dump_yaml, load_yaml
 
 from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils.hydra import hydra_task_config
+
+import wandb
+from wandb.sdk.lib.runid import generate_id
 
 # PLACEHOLDER: Extension template (do not remove this comment)
 
@@ -161,6 +164,26 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # set number of actors into agent config
     agent_cfg["params"]["config"]["num_actors"] = env.unwrapped.num_envs
+
+    USE_WANDB = True
+    if USE_WANDB:
+        wandb_name = f"{agent_cfg['params']['config']['name']}_{log_dir}"
+        wandb_config = {
+            "agent": agent_cfg,
+            "env": load_yaml(
+                os.path.join(log_root_path, log_dir, "params", "env.yaml"), unsafe=True
+            ),
+        }
+        wandb.init(
+            project="isaaclab",
+            entity="tylerlum",
+            name=wandb_name,
+            group=None,
+            config=wandb_config,
+            sync_tensorboard=True,
+            id=f"{wandb_name}_{generate_id()}",
+        )
+
     # create runner from rl-games
     runner = Runner(IsaacAlgoObserver())
     runner.load(agent_cfg)
