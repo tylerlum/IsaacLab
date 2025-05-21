@@ -97,6 +97,61 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     # robot
     robot: ArticulationCfg = BIMANUAL_CFG.replace(prim_path=f"{ENV_REGEX_NS}/Robot")
 
+    # object
+    object: RigidObjectCfg = RigidObjectCfg(
+        prim_path=f"{ENV_REGEX_NS}/Object",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/starbucks_bottle/usd/starbucks_bottle.usd",
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=False,
+                disable_gravity=False,
+                enable_gyroscopic_forces=True,
+                solver_position_iteration_count=8,
+                solver_velocity_iteration_count=8,
+                sleep_threshold=0.005,
+                stabilization_threshold=0.0025,
+                max_depenetration_velocity=1000.0,
+            ),
+            # mass_props=sim_utils.MassPropertiesCfg(density=400.0),
+            scale=(1, 1, 1),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=(float(TABLE_X) + 0.1, float(TABLE_Y), float(TABLE_Z) + TABLE_LENGTH_Z / 2 + 0.05),
+            rot=(float(TABLE_QW), float(TABLE_QX), float(TABLE_QY), float(TABLE_QZ)),
+        ),
+    )
+
+    # goal object
+    goal_object: RigidObjectCfg = RigidObjectCfg(
+        prim_path=f"{ENV_REGEX_NS}/GoalObject",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/starbucks_bottle/usd/starbucks_bottle.usd",
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=True,
+                disable_gravity=False,
+                enable_gyroscopic_forces=True,
+                solver_position_iteration_count=8,
+                solver_velocity_iteration_count=8,
+                sleep_threshold=0.005,
+                stabilization_threshold=0.0025,
+                max_depenetration_velocity=1000.0,
+            ),
+            # mass_props=sim_utils.MassPropertiesCfg(density=400.0),
+            scale=(1, 1, 1),
+            collision_props=sim_utils.CollisionPropertiesCfg(
+                collision_enabled=False,
+            ),
+            visual_material=sim_utils.PreviewSurfaceCfg(
+                diffuse_color=(0.0, 1.0, 0.0),  # RGB values for green
+                roughness=0.0,
+            ),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=(float(TABLE_X), float(TABLE_Y), float(TABLE_Z) + TABLE_LENGTH_Z / 2 + 0.1),
+            rot=(float(TABLE_QW), float(TABLE_QX), float(TABLE_QY), float(TABLE_QZ)),
+        ),
+    )
+
     # table
     table: RigidObjectCfg = RigidObjectCfg(
         prim_path=f"{ENV_REGEX_NS}/Table",
@@ -117,30 +172,6 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(float(TABLE_X), float(TABLE_Y), float(TABLE_Z)),
-            rot=(float(TABLE_QW), float(TABLE_QX), float(TABLE_QY), float(TABLE_QZ)),
-        ),
-    )
-
-    # object
-    object: RigidObjectCfg = RigidObjectCfg(
-        prim_path=f"{ENV_REGEX_NS}/Object",
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/starbucks_bottle/usd/starbucks_bottle.usd",
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                kinematic_enabled=False,
-                disable_gravity=False,
-                enable_gyroscopic_forces=True,
-                solver_position_iteration_count=8,
-                solver_velocity_iteration_count=8,
-                sleep_threshold=0.005,
-                stabilization_threshold=0.0025,
-                max_depenetration_velocity=1000.0,
-            ),
-            # mass_props=sim_utils.MassPropertiesCfg(density=400.0),
-            scale=(1, 1, 1),
-        ),
-        init_state=RigidObjectCfg.InitialStateCfg(
-            pos=(float(TABLE_X), float(TABLE_Y), float(TABLE_Z) + TABLE_LENGTH_Z / 2 + 0.05),
             rot=(float(TABLE_QW), float(TABLE_QX), float(TABLE_QY), float(TABLE_QZ)),
         ),
     )
@@ -318,6 +349,11 @@ class BimanualEnv(DirectRLEnv):
         # add object to scene
         self.object = RigidObject(self.cfg.object)
         self.scene.rigid_objects["object"] = self.object
+
+        # add goal object to scene
+        self.goal_object = RigidObject(self.cfg.goal_object)
+        sim_utils.make_uninstanceable(self.cfg.goal_object.prim_path)
+        self.scene.rigid_objects["goal_object"] = self.goal_object
 
         # add table to scene
         self.table = RigidObject(self.cfg.table)
