@@ -28,7 +28,7 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.math import quat_rotate_inverse, yaw_quat
-from isaaclab_assets.robots.unitree import G1_CFG
+from isaaclab_assets.robots.bimanual import BIMANUAL_CFG
 
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
 import wandb
@@ -83,7 +83,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     )
 
     # robot
-    robot: ArticulationCfg = G1_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    robot: ArticulationCfg = BIMANUAL_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
     # contact sensor
     contact_sensor = ContactSensorCfg(
