@@ -102,7 +102,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         prim_path="/Visuals/Command/pose"
     )
     """The configuration for the pose visualization marker. Defaults to FRAME_MARKER_CFG."""
-    pose_visualizer_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+    pose_visualizer_cfg.markers["frame"].scale = (1.0, 1.0, 1.0)
 
 
 REWARD_NAMES = [
@@ -199,9 +199,25 @@ class BimanualEnv(DirectRLEnv):
 
         # Robot link idxs
         self._link_idxs, self._link_names = self.robot.find_bodies(".*")
+        self._right_fingertip_link_idxs, self._right_fingertip_link_names = self.robot.find_bodies([
+            "right_index_link_3",
+            "right_middle_link_3",
+            "right_ring_link_3",
+            "right_thumb_link_3",
+        ])
+        self._left_fingertip_link_idxs, self._left_fingertip_link_names = self.robot.find_bodies([
+            "left_index_link_3",
+            "left_middle_link_3",
+            "left_ring_link_3",
+            "left_thumb_link_3",
+        ])
         print("!" * 100)
         print(f"len(self._link_idxs): {len(self._link_idxs)}")
         print(f"self._link_names: {self._link_names}")
+        print(f"len(self._right_fingertip_link_idxs): {len(self._right_fingertip_link_idxs)}")
+        print(f"self._right_fingertip_link_names: {self._right_fingertip_link_names}")
+        print(f"len(self._left_fingertip_link_idxs): {len(self._left_fingertip_link_idxs)}")
+        print(f"self._left_fingertip_link_names: {self._left_fingertip_link_names}")
         print("!" * 100)
 
         # Contact sensor link idxs
@@ -256,6 +272,11 @@ class BimanualEnv(DirectRLEnv):
 
     def _apply_action(self):
         position_targets = self.cfg.action_scale * self.raw_actions + self.action_offset
+
+        DISABLE_ACTIONS = False  # Set to True to debug actions
+        if DISABLE_ACTIONS:
+            position_targets[:] = 0.0
+
         self.robot.set_joint_position_target(
             position_targets, joint_ids=self._joint_dof_idxs
         )
@@ -297,22 +318,22 @@ class BimanualEnv(DirectRLEnv):
         under_min = (joint_pos_min - joint_pos).clip(min=0.0)
         over_max = (joint_pos - joint_pos_max).clip(min=0.0)
 
-        # net_forces_w_history.shape == (num_envs, history_length, num_bodies, 3)
-        # contacts = (
-        #     self.contact_sensor.data.net_forces_w_history.norm(dim=-1).max(dim=1).values
-        #     > 1.0
-        # )
+        DEBUG = False
+        if DEBUG:
+            joint_pos = self.robot.data.joint_pos
+            joint_names = self.robot.data.joint_names
+            right_fingertip_positions = self.robot.data.body_pos_w[:, self._right_fingertip_link_idxs] - self.scene.env_origins[:, None]
+            left_fingertip_positions = self.robot.data.body_pos_w[:, self._left_fingertip_link_idxs] - self.scene.env_origins[:, None]
 
-        # # feet air time positive biped
-        # air_time = self.contact_sensor.data.current_air_time[
-        #     :, self._contact_ankle_link_idxs
-        # ]
-        # contact_time = self.contact_sensor.data.current_contact_time[
-        #     :, self._contact_ankle_link_idxs
-        # ]
-        # in_contact = contact_time > 0.0
-        # in_mode_time = torch.where(in_contact, contact_time, air_time)
-        # single_stance = in_contact.int().sum(dim=1) == 1
+            print()
+            print(f"joint_pos.shape: {joint_pos.shape}")
+            print(f"joint_names: {joint_names}")
+            print(f"right_fingertip_positions.shape: {right_fingertip_positions.shape}")
+            print(f"left_fingertip_positions.shape: {left_fingertip_positions.shape}")
+            print(f"joint_pos: {joint_pos}")
+            print(f"right_fingertip_positions: {right_fingertip_positions}")
+            print(f"left_fingertip_positions: {left_fingertip_positions}")
+            print()
 
         # Robot's linear velocity in gravity-aligned robot frame (z up, but x/y aligned with robot base frame)
         robot_lin_vel_rotated = quat_rotate_inverse(
@@ -332,13 +353,6 @@ class BimanualEnv(DirectRLEnv):
 
             # rough_env_cfg.py
             "termination_penalty": self.reset_terminated.float(),  # (don't terminate) This works because _get_dones() is called before _get_rewards()
-            # "feet_air_time": torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0).min(dim=1).values.clamp(max=0.4) * (self.vel_commands_b[:, :2].norm(dim=1) > 0.1),  # (Promote stable single-stance gait)
-            # "feet_slide": (self.robot.data.body_lin_vel_w[:, self._ankle_link_idxs, :2].norm(dim=-1) * contacts[:, self._contact_ankle_link_idxs]).sum(dim=1),  # (don't slide feet)
-            # "dof_pos_limits_ankle": (under_min + over_max)[:, self._ankle_joint_idxs].sum(dim=1),  # (don't exceed dof pos limits of ankles)
-            # "joint_deviation_hip": joint_deviation[:, self._hip_joint_idxs].sum(dim=1),  # (don't deviate from default hip positions)
-            # "joint_deviation_arms": joint_deviation[:, self._arm_joint_idxs].sum(dim=1),  # (don't deviate from default arm positions)
-            # "joint_deviation_fingers": joint_deviation[:, self._finger_joint_idxs].sum(dim=1),  # (don't deviate from default finger positions)
-            # "joint_deviation_torso": joint_deviation[:, self._torso_joint_idxs].sum(dim=1),  # (don't deviate from default torso position)
         }
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
             f"Individual reward buffers and reward names do not match: {self.individual_reward_bufs.keys()} vs {REWARD_NAMES}\nOnly in individual reward buffers: {set(self.individual_reward_bufs.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_bufs.keys())}"
@@ -557,12 +571,11 @@ class BimanualEnv(DirectRLEnv):
 
         # Place marker above the robot
         base_pos_w = self.robot.data.root_pos_w.clone()
-        base_pos_w[:, 2] += 0.1
 
         self.pose_visualizer.visualize(
             translations=base_pos_w,
             orientations=self.robot.data.root_quat_w,
-            scales=torch.tensor([0.1, 0.1, 0.1], device=self.device)
+            scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
             .unsqueeze(0)
             .repeat_interleave(self.num_envs, dim=0),
         )
