@@ -12,7 +12,7 @@ import isaaclab.utils.math as math_utils
 import numpy as np
 import torch
 import torch.nn as nn
-from isaaclab.assets import Articulation, ArticulationCfg
+from isaaclab.assets import Articulation, ArticulationCfg, RigidObjectCfg, RigidObject
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.markers.config import (
@@ -41,6 +41,7 @@ physics_material = sim_utils.RigidBodyMaterialCfg(
     dynamic_friction=1.0,
 )
 
+ENV_REGEX_NS = "/World/envs/env_.*"
 
 @configclass
 class BimanualEnvCfg(DirectRLEnvCfg):
@@ -83,11 +84,32 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     )
 
     # robot
-    robot: ArticulationCfg = BIMANUAL_CFG.replace(prim_path="/World/envs/env_.*/Robot")
+    robot: ArticulationCfg = BIMANUAL_CFG.replace(prim_path=f"{ENV_REGEX_NS}/Robot")
+
+    # table
+    table: RigidObjectCfg = RigidObjectCfg(
+        prim_path=f"{ENV_REGEX_NS}/object",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=True,  # make it static
+                disable_gravity=False,
+                enable_gyroscopic_forces=True,
+                solver_position_iteration_count=8,
+                solver_velocity_iteration_count=0,
+                sleep_threshold=0.005,
+                stabilization_threshold=0.0025,
+                max_depenetration_velocity=1000.0,
+            ),
+            # mass_props=sim_utils.MassPropertiesCfg(density=400.0),
+            scale=(1.2, 1.2, 1.2),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, -0.17, 0.56), rot=(1.0, 0.0, 0.0, 0.0)),
+    )
 
     # contact sensor
     contact_sensor = ContactSensorCfg(
-        prim_path="/World/envs/env_.*/Robot/.*",
+        prim_path=f"{ENV_REGEX_NS}/Robot/.*",
         history_length=3,
         update_period=SIM_DT,
     )
@@ -199,24 +221,36 @@ class BimanualEnv(DirectRLEnv):
 
         # Robot link idxs
         self._link_idxs, self._link_names = self.robot.find_bodies(".*")
-        self._right_fingertip_link_idxs, self._right_fingertip_link_names = self.robot.find_bodies([
-            "right_index_link_3",
-            "right_middle_link_3",
-            "right_ring_link_3",
-            "right_thumb_link_3",
-        ])
-        self._left_fingertip_link_idxs, self._left_fingertip_link_names = self.robot.find_bodies([
-            "left_index_link_3",
-            "left_middle_link_3",
-            "left_ring_link_3",
-            "left_thumb_link_3",
-        ])
+        self._right_fingertip_link_idxs, self._right_fingertip_link_names = (
+            self.robot.find_bodies(
+                [
+                    "right_index_link_3",
+                    "right_middle_link_3",
+                    "right_ring_link_3",
+                    "right_thumb_link_3",
+                ]
+            )
+        )
+        self._left_fingertip_link_idxs, self._left_fingertip_link_names = (
+            self.robot.find_bodies(
+                [
+                    "left_index_link_3",
+                    "left_middle_link_3",
+                    "left_ring_link_3",
+                    "left_thumb_link_3",
+                ]
+            )
+        )
         print("!" * 100)
         print(f"len(self._link_idxs): {len(self._link_idxs)}")
         print(f"self._link_names: {self._link_names}")
-        print(f"len(self._right_fingertip_link_idxs): {len(self._right_fingertip_link_idxs)}")
+        print(
+            f"len(self._right_fingertip_link_idxs): {len(self._right_fingertip_link_idxs)}"
+        )
         print(f"self._right_fingertip_link_names: {self._right_fingertip_link_names}")
-        print(f"len(self._left_fingertip_link_idxs): {len(self._left_fingertip_link_idxs)}")
+        print(
+            f"len(self._left_fingertip_link_idxs): {len(self._left_fingertip_link_idxs)}"
+        )
         print(f"self._left_fingertip_link_names: {self._left_fingertip_link_names}")
         print("!" * 100)
 
@@ -242,6 +276,10 @@ class BimanualEnv(DirectRLEnv):
         # add articulation to scene
         self.robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self.robot
+
+        # add table to scene
+        self.table = RigidObject(self.cfg.table)
+        self.scene.rigid_objects["table"] = self.table
 
         # add contact sensor to scene
         self.contact_sensor = ContactSensor(self.cfg.contact_sensor)
@@ -322,8 +360,14 @@ class BimanualEnv(DirectRLEnv):
         if DEBUG:
             joint_pos = self.robot.data.joint_pos
             joint_names = self.robot.data.joint_names
-            right_fingertip_positions = self.robot.data.body_pos_w[:, self._right_fingertip_link_idxs] - self.scene.env_origins[:, None]
-            left_fingertip_positions = self.robot.data.body_pos_w[:, self._left_fingertip_link_idxs] - self.scene.env_origins[:, None]
+            right_fingertip_positions = (
+                self.robot.data.body_pos_w[:, self._right_fingertip_link_idxs]
+                - self.scene.env_origins[:, None]
+            )
+            left_fingertip_positions = (
+                self.robot.data.body_pos_w[:, self._left_fingertip_link_idxs]
+                - self.scene.env_origins[:, None]
+            )
 
             print()
             print(f"joint_pos.shape: {joint_pos.shape}")
