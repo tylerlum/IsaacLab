@@ -21,7 +21,7 @@ from isaaclab_assets import ISAACLAB_ASSETS_DATA_DIR
 
 BIMANUAL_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/bimanual_kuka_allegro_v2/usd/bimanual_kuka_allegro.usd",
+        usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/bimanual_kuka_allegro_v3/usd/bimanual_kuka_allegro.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
