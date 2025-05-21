@@ -17,9 +17,8 @@ from isaaclab.assets import Articulation, ArticulationCfg, RigidObjectCfg, Rigid
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.markers.config import (
-    BLUE_ARROW_X_MARKER_CFG,
+    SPHERE_MARKER_CFG,
     FRAME_MARKER_CFG,
-    GREEN_ARROW_X_MARKER_CFG,
 )
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensor, ContactSensorCfg
@@ -28,8 +27,15 @@ from isaaclab.sim.spawners.lights import DomeLightCfg, LightCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
-from isaaclab.utils.math import quat_rotate_inverse, yaw_quat
 from isaaclab_assets.robots.bimanual import BIMANUAL_CFG
+from isaaclab_tasks.direct.tyler.bimanual.utils.robot_constants import (
+    INDEX_FINGERTIP_IDX,
+    MIDDLE_FINGERTIP_IDX,
+    RING_FINGERTIP_IDX,
+    THUMB_FINGERTIP_IDX,
+    RIGHT_FINGERTIP_LINK_NAMES,
+    LEFT_FINGERTIP_LINK_NAMES,
+)
 from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
     TABLE_X,
     TABLE_Y,
@@ -40,7 +46,6 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
     TABLE_QW,
     TABLE_LENGTH_Z,
 )
-import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
 import wandb
 
 SIM_DT = 0.005
@@ -203,16 +208,19 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     """The configuration for the pose visualization marker. Defaults to FRAME_MARKER_CFG."""
     pose_visualizer_cfg.markers["frame"].scale = (1.0, 1.0, 1.0)
 
+    right_fingertip_visualizer_cfg: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/right_fingertip"
+    )
+    left_fingertip_visualizer_cfg: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/left_fingertip"
+    )
+    left_fingertip_visualizer_cfg.markers[
+        "sphere"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0))
+
 
 REWARD_NAMES = [
-    "lin_vel_z_l2",
-    "ang_vel_xy_l2",
-    "dof_torques_l2",
-    "dof_acc_l2",
-    "action_rate_l2",
-    # "undesired_contacts",
-    "flat_orientation_l2",
-    "termination_penalty",
+    "index_fingertip_to_goal_object_dist",
 ]
 
 
@@ -300,24 +308,10 @@ class BimanualEnv(DirectRLEnv):
         # Robot link idxs
         self._link_idxs, self._link_names = self.robot.find_bodies(".*")
         self._right_fingertip_link_idxs, self._right_fingertip_link_names = (
-            self.robot.find_bodies(
-                [
-                    "right_index_link_3",
-                    "right_middle_link_3",
-                    "right_ring_link_3",
-                    "right_thumb_link_3",
-                ]
-            )
+            self.robot.find_bodies(RIGHT_FINGERTIP_LINK_NAMES)
         )
         self._left_fingertip_link_idxs, self._left_fingertip_link_names = (
-            self.robot.find_bodies(
-                [
-                    "left_index_link_3",
-                    "left_middle_link_3",
-                    "left_ring_link_3",
-                    "left_thumb_link_3",
-                ]
-            )
+            self.robot.find_bodies(LEFT_FINGERTIP_LINK_NAMES)
         )
         print("!" * 100)
         print(f"len(self._link_idxs): {len(self._link_idxs)}")
@@ -425,7 +419,9 @@ class BimanualEnv(DirectRLEnv):
 
         ZERO_OBS = False  # Set to True to debug
         if ZERO_OBS:
-            obs = torch.zeros(self.num_envs, self.cfg.observation_space, device=self.device)
+            obs = torch.zeros(
+                self.num_envs, self.cfg.observation_space, device=self.device
+            )
 
         assert obs.shape == (self.num_envs, self.cfg.observation_space), (
             f"obs.shape: {obs.shape} != (self.num_envs, self.cfg.observation_space): {(self.num_envs, self.cfg.observation_space)}"
@@ -434,16 +430,6 @@ class BimanualEnv(DirectRLEnv):
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
-        # Intermediate values
-        joint_pos = self.robot.data.joint_pos
-        default_joint_pos = self.robot.data.default_joint_pos
-        joint_deviation = (joint_pos - default_joint_pos).abs()
-
-        joint_pos_max = self.robot.data.soft_joint_pos_limits[:, :, 1]
-        joint_pos_min = self.robot.data.soft_joint_pos_limits[:, :, 0]
-        under_min = (joint_pos_min - joint_pos).clip(min=0.0)
-        over_max = (joint_pos - joint_pos_max).clip(min=0.0)
-
         DEBUG = False
         if DEBUG:
             joint_pos = self.robot.data.joint_pos
@@ -467,24 +453,9 @@ class BimanualEnv(DirectRLEnv):
             print(f"left_fingertip_positions: {left_fingertip_positions}")
             print()
 
-        # Robot's linear velocity in gravity-aligned robot frame (z up, but x/y aligned with robot base frame)
-        robot_lin_vel_rotated = quat_rotate_inverse(
-            yaw_quat(self.robot.data.root_quat_w), self.robot.data.root_lin_vel_w[:, :3]
-        )
-
         # fmt: off
         self.individual_reward_bufs = {
-            # velocity_env_cfg.py
-            "lin_vel_z_l2": self.robot.data.root_lin_vel_b[:, 2].square(),  # (don't move up/down)
-            "ang_vel_xy_l2": self.robot.data.root_ang_vel_b[:, :2].square().sum(dim=1), # (don't tip sideways or forwards)
-            "dof_torques_l2": self.robot.data.applied_torque[:, self._joint_dof_idxs].square().sum(dim=1),  # (don't apply too much torque)
-            "dof_acc_l2": self.robot.data.joint_acc[:, self._joint_dof_idxs].square().sum(dim=1),  # (don't apply too much acceleration)
-            "action_rate_l2": (self.raw_actions - self.prev_raw_actions).square().sum(dim=1),  # (don't change actions too quickly)
-            # "undesired_contacts": contacts[:, self._contact_thigh_link_idxs].sum(dim=1),  # (don't contact thighs)
-            "flat_orientation_l2": self.robot.data.projected_gravity_b[:, :2].square().sum(dim=1),  # (don't tip sideways or forwards)
-
-            # rough_env_cfg.py
-            "termination_penalty": self.reset_terminated.float(),  # (don't terminate) This works because _get_dones() is called before _get_rewards()
+            "index_fingertip_to_goal_object_dist": torch.zeros(self.num_envs, device=self.device),
         }
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
             f"Individual reward buffers and reward names do not match: {self.individual_reward_bufs.keys()} vs {REWARD_NAMES}\nOnly in individual reward buffers: {set(self.individual_reward_bufs.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_bufs.keys())}"
@@ -492,17 +463,7 @@ class BimanualEnv(DirectRLEnv):
 
         if not hasattr(self, "reward_weights"):
             self.individual_reward_weights = {
-                # velocity_env_cfg.py
-                "lin_vel_z_l2": -0.2,
-                "ang_vel_xy_l2": -0.05,
-                "dof_torques_l2": -2.0e-6,
-                "dof_acc_l2": -1.0e-7,
-                "action_rate_l2": -0.005,
-                # "undesired_contacts": -1.0,
-                "flat_orientation_l2": -1.0,
-
-                # rough_env_cfg.py
-                "termination_penalty": -200.0,
+                "index_fingertip_to_goal_object_dist": 1.0,
             }
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
@@ -681,25 +642,50 @@ class BimanualEnv(DirectRLEnv):
                 self.pose_visualizer = VisualizationMarkers(
                     self.cfg.pose_visualizer_cfg
                 )
+            if not hasattr(self, "right_fingertip_visualizer"):
+                self.right_fingertip_visualizer = VisualizationMarkers(
+                    self.cfg.right_fingertip_visualizer_cfg
+                )
+            if not hasattr(self, "left_fingertip_visualizer"):
+                self.left_fingertip_visualizer = VisualizationMarkers(
+                    self.cfg.left_fingertip_visualizer_cfg
+                )
 
             # set their visibility to true
             self.pose_visualizer.set_visibility(True)
+            self.right_fingertip_visualizer.set_visibility(True)
+            self.left_fingertip_visualizer.set_visibility(True)
         else:
             if hasattr(self, "pose_visualizer"):
                 self.pose_visualizer.set_visibility(False)
+            if hasattr(self, "right_fingertip_visualizer"):
+                self.right_fingertip_visualizer.set_visibility(False)
+            if hasattr(self, "left_fingertip_visualizer"):
+                self.left_fingertip_visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
         # Make sure the robot is initialized
         if not self.robot.is_initialized:
             return
 
-        # Place marker above the robot
         base_pos_w = self.robot.data.root_pos_w.clone()
-
         self.pose_visualizer.visualize(
             translations=base_pos_w,
             orientations=self.robot.data.root_quat_w,
             scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+            .unsqueeze(0)
+            .repeat_interleave(self.num_envs, dim=0),
+        )
+
+        self.right_fingertip_visualizer.visualize(
+            translations=self.right_index_fingertip_position,
+            scales=torch.tensor([2.0, 2.0, 2.0], device=self.device)
+            .unsqueeze(0)
+            .repeat_interleave(self.num_envs, dim=0),
+        )
+        self.left_fingertip_visualizer.visualize(
+            translations=self.left_index_fingertip_position,
+            scales=torch.tensor([2.0, 2.0, 2.0], device=self.device)
             .unsqueeze(0)
             .repeat_interleave(self.num_envs, dim=0),
         )
@@ -727,6 +713,9 @@ class BimanualEnv(DirectRLEnv):
                 KeyboardCommand(
                     key=carb.input.KeyboardInput.R, func=self._reset_kbc, args=[]
                 ),
+                KeyboardCommand(
+                    key=carb.input.KeyboardInput.B, func=self._breakpoint_kbc, args=[]
+                ),
             ]
         )
 
@@ -734,4 +723,51 @@ class BimanualEnv(DirectRLEnv):
         print("In reset_kbc")
         self._reset_idx(env_ids=None)
 
+    def _breakpoint_kbc(self):
+        print("In breakpoint_kbc")
+        breakpoint()
+
     #### KEYBOARD END ####
+
+    #### TENSOR SLICE PROPERTIES START ####
+    @property
+    def right_fingertip_positions(self) -> torch.Tensor:
+        return self.robot.data.body_pos_w[:, self._right_fingertip_link_idxs]
+
+    @property
+    def left_fingertip_positions(self) -> torch.Tensor:
+        return self.robot.data.body_pos_w[:, self._left_fingertip_link_idxs]
+
+    @property
+    def right_index_fingertip_position(self) -> torch.Tensor:
+        return self.right_fingertip_positions[:, INDEX_FINGERTIP_IDX]
+
+    @property
+    def right_middle_fingertip_position(self) -> torch.Tensor:
+        return self.right_fingertip_positions[:, MIDDLE_FINGERTIP_IDX]
+
+    @property
+    def right_ring_fingertip_position(self) -> torch.Tensor:
+        return self.right_fingertip_positions[:, RING_FINGERTIP_IDX]
+
+    @property
+    def right_thumb_fingertip_position(self) -> torch.Tensor:
+        return self.right_fingertip_positions[:, THUMB_FINGERTIP_IDX]
+
+    @property
+    def left_index_fingertip_position(self) -> torch.Tensor:
+        return self.left_fingertip_positions[:, INDEX_FINGERTIP_IDX]
+
+    @property
+    def left_middle_fingertip_position(self) -> torch.Tensor:
+        return self.left_fingertip_positions[:, MIDDLE_FINGERTIP_IDX]
+
+    @property
+    def left_ring_fingertip_position(self) -> torch.Tensor:
+        return self.left_fingertip_positions[:, RING_FINGERTIP_IDX]
+
+    @property
+    def left_thumb_fingertip_position(self) -> torch.Tensor:
+        return self.left_fingertip_positions[:, THUMB_FINGERTIP_IDX]
+
+    #### TENSOR SLICE PROPERTIES END ####
