@@ -112,7 +112,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
                 max_depenetration_velocity=1000.0,
             ),
             # mass_props=sim_utils.MassPropertiesCfg(density=400.0),
-            scale=(1.2, 1.2, 1.2),
+            scale=(1, 1, 1),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(float(TABLE_X), float(TABLE_Y), float(TABLE_Z)),
