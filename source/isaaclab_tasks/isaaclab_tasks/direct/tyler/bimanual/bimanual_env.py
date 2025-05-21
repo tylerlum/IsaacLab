@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 
+from isaaclab_assets import ISAACLAB_ASSETS_DATA_DIR
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
 import numpy as np
@@ -88,9 +89,9 @@ class BimanualEnvCfg(DirectRLEnvCfg):
 
     # table
     table: RigidObjectCfg = RigidObjectCfg(
-        prim_path=f"{ENV_REGEX_NS}/object",
+        prim_path=f"{ENV_REGEX_NS}/Table",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/table/usd/table.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,  # make it static
                 disable_gravity=False,
