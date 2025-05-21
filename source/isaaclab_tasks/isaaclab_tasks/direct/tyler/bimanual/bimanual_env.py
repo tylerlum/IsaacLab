@@ -28,6 +28,7 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab_assets.robots.bimanual import BIMANUAL_CFG
+from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import sample_uniform_tensor
 from isaaclab_tasks.direct.tyler.bimanual.utils.constants import NUM_XYZ
 from isaaclab_tasks.direct.tyler.bimanual.utils.color_constants import (
     RED_RGB,
@@ -643,12 +644,8 @@ class BimanualEnv(DirectRLEnv):
                 for reward_name in REWARD_NAMES
             }
 
-            self.right_goal_position = self.table_position.clone() + torch.tensor(
-                [0.0, -0.1, 0.05], device=self.device
-            ).unsqueeze(0)
-            self.left_goal_position = self.table_position.clone() + torch.tensor(
-                [0.0, 0.1, 0.05], device=self.device
-            ).unsqueeze(0)
+            self.right_goal_position = self._sample_right_goal_position(env_ids)
+            self.left_goal_position = self._sample_left_goal_position(env_ids)
         else:
             self.raw_actions[env_ids] = torch.zeros(
                 len(env_ids), self.cfg.action_space, device=self.device
@@ -664,12 +661,22 @@ class BimanualEnv(DirectRLEnv):
                     env_ids
                 ] = 0
 
-            self.right_goal_position[env_ids] = self.table_position[
-                env_ids
-            ] + torch.tensor([0.0, -0.1, 0.05], device=self.device).unsqueeze(0)
-            self.left_goal_position[env_ids] = self.table_position[
-                env_ids
-            ] + torch.tensor([0.0, 0.1, 0.05], device=self.device).unsqueeze(0)
+            self.right_goal_position[env_ids] = self._sample_right_goal_position(env_ids)
+            self.left_goal_position[env_ids] = self._sample_left_goal_position(env_ids)
+
+    def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
+        return self.table_position[env_ids] + sample_uniform_tensor(
+            low=torch.tensor([-0.5, -0.5, 0.05], device=self.device),
+            high=torch.tensor([0.5, -0.1, 0.5], device=self.device),
+            N=len(env_ids),
+        )
+
+    def _sample_left_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
+        return self.table_position[env_ids] + sample_uniform_tensor(
+            low=torch.tensor([-0.5, 0.1, 0.05], device=self.device),
+            high=torch.tensor([0.5, 0.5, 0.5], device=self.device),
+            N=len(env_ids),
+        )
 
     #### RESET END ####
 
@@ -798,7 +805,9 @@ class BimanualEnv(DirectRLEnv):
     #### TENSOR SLICE PROPERTIES START ####
     @property
     def table_position(self) -> torch.Tensor:
-        assert self.table.data.body_pos_w.shape == (self.num_envs, 1, NUM_XYZ), f"Table position shape: {self.table.data.body_pos_w.shape}"
+        assert self.table.data.body_pos_w.shape == (self.num_envs, 1, NUM_XYZ), (
+            f"Table position shape: {self.table.data.body_pos_w.shape}"
+        )
         return self.table.data.body_pos_w[:, 0]
 
     @property
