@@ -152,18 +152,29 @@ def main(
             # this loads the best checkpoint
             checkpoint_file = "best.pth"
         # get path to previous checkpoint
-        checkpoint_path = get_checkpoint_path(
-            log_root_path, ".*", checkpoint_file, other_dirs=["nn"]
-        )
-    print(f"[INFO]: Loading model checkpoint from: {checkpoint_path}")
+        try:
+            checkpoint_path = get_checkpoint_path(
+                log_root_path, ".*", checkpoint_file, other_dirs=["nn"]
+            )
+        except (ValueError, FileNotFoundError):
+            checkpoint_path = None
+            print(f"[INFO] No checkpoint found in {log_root_path}, setting checkpoint_path to {checkpoint_path}")
+
+    if checkpoint_path is not None:
+        print(f"[INFO]: Loading model checkpoint from: {checkpoint_path}")
 
     if args_cli.sigma is not None:
         sigma = float(args_cli.sigma)
     else:
         sigma = None
 
-    experiment_dir = os.path.dirname(os.path.dirname(checkpoint_path))
-    experiment_dir = os.path.abspath(experiment_dir)
+    if checkpoint_path is not None:
+        experiment_dir = os.path.dirname(os.path.dirname(checkpoint_path))
+        experiment_dir = os.path.abspath(experiment_dir)
+    else:
+        experiment_dir = os.path.join("logs", "simple_rl", args_cli.task + "_dummy")
+        experiment_dir = os.path.abspath(experiment_dir)
+
     print(f"[INFO]: Logging experiment in directory: {experiment_dir}")
 
     # create isaac environment
