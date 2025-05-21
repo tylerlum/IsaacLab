@@ -38,6 +38,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
     TABLE_QY,
     TABLE_QZ,
     TABLE_QW,
+    TABLE_LENGTH_Z,
 )
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
 import wandb
@@ -100,13 +101,13 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     table: RigidObjectCfg = RigidObjectCfg(
         prim_path=f"{ENV_REGEX_NS}/Table",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/table/usd/table.usd",
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/table/usd/table.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,  # make it static
                 disable_gravity=False,
                 enable_gyroscopic_forces=True,
                 solver_position_iteration_count=8,
-                solver_velocity_iteration_count=0,
+                solver_velocity_iteration_count=8,
                 sleep_threshold=0.005,
                 stabilization_threshold=0.0025,
                 max_depenetration_velocity=1000.0,
@@ -116,6 +117,30 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(float(TABLE_X), float(TABLE_Y), float(TABLE_Z)),
+            rot=(float(TABLE_QW), float(TABLE_QX), float(TABLE_QY), float(TABLE_QZ)),
+        ),
+    )
+
+    # object
+    object: RigidObjectCfg = RigidObjectCfg(
+        prim_path=f"{ENV_REGEX_NS}/Object",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/starbucks_bottle/usd/starbucks_bottle.usd",
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                kinematic_enabled=False,
+                disable_gravity=False,
+                enable_gyroscopic_forces=True,
+                solver_position_iteration_count=8,
+                solver_velocity_iteration_count=8,
+                sleep_threshold=0.005,
+                stabilization_threshold=0.0025,
+                max_depenetration_velocity=1000.0,
+            ),
+            # mass_props=sim_utils.MassPropertiesCfg(density=400.0),
+            scale=(1, 1, 1),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=(float(TABLE_X), float(TABLE_Y), float(TABLE_Z) + TABLE_LENGTH_Z / 2 + 0.05),
             rot=(float(TABLE_QW), float(TABLE_QX), float(TABLE_QY), float(TABLE_QZ)),
         ),
     )
@@ -289,6 +314,10 @@ class BimanualEnv(DirectRLEnv):
         # add articulation to scene
         self.robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self.robot
+
+        # add object to scene
+        self.object = RigidObject(self.cfg.object)
+        self.scene.rigid_objects["object"] = self.object
 
         # add table to scene
         self.table = RigidObject(self.cfg.table)
