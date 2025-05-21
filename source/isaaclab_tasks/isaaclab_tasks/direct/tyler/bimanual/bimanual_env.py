@@ -155,28 +155,7 @@ class BimanualEnv(DirectRLEnv):
     def __init__(self, cfg: BimanualEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
         self._setup_keyboard()
-
-        # Robot joint idxs
-        self._joint_dof_idxs, self._joint_dof_names = self.robot.find_joints(".*")
-        print("!" * 100)
-        print(f"len(self._joint_dof_idxs): {len(self._joint_dof_idxs)}")
-        print(f"self._joint_dof_names: {self._joint_dof_names}")
-        print("!" * 100)
-
-        # Robot link idxs
-        self._link_idxs, self._link_names = self.robot.find_bodies(".*")
-        print("!" * 100)
-        print(f"len(self._link_idxs): {len(self._link_idxs)}")
-        print(f"self._link_names: {self._link_names}")
-        print("!" * 100)
-
-        # Contact sensor link idxs
-        self._contact_link_idxs, self._contact_link_names = (
-            self.contact_sensor.find_bodies(".*")
-        )
-        print("!" * 100)
-        print(f"len(self._contact_link_idxs): {len(self._contact_link_idxs)}")
-        print("!" * 100)
+        self._setup_robot_idxs()
 
         # Action offset
         self.action_offset = self.robot.data.default_joint_pos[:, self._joint_dof_idxs]
@@ -204,6 +183,36 @@ class BimanualEnv(DirectRLEnv):
 
         # Logging
         self.wandb_dict = {}
+
+        self._setup_metrics()
+
+        # Debug
+        self.set_debug_vis(self.cfg.debug_vis)
+
+    def _setup_robot_idxs(self):
+        # Robot joint idxs
+        self._joint_dof_idxs, self._joint_dof_names = self.robot.find_joints(".*")
+        print("!" * 100)
+        print(f"len(self._joint_dof_idxs): {len(self._joint_dof_idxs)}")
+        print(f"self._joint_dof_names: {self._joint_dof_names}")
+        print("!" * 100)
+
+        # Robot link idxs
+        self._link_idxs, self._link_names = self.robot.find_bodies(".*")
+        print("!" * 100)
+        print(f"len(self._link_idxs): {len(self._link_idxs)}")
+        print(f"self._link_names: {self._link_names}")
+        print("!" * 100)
+
+        # Contact sensor link idxs
+        self._contact_link_idxs, self._contact_link_names = (
+            self.contact_sensor.find_bodies(".*")
+        )
+        print("!" * 100)
+        print(f"len(self._contact_link_idxs): {len(self._contact_link_idxs)}")
+        print("!" * 100)
+
+    def _setup_metrics(self):
         self.reward_metric = AverageMeter().to(self.device)
         self.individual_reward_metrics = {
             reward_name: AverageMeter().to(self.device) for reward_name in REWARD_NAMES
@@ -212,9 +221,6 @@ class BimanualEnv(DirectRLEnv):
             reward_name: AverageMeter().to(self.device) for reward_name in REWARD_NAMES
         }
         self.episode_length_metric = AverageMeter().to(self.device)
-
-        # Debug
-        self.set_debug_vis(self.cfg.debug_vis)
 
     def _setup_scene(self):
         # add articulation to scene
@@ -496,32 +502,6 @@ class BimanualEnv(DirectRLEnv):
         default_orientation = root_state[:, 3:7]
         default_velocity = root_state[:, 7:13]
 
-        x_rand = math_utils.sample_uniform(
-            *(0.5, 1.5), default_position[:, 0].shape, default_position[:, 0].device
-        )
-        y_rand = math_utils.sample_uniform(
-            *(0.5, 1.5), default_position[:, 1].shape, default_position[:, 1].device
-        )
-        z_rand = math_utils.sample_uniform(
-            *(0.0, 0.0), default_position[:, 2].shape, default_position[:, 2].device
-        )
-        position = default_position + torch.stack([x_rand, y_rand, z_rand], dim=-1)
-
-        R_rand = math_utils.sample_uniform(
-            *(0.0, 0.0), default_position[:, 0].shape, default_position[:, 0].device
-        )
-        P_rand = math_utils.sample_uniform(
-            *(0.0, 0.0), default_position[:, 1].shape, default_position[:, 1].device
-        )
-        Y_rand = math_utils.sample_uniform(
-            *(-3.14, 3.14), default_position[:, 2].shape, default_position[:, 2].device
-        )
-        orientation = math_utils.quat_mul(
-            default_orientation, math_utils.quat_from_euler_xyz(R_rand, P_rand, Y_rand)
-        )
-
-        velocity = default_velocity
-
         joint_pos = self.robot.data.default_joint_pos[env_ids].clone()
         joint_pos *= math_utils.sample_uniform(
             *(0.5, 1.5), joint_pos.shape, joint_pos.device
@@ -536,14 +516,12 @@ class BimanualEnv(DirectRLEnv):
         joint_vel_limits = self.robot.data.soft_joint_vel_limits[env_ids].clone()
         joint_vel = joint_vel.clamp_(-joint_vel_limits, joint_vel_limits)
 
-        default_root_state = self.robot.data.default_root_state[env_ids]
-        default_root_state[:, :3] += self.scene.env_origins[env_ids]
-
         self.robot.write_root_pose_to_sim(
-            torch.cat([position, orientation], dim=-1), env_ids
+            torch.cat([default_position, default_orientation], dim=-1), env_ids
         )
-        self.robot.write_root_velocity_to_sim(velocity, env_ids)
-        self.robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
+        self.robot.write_root_velocity_to_sim(default_velocity, env_ids)
+        self.robot.write_joint_position_to_sim(joint_pos, None, env_ids)
+        self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids)
 
         # Reset state
         self.raw_actions[env_ids] = torch.zeros(
