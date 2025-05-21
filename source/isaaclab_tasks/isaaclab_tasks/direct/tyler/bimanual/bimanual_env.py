@@ -28,6 +28,12 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab_assets.robots.bimanual import BIMANUAL_CFG
+from isaaclab_tasks.direct.tyler.bimanual.utils.constants import NUM_XYZ
+from isaaclab_tasks.direct.tyler.bimanual.utils.color_constants import (
+    RED_RGB,
+    GREEN_RGB,
+    BLUE_RGB,
+)
 from isaaclab_tasks.direct.tyler.bimanual.utils.robot_constants import (
     INDEX_FINGERTIP_IDX,
     MIDDLE_FINGERTIP_IDX,
@@ -151,7 +157,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
                 collision_enabled=False,
             ),
             visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=(0.0, 1.0, 0.0),  # RGB values for green
+                diffuse_color=GREEN_RGB,
                 roughness=0.0,
             ),
         ),
@@ -211,12 +217,28 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     right_fingertip_visualizer_cfg: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
         prim_path="/Visuals/Command/right_fingertip"
     )
+    right_fingertip_visualizer_cfg.markers[
+        "sphere"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=RED_RGB)
     left_fingertip_visualizer_cfg: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
         prim_path="/Visuals/Command/left_fingertip"
     )
     left_fingertip_visualizer_cfg.markers[
         "sphere"
-    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0))
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=RED_RGB)
+
+    right_goal_visualizer_cfg: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/right_goal"
+    )
+    right_goal_visualizer_cfg.markers[
+        "sphere"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
+    left_goal_visualizer_cfg: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/left_goal"
+    )
+    left_goal_visualizer_cfg.markers[
+        "sphere"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
 
 
 REWARD_NAMES = [
@@ -328,19 +350,25 @@ class BimanualEnv(DirectRLEnv):
             self.FIRST_METRIC_UPDATE = True
             self.reward_metric = AverageMeter().to(self.device)
             self.individual_reward_metrics = {
-                reward_name: AverageMeter().to(self.device) for reward_name in REWARD_NAMES
+                reward_name: AverageMeter().to(self.device)
+                for reward_name in REWARD_NAMES
             }
             self.individual_weighted_reward_metrics = {
-                reward_name: AverageMeter().to(self.device) for reward_name in REWARD_NAMES
+                reward_name: AverageMeter().to(self.device)
+                for reward_name in REWARD_NAMES
             }
             self.episode_length_metric = AverageMeter().to(self.device)
         else:
             self.reward_metric.update(self.aggregated_reward_buf[env_ids])
             for reward_name, metric in self.individual_reward_metrics.items():
-                metric.update(self.individual_aggregated_reward_bufs[reward_name][env_ids])
+                metric.update(
+                    self.individual_aggregated_reward_bufs[reward_name][env_ids]
+                )
             for reward_name, metric in self.individual_weighted_reward_metrics.items():
                 metric.update(
-                    self.individual_weighted_aggregated_reward_bufs[reward_name][env_ids]
+                    self.individual_weighted_aggregated_reward_bufs[reward_name][
+                        env_ids
+                    ]
                 )
             self.episode_length_metric.update(self.episode_length_buf[env_ids])
 
@@ -430,33 +458,10 @@ class BimanualEnv(DirectRLEnv):
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
-        DEBUG = False
-        if DEBUG:
-            joint_pos = self.robot.data.joint_pos
-            joint_names = self.robot.data.joint_names
-            right_fingertip_positions = (
-                self.robot.data.body_pos_w[:, self._right_fingertip_link_idxs]
-                - self.scene.env_origins[:, None]
-            )
-            left_fingertip_positions = (
-                self.robot.data.body_pos_w[:, self._left_fingertip_link_idxs]
-                - self.scene.env_origins[:, None]
-            )
-
-            print()
-            print(f"joint_pos.shape: {joint_pos.shape}")
-            print(f"joint_names: {joint_names}")
-            print(f"right_fingertip_positions.shape: {right_fingertip_positions.shape}")
-            print(f"left_fingertip_positions.shape: {left_fingertip_positions.shape}")
-            print(f"joint_pos: {joint_pos}")
-            print(f"right_fingertip_positions: {right_fingertip_positions}")
-            print(f"left_fingertip_positions: {left_fingertip_positions}")
-            print()
-
         # fmt: off
         self.individual_reward_bufs = {
-            "right_index_fingertip_to_goal_dist": torch.zeros(self.num_envs, device=self.device),
-            "left_index_fingertip_to_goal_dist": torch.zeros(self.num_envs, device=self.device),
+            "right_index_fingertip_to_goal_dist": torch.norm(self.right_index_fingertip_position - self.right_goal_position, dim=-1, p=2),
+            "left_index_fingertip_to_goal_dist": torch.norm(self.left_index_fingertip_position - self.left_goal_position, dim=-1, p=2),
         }
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
             f"Individual reward buffers and reward names do not match: {self.individual_reward_bufs.keys()} vs {REWARD_NAMES}\nOnly in individual reward buffers: {set(self.individual_reward_bufs.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_bufs.keys())}"
@@ -637,6 +642,13 @@ class BimanualEnv(DirectRLEnv):
                 reward_name: torch.zeros(self.num_envs, device=self.device)
                 for reward_name in REWARD_NAMES
             }
+
+            self.right_goal_position = self.table_position.clone() + torch.tensor(
+                [0.0, -0.1, 0.05], device=self.device
+            ).unsqueeze(0)
+            self.left_goal_position = self.table_position.clone() + torch.tensor(
+                [0.0, 0.1, 0.05], device=self.device
+            ).unsqueeze(0)
         else:
             self.raw_actions[env_ids] = torch.zeros(
                 len(env_ids), self.cfg.action_space, device=self.device
@@ -651,6 +663,13 @@ class BimanualEnv(DirectRLEnv):
                 self.individual_weighted_aggregated_reward_bufs[reward_name][
                     env_ids
                 ] = 0
+
+            self.right_goal_position[env_ids] = self.table_position[
+                env_ids
+            ] + torch.tensor([0.0, -0.1, 0.05], device=self.device).unsqueeze(0)
+            self.left_goal_position[env_ids] = self.table_position[
+                env_ids
+            ] + torch.tensor([0.0, 0.1, 0.05], device=self.device).unsqueeze(0)
 
     #### RESET END ####
 
@@ -670,11 +689,21 @@ class BimanualEnv(DirectRLEnv):
                 self.left_fingertip_visualizer = VisualizationMarkers(
                     self.cfg.left_fingertip_visualizer_cfg
                 )
+            if not hasattr(self, "right_goal_visualizer"):
+                self.right_goal_visualizer = VisualizationMarkers(
+                    self.cfg.right_goal_visualizer_cfg
+                )
+            if not hasattr(self, "left_goal_visualizer"):
+                self.left_goal_visualizer = VisualizationMarkers(
+                    self.cfg.left_goal_visualizer_cfg
+                )
 
             # set their visibility to true
             self.pose_visualizer.set_visibility(True)
             self.right_fingertip_visualizer.set_visibility(True)
             self.left_fingertip_visualizer.set_visibility(True)
+            self.right_goal_visualizer.set_visibility(True)
+            self.left_goal_visualizer.set_visibility(True)
         else:
             if hasattr(self, "pose_visualizer"):
                 self.pose_visualizer.set_visibility(False)
@@ -682,6 +711,10 @@ class BimanualEnv(DirectRLEnv):
                 self.right_fingertip_visualizer.set_visibility(False)
             if hasattr(self, "left_fingertip_visualizer"):
                 self.left_fingertip_visualizer.set_visibility(False)
+            if hasattr(self, "right_goal_visualizer"):
+                self.right_goal_visualizer.set_visibility(False)
+            if hasattr(self, "left_goal_visualizer"):
+                self.left_goal_visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
         # Make sure the robot is initialized
@@ -705,6 +738,19 @@ class BimanualEnv(DirectRLEnv):
         )
         self.left_fingertip_visualizer.visualize(
             translations=self.left_index_fingertip_position,
+            scales=torch.tensor([2.0, 2.0, 2.0], device=self.device)
+            .unsqueeze(0)
+            .repeat_interleave(self.num_envs, dim=0),
+        )
+
+        self.right_goal_visualizer.visualize(
+            translations=self.right_goal_position,
+            scales=torch.tensor([2.0, 2.0, 2.0], device=self.device)
+            .unsqueeze(0)
+            .repeat_interleave(self.num_envs, dim=0),
+        )
+        self.left_goal_visualizer.visualize(
+            translations=self.left_goal_position,
             scales=torch.tensor([2.0, 2.0, 2.0], device=self.device)
             .unsqueeze(0)
             .repeat_interleave(self.num_envs, dim=0),
@@ -750,6 +796,11 @@ class BimanualEnv(DirectRLEnv):
     #### KEYBOARD END ####
 
     #### TENSOR SLICE PROPERTIES START ####
+    @property
+    def table_position(self) -> torch.Tensor:
+        assert self.table.data.body_pos_w.shape == (self.num_envs, 1, NUM_XYZ), f"Table position shape: {self.table.data.body_pos_w.shape}"
+        return self.table.data.body_pos_w[:, 0]
+
     @property
     def right_fingertip_positions(self) -> torch.Tensor:
         return self.robot.data.body_pos_w[:, self._right_fingertip_link_idxs]
