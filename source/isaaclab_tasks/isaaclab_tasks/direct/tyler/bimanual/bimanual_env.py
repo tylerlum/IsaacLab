@@ -423,7 +423,9 @@ class BimanualEnv(DirectRLEnv):
             dim=-1,
         )
 
-        # obs = torch.zeros(self.num_envs, self.cfg.observation_space, device=self.device)
+        ZERO_OBS = False  # Set to True to debug
+        if ZERO_OBS:
+            obs = torch.zeros(self.num_envs, self.cfg.observation_space, device=self.device)
 
         assert obs.shape == (self.num_envs, self.cfg.observation_space), (
             f"obs.shape: {obs.shape} != (self.num_envs, self.cfg.observation_space): {(self.num_envs, self.cfg.observation_space)}"
@@ -603,15 +605,7 @@ class BimanualEnv(DirectRLEnv):
         self._compute_intermediate_values()
         time_out = self.episode_length_buf >= self.max_episode_length - 1
 
-        # net_forces_w_history.shape == (num_envs, history_length, num_bodies, 3)
-        # contacts = (
-        #     self.contact_sensor.data.net_forces_w_history.norm(dim=-1).max(dim=1).values
-        #     > 1.0
-        # )
-        # any_torso_contacts = contacts[:, self._contact_undesired_link_idxs].any(dim=1)
-        # died = any_torso_contacts
-
-        died = time_out
+        died = torch.zeros_like(time_out)
         return died, time_out
 
     #### DONES END ####
