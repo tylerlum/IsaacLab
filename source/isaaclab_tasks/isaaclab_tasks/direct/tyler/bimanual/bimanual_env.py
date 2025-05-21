@@ -48,8 +48,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     episode_length_s = 20.0
     decimation = 4
     action_scale = 0.5
-    action_space = 37
-    observation_space = 123
+    action_space = 46
+    observation_space = 150
     state_space = 0
     debug_vis = True
 
@@ -64,18 +64,18 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     )
 
     # terrain
-    terrain = TerrainImporterCfg(
-        prim_path="/World/ground",
-        terrain_type="plane",
-        collision_group=-1,
-        physics_material=physics_material,
-        visual_material=sim_utils.MdlFileCfg(
-            mdl_path=f"{ISAACLAB_NUCLEUS_DIR}/Materials/TilesMarbleSpiderWhiteBrickBondHoned/TilesMarbleSpiderWhiteBrickBondHoned.mdl",
-            project_uvw=True,
-            texture_scale=(0.25, 0.25),
-        ),
-        debug_vis=False,
-    )
+    # terrain = TerrainImporterCfg(
+    #     prim_path="/World/ground",
+    #     terrain_type="plane",
+    #     collision_group=-1,
+    #     physics_material=physics_material,
+    #     visual_material=sim_utils.MdlFileCfg(
+    #         mdl_path=f"{ISAACLAB_NUCLEUS_DIR}/Materials/TilesMarbleSpiderWhiteBrickBondHoned/TilesMarbleSpiderWhiteBrickBondHoned.mdl",
+    #         project_uvw=True,
+    #         texture_scale=(0.25, 0.25),
+    #     ),
+    #     debug_vis=False,
+    # )
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
@@ -86,17 +86,17 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     robot: ArticulationCfg = BIMANUAL_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
     # contact sensor
-    contact_sensor = ContactSensorCfg(
-        prim_path="/World/envs/env_.*/Robot/.*",
-        history_length=3,
-        track_air_time=True,
-        update_period=SIM_DT,
-    )
+    # contact_sensor = ContactSensorCfg(
+    #     prim_path="/World/envs/env_.*/Robot/.*",
+    #     history_length=3,
+    #     track_air_time=True,
+    #     update_period=SIM_DT,
+    # )
 
     # light
     light: LightCfg = DomeLightCfg(
         intensity=750.0,
-        texture_file=f"{ISAAC_NUCLEUS_DIR}/Materials/Textures/Skies/PolyHaven/kloofendal_43d_clear_puresky_4k.hdr",
+        # texture_file=f"{ISAAC_NUCLEUS_DIR}/Materials/Textures/Skies/PolyHaven/kloofendal_43d_clear_puresky_4k.hdr",
     )
 
     # command
@@ -146,13 +146,6 @@ REWARD_NAMES = [
     "termination_penalty",
     "track_lin_vel_xy_exp",
     "track_ang_vel_z_exp",
-    "feet_air_time",
-    "feet_slide",
-    "dof_pos_limits_ankle",
-    "joint_deviation_hip",
-    "joint_deviation_arms",
-    "joint_deviation_fingers",
-    "joint_deviation_torso",
 ]
 
 
@@ -273,72 +266,72 @@ class BimanualEnv(DirectRLEnv):
 
         # Robot joint idxs
         self._joint_dof_idxs, self._joint_dof_names = self.robot.find_joints(".*")
-        self._torso_joint_idxs, _ = self.robot.find_joints("torso_joint")
-        self._finger_joint_idxs, _ = self.robot.find_joints(
-            [
-                ".*_five_joint",
-                ".*_three_joint",
-                ".*_six_joint",
-                ".*_four_joint",
-                ".*_zero_joint",
-                ".*_one_joint",
-                ".*_two_joint",
-            ]
-        )
-        self._arm_joint_idxs, _ = self.robot.find_joints(
-            [
-                ".*_shoulder_pitch_joint",
-                ".*_shoulder_roll_joint",
-                ".*_shoulder_yaw_joint",
-                ".*_elbow_pitch_joint",
-                ".*_elbow_roll_joint",
-            ]
-        )
-        self._hip_joint_idxs, _ = self.robot.find_joints(
-            [".*_hip_yaw_joint", ".*_hip_roll_joint"]
-        )
-        self._ankle_joint_idxs, _ = self.robot.find_joints(
-            [".*_ankle_pitch_joint", ".*_ankle_roll_joint"]
-        )
-        print("!" * 100)
-        print(f"len(self._joint_dof_idxs): {len(self._joint_dof_idxs)}")
-        print(f"self._joint_dof_names: {self._joint_dof_names}")
-        print(f"len(self._torso_joint_idxs): {len(self._torso_joint_idxs)}")
-        print(f"len(self._finger_joint_idxs): {len(self._finger_joint_idxs)}")
-        print(f"len(self._arm_joint_idxs): {len(self._arm_joint_idxs)}")
-        print(f"len(self._hip_joint_idxs): {len(self._hip_joint_idxs)}")
-        print(f"len(self._ankle_joint_idxs): {len(self._ankle_joint_idxs)}")
-        print("!" * 100)
+        # self._torso_joint_idxs, _ = self.robot.find_joints("torso_joint")
+        # self._finger_joint_idxs, _ = self.robot.find_joints(
+        #     [
+        #         ".*_five_joint",
+        #         ".*_three_joint",
+        #         ".*_six_joint",
+        #         ".*_four_joint",
+        #         ".*_zero_joint",
+        #         ".*_one_joint",
+        #         ".*_two_joint",
+        #     ]
+        # )
+        # self._arm_joint_idxs, _ = self.robot.find_joints(
+        #     [
+        #         ".*_shoulder_pitch_joint",
+        #         ".*_shoulder_roll_joint",
+        #         ".*_shoulder_yaw_joint",
+        #         ".*_elbow_pitch_joint",
+        #         ".*_elbow_roll_joint",
+        #     ]
+        # )
+        # self._hip_joint_idxs, _ = self.robot.find_joints(
+        #     [".*_hip_yaw_joint", ".*_hip_roll_joint"]
+        # )
+        # self._ankle_joint_idxs, _ = self.robot.find_joints(
+        #     [".*_ankle_pitch_joint", ".*_ankle_roll_joint"]
+        # )
+        # print("!" * 100)
+        # print(f"len(self._joint_dof_idxs): {len(self._joint_dof_idxs)}")
+        # print(f"self._joint_dof_names: {self._joint_dof_names}")
+        # print(f"len(self._torso_joint_idxs): {len(self._torso_joint_idxs)}")
+        # print(f"len(self._finger_joint_idxs): {len(self._finger_joint_idxs)}")
+        # print(f"len(self._arm_joint_idxs): {len(self._arm_joint_idxs)}")
+        # print(f"len(self._hip_joint_idxs): {len(self._hip_joint_idxs)}")
+        # print(f"len(self._ankle_joint_idxs): {len(self._ankle_joint_idxs)}")
+        # print("!" * 100)
 
         # Robot link idxs
         self._link_idxs, self._link_names = self.robot.find_bodies(".*")
-        self._ankle_link_idxs, _ = self.robot.find_bodies(".*_ankle_roll_link")
+        # self._ankle_link_idxs, _ = self.robot.find_bodies(".*_ankle_roll_link")
         print("!" * 100)
         print(f"len(self._link_idxs): {len(self._link_idxs)}")
         print(f"self._link_names: {self._link_names}")
-        print(f"len(self._ankle_link_idxs): {len(self._ankle_link_idxs)}")
+        # print(f"len(self._ankle_link_idxs): {len(self._ankle_link_idxs)}")
         print("!" * 100)
 
         # Contact sensor link idxs
-        self._contact_link_idxs, self._contact_link_names = (
-            self.contact_sensor.find_bodies(".*")
-        )
-        self._contact_ankle_link_idxs, _ = self.contact_sensor.find_bodies(
-            ".*_ankle_roll_link"
-        )
-        self._contact_undesired_link_idxs = [
-            i for i in self._contact_link_idxs if i not in self._contact_ankle_link_idxs
-        ]
+        # self._contact_link_idxs, self._contact_link_names = (
+        #     self.contact_sensor.find_bodies(".*")
+        # )
+        # self._contact_ankle_link_idxs, _ = self.contact_sensor.find_bodies(
+        #     ".*_ankle_roll_link"
+        # )
+        # self._contact_undesired_link_idxs = [
+        #     i for i in self._contact_link_idxs if i not in self._contact_ankle_link_idxs
+        # ]
         # self._contact_thigh_link_idxs, _ = self.contact_sensor.find_bodies(".*THIGH")
-        print("!" * 100)
-        print(f"len(self._contact_link_idxs): {len(self._contact_link_idxs)}")
-        print(
-            f"len(self._contact_undesired_link_idxs): {len(self._contact_undesired_link_idxs)}"
-        )
-        print(
-            f"len(self._contact_ankle_link_idxs): {len(self._contact_ankle_link_idxs)}"
-        )
-        print("!" * 100)
+        # print("!" * 100)
+        # print(f"len(self._contact_link_idxs): {len(self._contact_link_idxs)}")
+        # print(
+        #     f"len(self._contact_undesired_link_idxs): {len(self._contact_undesired_link_idxs)}"
+        # )
+        # print(
+        #     f"len(self._contact_ankle_link_idxs): {len(self._contact_ankle_link_idxs)}"
+        # )
+        # print("!" * 100)
 
         # Action offset
         self.action_offset = self.robot.data.default_joint_pos[:, self._joint_dof_idxs]
@@ -397,13 +390,13 @@ class BimanualEnv(DirectRLEnv):
         self.scene.articulations["robot"] = self.robot
 
         # add contact sensor to scene
-        self.contact_sensor = ContactSensor(self.cfg.contact_sensor)
-        self.scene.sensors["contact_sensor"] = self.contact_sensor
+        # self.contact_sensor = ContactSensor(self.cfg.contact_sensor)
+        # self.scene.sensors["contact_sensor"] = self.contact_sensor
 
         # add ground plane
-        self.cfg.terrain.num_envs = self.scene.cfg.num_envs
-        self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
-        self.terrain = self.cfg.terrain.class_type(self.cfg.terrain)
+        # self.cfg.terrain.num_envs = self.scene.cfg.num_envs
+        # self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
+        # self.terrain = self.cfg.terrain.class_type(self.cfg.terrain)
 
         # clone and replicate
         self.scene.clone_environments(copy_from_source=False)
@@ -468,21 +461,21 @@ class BimanualEnv(DirectRLEnv):
         over_max = (joint_pos - joint_pos_max).clip(min=0.0)
 
         # net_forces_w_history.shape == (num_envs, history_length, num_bodies, 3)
-        contacts = (
-            self.contact_sensor.data.net_forces_w_history.norm(dim=-1).max(dim=1).values
-            > 1.0
-        )
+        # contacts = (
+        #     self.contact_sensor.data.net_forces_w_history.norm(dim=-1).max(dim=1).values
+        #     > 1.0
+        # )
 
-        # feet air time positive biped
-        air_time = self.contact_sensor.data.current_air_time[
-            :, self._contact_ankle_link_idxs
-        ]
-        contact_time = self.contact_sensor.data.current_contact_time[
-            :, self._contact_ankle_link_idxs
-        ]
-        in_contact = contact_time > 0.0
-        in_mode_time = torch.where(in_contact, contact_time, air_time)
-        single_stance = in_contact.int().sum(dim=1) == 1
+        # # feet air time positive biped
+        # air_time = self.contact_sensor.data.current_air_time[
+        #     :, self._contact_ankle_link_idxs
+        # ]
+        # contact_time = self.contact_sensor.data.current_contact_time[
+        #     :, self._contact_ankle_link_idxs
+        # ]
+        # in_contact = contact_time > 0.0
+        # in_mode_time = torch.where(in_contact, contact_time, air_time)
+        # single_stance = in_contact.int().sum(dim=1) == 1
 
         # Robot's linear velocity in gravity-aligned robot frame (z up, but x/y aligned with robot base frame)
         robot_lin_vel_rotated = quat_rotate_inverse(
@@ -504,13 +497,13 @@ class BimanualEnv(DirectRLEnv):
             "termination_penalty": self.reset_terminated.float(),  # (don't terminate) This works because _get_dones() is called before _get_rewards()
             "track_lin_vel_xy_exp": torch.exp(-(self.vel_commands_b[:, :2] - robot_lin_vel_rotated[:, :2]).square().sum(dim=1) / 0.5**2),  # (track the commanded lin_vel_xy)
             "track_ang_vel_z_exp": torch.exp(-(self.vel_commands_b[:, 2] - self.robot.data.root_ang_vel_w[:, 2]).square() / 0.5**2),  #  (track the commanded ang_vel_z)
-            "feet_air_time": torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0).min(dim=1).values.clamp(max=0.4) * (self.vel_commands_b[:, :2].norm(dim=1) > 0.1),  # (Promote stable single-stance gait)
-            "feet_slide": (self.robot.data.body_lin_vel_w[:, self._ankle_link_idxs, :2].norm(dim=-1) * contacts[:, self._contact_ankle_link_idxs]).sum(dim=1),  # (don't slide feet)
-            "dof_pos_limits_ankle": (under_min + over_max)[:, self._ankle_joint_idxs].sum(dim=1),  # (don't exceed dof pos limits of ankles)
-            "joint_deviation_hip": joint_deviation[:, self._hip_joint_idxs].sum(dim=1),  # (don't deviate from default hip positions)
-            "joint_deviation_arms": joint_deviation[:, self._arm_joint_idxs].sum(dim=1),  # (don't deviate from default arm positions)
-            "joint_deviation_fingers": joint_deviation[:, self._finger_joint_idxs].sum(dim=1),  # (don't deviate from default finger positions)
-            "joint_deviation_torso": joint_deviation[:, self._torso_joint_idxs].sum(dim=1),  # (don't deviate from default torso position)
+            # "feet_air_time": torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0).min(dim=1).values.clamp(max=0.4) * (self.vel_commands_b[:, :2].norm(dim=1) > 0.1),  # (Promote stable single-stance gait)
+            # "feet_slide": (self.robot.data.body_lin_vel_w[:, self._ankle_link_idxs, :2].norm(dim=-1) * contacts[:, self._contact_ankle_link_idxs]).sum(dim=1),  # (don't slide feet)
+            # "dof_pos_limits_ankle": (under_min + over_max)[:, self._ankle_joint_idxs].sum(dim=1),  # (don't exceed dof pos limits of ankles)
+            # "joint_deviation_hip": joint_deviation[:, self._hip_joint_idxs].sum(dim=1),  # (don't deviate from default hip positions)
+            # "joint_deviation_arms": joint_deviation[:, self._arm_joint_idxs].sum(dim=1),  # (don't deviate from default arm positions)
+            # "joint_deviation_fingers": joint_deviation[:, self._finger_joint_idxs].sum(dim=1),  # (don't deviate from default finger positions)
+            # "joint_deviation_torso": joint_deviation[:, self._torso_joint_idxs].sum(dim=1),  # (don't deviate from default torso position)
         }
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
             f"Individual reward buffers and reward names do not match: {self.individual_reward_bufs.keys()} vs {REWARD_NAMES}\nOnly in individual reward buffers: {set(self.individual_reward_bufs.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_bufs.keys())}"
@@ -531,13 +524,6 @@ class BimanualEnv(DirectRLEnv):
                 "termination_penalty": -200.0,
                 "track_lin_vel_xy_exp": 1.0,
                 "track_ang_vel_z_exp": 1.0,
-                "feet_air_time": 0.75,
-                "feet_slide": -0.1,
-                "dof_pos_limits_ankle": -1.0,
-                "joint_deviation_hip": -0.1,
-                "joint_deviation_arms": -0.1,
-                "joint_deviation_fingers": -0.05,
-                "joint_deviation_torso": -0.1,
             }
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
@@ -651,14 +637,16 @@ class BimanualEnv(DirectRLEnv):
         time_out = self.episode_length_buf >= self.max_episode_length - 1
 
         # net_forces_w_history.shape == (num_envs, history_length, num_bodies, 3)
-        contacts = (
-            self.contact_sensor.data.net_forces_w_history.norm(dim=-1).max(dim=1).values
-            > 1.0
-        )
-        any_torso_contacts = contacts[:, self._contact_undesired_link_idxs].any(dim=1)
-        died = any_torso_contacts
+        # contacts = (
+        #     self.contact_sensor.data.net_forces_w_history.norm(dim=-1).max(dim=1).values
+        #     > 1.0
+        # )
+        # any_torso_contacts = contacts[:, self._contact_undesired_link_idxs].any(dim=1)
+        # died = any_torso_contacts
 
+        died = time_out
         return died, time_out
+
 
     #### DONES END ####
 
