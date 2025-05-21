@@ -1,0 +1,619 @@
+<mujoco model="bimanual_kuka_allegro">
+  <default>
+    <default class="robot">
+      <default class="motor">
+        <joint />
+        <motor />
+      </default>
+      <default class="visual">
+        <geom material="visualgeom" contype="0" conaffinity="0" group="2" />
+      </default>
+      <default class="collision">
+        <geom material="collision_material" condim="3" contype="0" conaffinity="1" group="1" solref="0.005 1" friction="1 0.01 0.01" />
+        <equality solimp="0.99 0.999 1e-05" solref="0.005 1" />
+      </default>
+    </default>
+  </default>
+
+  <compiler angle="radian" />
+
+  <asset>
+    <material name="Black" rgba="0.0 0.0 0.0 1.0" />
+    <material name="Blue" rgba="0.0 0.0 0.8 1.0" />
+    <material name="Green" rgba="0.0 0.8 0.0 1.0" />
+    <material name="Grey" rgba="0.4 0.4 0.4 1.0" />
+    <material name="Orange" rgba="1.0 0.4235 0.0392 1.0" />
+    <material name="Brown" rgba="0.8706 0.8118 0.7647 1.0" />
+    <material name="Red" rgba="0.8 0.0 0.0 1.0" />
+    <material name="White" rgba="1.0 1.0 1.0 1.0" />
+    <material name="white" rgba=".9 .9 .9 1" />
+    <material name="black" rgba=".2 .2 .2 1" />
+    <material name="default_material" rgba="0.7 0.7 0.7 1" />
+    <material name="collision_material" rgba="1.0 0.28 0.1 0.9" />
+    <mesh name="link_0.stl" file="new_iiwa14_meshes/collision/link_0.stl" />
+    <mesh name="link_1.stl" file="new_iiwa14_meshes/collision/link_1.stl" />
+    <mesh name="link_2.stl" file="new_iiwa14_meshes/collision/link_2.stl" />
+    <mesh name="link_3.stl" file="new_iiwa14_meshes/collision/link_3.stl" />
+    <mesh name="link_4.stl" file="new_iiwa14_meshes/collision/link_4.stl" />
+    <mesh name="link_5.stl" file="new_iiwa14_meshes/collision/link_5.stl" />
+    <mesh name="link_6.stl" file="new_iiwa14_meshes/collision/link_6.stl" />
+    <mesh name="link_7.stl" file="new_iiwa14_meshes/collision/link_7.stl" />
+    <mesh name="allegro-right-to-kuka-mount.stl" file="new_mount_meshes/allegro-right-to-kuka-mount.stl" />
+    <mesh name="kuka_gopro_v2.stl" file="new_mount_meshes/kuka_gopro_v2.stl" />
+    <mesh name="base_link.STL" file="new_allegro_meshes/base_link.STL" />
+    <mesh name="link_0.0.STL" file="new_allegro_meshes/link_0.0.STL" />
+    <mesh name="link_1.0.STL" file="new_allegro_meshes/link_1.0.STL" />
+    <mesh name="link_2.0.STL" file="new_allegro_meshes/link_2.0.STL" />
+    <mesh name="link_3.0.STL" file="new_allegro_meshes/link_3.0.STL" />
+    <mesh name="link_3.0_tip.STL" file="new_allegro_meshes/link_3.0_tip.STL" />
+    <mesh name="link_12.0_right.STL" file="new_allegro_meshes/link_12.0_right.STL" />
+    <mesh name="link_13.0.STL" file="new_allegro_meshes/link_13.0.STL" />
+    <mesh name="link_14.0.STL" file="new_allegro_meshes/link_14.0.STL" />
+    <mesh name="link_15.0.STL" file="new_allegro_meshes/link_15.0.STL" />
+    <mesh name="link_15.0_tip.STL" file="new_allegro_meshes/link_15.0_tip.STL" />
+    <mesh name="allegro-left-to-kuka-mount.stl" file="new_mount_meshes/allegro-left-to-kuka-mount.stl" />
+    <mesh name="base_link_left.STL" file="new_allegro_meshes/base_link_left.STL" />
+    <mesh name="link_12.0_left.STL" file="new_allegro_meshes/link_12.0_left.STL" />
+  </asset>
+
+  <worldbody>
+    <body name="base_link" pos="0.00000000 0.00000000 -0.20000000" quat="1 0 0 0" childclass="robot">
+      <freejoint name="floating_base" />
+      <body name="right_iiwa14_link_0" pos="0.0 -0.1722 0.2" quat="0.9212277395152892 0.30268334872695646 0.1619034662613374 0.18305602957441713">
+        <inertial pos="-0.1 0 0.07" quat="1.0 0.0 0.0 0.0" mass="5" diaginertia="0.05 0.06 0.03" />
+        <geom name="right_iiwa14_link_0_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_0.stl" class="collision" />
+        <geom name="right_iiwa14_link_0_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Grey" type="mesh" mesh="link_0.stl" class="visual" />
+        <body name="right_iiwa14_link_1" pos="0 0 0.1575" quat="1.0 0.0 0.0 0.0">
+          <joint name="right_iiwa14_joint_1" type="hinge" ref="0.0" class="motor" range="-2.96705972839 2.96705972839" axis="0 0 1" />
+          <inertial pos="0 -0.03 0.12" quat="1.0 0.0 0.0 0.0" mass="4" diaginertia="0.1 0.09 0.02" />
+          <geom name="right_iiwa14_link_1_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_1.stl" class="collision" />
+          <geom name="right_iiwa14_link_1_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Orange" type="mesh" mesh="link_1.stl" class="visual" />
+          <body name="right_iiwa14_link_2" pos="0 0 0.2025" quat="-7.312301077203117e-14 -7.312301077167311e-14 0.7071067811848163 0.7071067811882787">
+            <joint name="right_iiwa14_joint_2" type="hinge" ref="0.0" class="motor" range="-2.09439510239 2.09439510239" axis="0 0 1" />
+            <inertial pos="0.0003 0.059 0.042" quat="1.0 0.0 0.0 0.0" mass="4" diaginertia="0.05 0.018 0.044" />
+            <geom name="right_iiwa14_link_2_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_2.stl" class="collision" />
+            <geom name="right_iiwa14_link_2_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Orange" type="mesh" mesh="link_2.stl" class="visual" />
+            <body name="right_iiwa14_link_3" pos="0 0.2045 0" quat="-7.312301077203117e-14 -7.312301077167311e-14 0.7071067811848163 0.7071067811882787">
+              <joint name="right_iiwa14_joint_3" type="hinge" ref="0.0" class="motor" range="-2.96705972839 2.96705972839" axis="0 0 1" />
+              <inertial pos="0 0.03 0.13" quat="1.0 0.0 0.0 0.0" mass="3" diaginertia="0.08 0.075 0.01" />
+              <geom name="right_iiwa14_link_3_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_3.stl" class="collision" />
+              <geom name="right_iiwa14_link_3_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Orange" type="mesh" mesh="link_3.stl" class="visual" />
+              <body name="right_iiwa14_link_4" pos="0 0 0.2155" quat="0.7071067811882787 0.7071067811848163 0.0 0.0">
+                <joint name="right_iiwa14_joint_4" type="hinge" ref="0.0" class="motor" range="-2.09439510239 2.09439510239" axis="0 0 1" />
+                <inertial pos="0 0.067 0.034" quat="1.0 0.0 0.0 0.0" mass="2.7" diaginertia="0.03 0.01 0.029" />
+                <geom name="right_iiwa14_link_4_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_4.stl" class="collision" />
+                <geom name="right_iiwa14_link_4_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Orange" type="mesh" mesh="link_4.stl" class="visual" />
+                <body name="right_iiwa14_link_5" pos="0 0.1845 0" quat="-7.312301077203117e-14 7.312301077167311e-14 0.7071067811882787 0.7071067811848163">
+                  <joint name="right_iiwa14_joint_5" type="hinge" ref="0.0" class="motor" range="-2.96705972839 2.96705972839" axis="0 0 1" />
+                  <inertial pos="0.0001 0.021 0.076" quat="1.0 0.0 0.0 0.0" mass="1.7" diaginertia="0.02 0.018 0.005" />
+                  <geom name="right_iiwa14_link_5_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_5.stl" class="collision" />
+                  <geom name="right_iiwa14_link_5_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Orange" type="mesh" mesh="link_5.stl" class="visual" />
+                  <body name="right_iiwa14_link_6" pos="0 0 0.2155" quat="0.7071067811882787 0.7071067811848163 0.0 0.0">
+                    <joint name="right_iiwa14_joint_6" type="hinge" ref="0.0" class="motor" range="-2.09439510239 2.09439510239" axis="0 0 1" />
+                    <inertial pos="0 0.0006 0.0004" quat="1.0 0.0 0.0 0.0" mass="1.8" diaginertia="0.005 0.0036 0.0047" />
+                    <geom name="right_iiwa14_link_6_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_6.stl" class="collision" />
+                    <geom name="right_iiwa14_link_6_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Orange" type="mesh" mesh="link_6.stl" class="visual" />
+                    <body name="right_iiwa14_link_7" pos="0 0.081 0" quat="-7.312301077203117e-14 7.312301077167311e-14 0.7071067811882787 0.7071067811848163">
+                      <joint name="right_iiwa14_joint_7" type="hinge" ref="0.0" class="motor" range="-3.05432619099 3.05432619099" axis="0 0 1" />
+                      <inertial pos="0 0 0.02" quat="1.0 0.0 0.0 0.0" mass="0.3" diaginertia="0.001 0.001 0.001" />
+                      <geom name="right_iiwa14_link_7_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_7.stl" class="collision" />
+                      <geom name="right_iiwa14_link_7_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Grey" type="mesh" mesh="link_7.stl" class="visual" />
+                      <body name="right_iiwa14_link_ee" pos="0 0 0.045" quat="1.0 0.0 0.0 0.0">
+                        <body name="right_allegro_custom_mount" pos="-0.0128878 0.0562605 0.006" quat="0.7073882691671998 0.0 0.0 0.706825181105366">
+                          <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.4375" diaginertia="0.000394 0.000394 0.000729" />
+                          <geom name="right_allegro_custom_mount_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="allegro-right-to-kuka-mount.stl" scale="0.001 0.001 0.001" class="collision" />
+                          <geom name="right_allegro_custom_mount_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="white" type="mesh" mesh="allegro-right-to-kuka-mount.stl" scale="0.001 0.001 0.001" class="visual" />
+                        </body>
+                        <body name="right_allegro_custom_mount2" pos="0 0 0.006" quat="0.0005633121735972125 0.707388044876899 -0.7068249569936026 -0.0005628637715330792">
+                          <geom name="right_allegro_custom_mount2_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="kuka_gopro_v2.stl" scale="0.001 0.001 0.001" class="collision" />
+                          <geom name="right_allegro_custom_mount2_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="white" type="mesh" mesh="kuka_gopro_v2.stl" scale="0.001 0.001 0.001" class="visual" />
+                        </body>
+                        <body name="right_palm_link" pos="-0.14 0 0.0325" quat="0.7073882691671998 0.0 -0.706825181105366 0.0">
+                          <body name="right_palm_link_content" pos="0 0 0" quat="1.0 0.0 0.0 0.0">
+                            <inertial pos="0 0 0.0475" quat="1.0 0.0 0.0 0.0" mass="0.4154" diaginertia="0.0001 0.0001 0.0001" />
+                            <geom name="right_palm_link_content_collision" pos="-0.009300 0 -0.0475" quat="1.0 0.0 0.0 0.0" type="box" size="0.0204 0.0565 0.0475" class="collision" />
+                            <geom name="right_palm_link_content_visual" pos="0 0 0 " quat="1.0 0.0 0.0 0.0" material="black" type="mesh" mesh="base_link.STL" class="visual" />
+                          </body>
+                          <body name="right_palm_link_sphere2" pos="-0.02 0.03 -0.03" quat="1.0 0.0 0.0 0.0" />
+                          <body name="right_palm_link_sphere3" pos="-0.02 -0.03 -0.03" quat="1.0 0.0 0.0 0.0" />
+                          <body name="right_palm_link_sphere4" pos="-0.02 0.03 -0.1" quat="1.0 0.0 0.0 0.0" />
+                          <body name="right_palm_link_sphere5" pos="-0.02 -0.03 -0.1" quat="1.0 0.0 0.0 0.0" />
+                          <body name="right_palm_link_sphere6" pos="-0.02 0.03 -0.17" quat="1.0 0.0 0.0 0.0" />
+                          <body name="right_palm_link_sphere7" pos="-0.02 -0.03 -0.17" quat="1.0 0.0 0.0 0.0" />
+                          <body name="right_index_link_0" pos="0 0.0435 -0.001542" quat="0.999048221582942 -0.04361938734050142 0.0 0.0">
+                            <joint name="right_index_joint_0" type="hinge" ref="0.0" class="motor" range="-0.47 0.47" axis="0 0 1" />
+                            <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0119" diaginertia="1.01666658333e-06 6.47677333333e-07 1.01666658333e-06" />
+                            <geom name="right_index_link_0_collision" pos="0 0 0.0082" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0082" class="collision" />
+                            <geom name="right_index_link_0_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_0.0.STL" class="visual" />
+                            <body name="right_index_link_1" pos="0 0 0.0164" quat="1.0 0.0 0.0 0.0">
+                              <joint name="right_index_joint_1" type="hinge" ref="0.0" class="motor" range="-0.196 1.61" axis="0 1 0" />
+                              <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.065" diaginertia="7.95654166667e-05 2.47088833333e-05 7.95654166667e-05" />
+                              <geom name="right_index_link_1_collision" pos="0 0 0.027" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.027" class="collision" />
+                              <geom name="right_index_link_1_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_1.0.STL" class="visual" />
+                              <body name="right_index_link_2" pos="0 0 0.054" quat="1.0 0.0 0.0 0.0">
+                                <joint name="right_index_joint_2" type="hinge" ref="0.0" class="motor" range="-0.174 1.709" axis="0 1 0" />
+                                <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0355" diaginertia="2.63979183333e-05 1.34948516667e-05 2.63979183333e-05" />
+                                <geom name="right_index_link_2_collision" pos="0 0 0.0192" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0192" class="collision" />
+                                <geom name="right_index_link_2_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_2.0.STL" class="visual" />
+                                <body name="right_index_link_3" pos="0 0 0.0384" quat="1.0 0.0 0.0 0.0">
+                                  <joint name="right_index_joint_3" type="hinge" ref="0.0" class="motor" range="-0.227 1.618" axis="0 1 0" />
+                                  <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0096" diaginertia="4.701248e-06 3.649312e-06 4.701248e-06" />
+                                  <geom name="right_index_link_3_collision" pos="0 0 0.01335" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.01335" class="collision" />
+                                  <geom name="right_index_link_3_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_3.0.STL" class="visual" />
+                                  <body name="right_index_biotac_tip" pos="0 0 0.0267" quat="1.0 0.0 0.0 0.0">
+                                    <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0168" diaginertia="9.68e-07 9.68e-07 9.68e-07" />
+                                    <geom name="right_index_biotac_tip_collision" pos="0 0 0" quat="1 0 0 0" type="sphere" size="0.012" class="collision" />
+                                    <geom name="right_index_biotac_tip_visual" pos="0 0 0" quat="1 0 0 0" material="white" type="mesh" mesh="link_3.0_tip.STL" class="visual" />
+                                  </body>
+                                  <body name="right_index_link_3_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                                </body>
+                                <body name="right_index_link_2_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                              </body>
+                              <body name="right_index_link_1_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                            </body>
+                          </body>
+                          <body name="right_middle_link_0" pos="0 0 0.0007" quat="1.0 0.0 0.0 0.0">
+                            <joint name="right_middle_joint_0" type="hinge" ref="0.0" class="motor" range="-0.47 0.47" axis="0 0 1" />
+                            <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0119" diaginertia="1.01666658333e-06 6.47677333333e-07 1.01666658333e-06" />
+                            <geom name="right_middle_link_0_collision" pos="0 0 0.0082" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0082" class="collision" />
+                            <geom name="right_middle_link_0_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_0.0.STL" class="visual" />
+                            <body name="right_middle_link_1" pos="0 0 0.0164" quat="1.0 0.0 0.0 0.0">
+                              <joint name="right_middle_joint_1" type="hinge" ref="0.0" class="motor" range="-0.196 1.61" axis="0 1 0" />
+                              <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.065" diaginertia="7.95654166667e-05 2.47088833333e-05 7.95654166667e-05" />
+                              <geom name="right_middle_link_1_collision" pos="0 0 0.027" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.027" class="collision" />
+                              <geom name="right_middle_link_1_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_1.0.STL" class="visual" />
+                              <body name="right_middle_link_2" pos="0 0 0.054" quat="1.0 0.0 0.0 0.0">
+                                <joint name="right_middle_joint_2" type="hinge" ref="0.0" class="motor" range="-0.174 1.709" axis="0 1 0" />
+                                <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0355" diaginertia="2.63979183333e-05 1.34948516667e-05 2.63979183333e-05" />
+                                <geom name="right_middle_link_2_collision" pos="0 0 0.0192" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0192" class="collision" />
+                                <geom name="right_middle_link_2_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_2.0.STL" class="visual" />
+                                <body name="right_middle_link_3" pos="0 0 0.0384" quat="1.0 0.0 0.0 0.0">
+                                  <joint name="right_middle_joint_3" type="hinge" ref="0.0" class="motor" range="-0.227 1.618" axis="0 1 0" />
+                                  <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0096" diaginertia="4.701248e-06 3.649312e-06 4.701248e-06" />
+                                  <geom name="right_middle_link_3_collision" pos="0 0 0.01335" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.01335" class="collision" />
+                                  <geom name="right_middle_link_3_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_3.0.STL" class="visual" />
+                                  <body name="right_middle_biotac_tip" pos="0 0 0.0267" quat="1.0 0.0 0.0 0.0">
+                                    <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0168" diaginertia="9.68e-07 9.68e-07 9.68e-07" />
+                                    <geom name="right_middle_biotac_tip_collision" pos="0 0 0" quat="1 0 0 0" type="sphere" size="0.012" class="collision" />
+                                    <geom name="right_middle_biotac_tip_visual" pos="0 0 0" quat="1 0 0 0" material="white" type="mesh" mesh="link_3.0_tip.STL" class="visual" />
+                                  </body>
+                                  <body name="right_middle_link_3_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                                </body>
+                                <body name="right_middle_link_2_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                              </body>
+                              <body name="right_middle_link_1_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                            </body>
+                          </body>
+                          <body name="right_ring_link_0" pos="0 -0.0435 -0.001542" quat="0.999048221582942 0.04361938734050142 0.0 0.0">
+                            <joint name="right_ring_joint_0" type="hinge" ref="0.0" class="motor" range="-0.47 0.47" axis="0 0 1" />
+                            <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0119" diaginertia="1.01666658333e-06 6.47677333333e-07 1.01666658333e-06" />
+                            <geom name="right_ring_link_0_collision" pos="0 0 0.0082" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0082" class="collision" />
+                            <geom name="right_ring_link_0_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_0.0.STL" class="visual" />
+                            <body name="right_ring_link_1" pos="0 0 0.0164" quat="1.0 0.0 0.0 0.0">
+                              <joint name="right_ring_joint_1" type="hinge" ref="0.0" class="motor" range="-0.196 1.61" axis="0 1 0" />
+                              <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.065" diaginertia="7.95654166667e-05 2.47088833333e-05 7.95654166667e-05" />
+                              <geom name="right_ring_link_1_collision" pos="0 0 0.027" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.027" class="collision" />
+                              <geom name="right_ring_link_1_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_1.0.STL" class="visual" />
+                              <body name="right_ring_link_2" pos="0 0 0.054" quat="1.0 0.0 0.0 0.0">
+                                <joint name="right_ring_joint_2" type="hinge" ref="0.0" class="motor" range="-0.174 1.709" axis="0 1 0" />
+                                <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0355" diaginertia="2.63979183333e-05 1.34948516667e-05 2.63979183333e-05" />
+                                <geom name="right_ring_link_2_collision" pos="0 0 0.0192" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0192" class="collision" />
+                                <geom name="right_ring_link_2_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_2.0.STL" class="visual" />
+                                <body name="right_ring_link_3" pos="0 0 0.0384" quat="1.0 0.0 0.0 0.0">
+                                  <joint name="right_ring_joint_3" type="hinge" ref="0.0" class="motor" range="-0.227 1.618" axis="0 1 0" />
+                                  <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0096" diaginertia="4.701248e-06 3.649312e-06 4.701248e-06" />
+                                  <geom name="right_ring_link_3_collision" pos="0 0 0.01335" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.01335" class="collision" />
+                                  <geom name="right_ring_link_3_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_3.0.STL" class="visual" />
+                                  <body name="right_ring_biotac_tip" pos="0 0 0.0267" quat="1.0 0.0 0.0 0.0">
+                                    <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0168" diaginertia="9.68e-07 9.68e-07 9.68e-07" />
+                                    <geom name="right_ring_biotac_tip_collision" pos="0 0 0" quat="1 0 0 0" type="sphere" size="0.012" class="collision" />
+                                    <geom name="right_ring_biotac_tip_visual" pos="0 0 0" quat="1 0 0 0" material="white" type="mesh" mesh="link_3.0_tip.STL" class="visual" />
+                                  </body>
+                                  <body name="right_ring_link_3_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                                </body>
+                                <body name="right_ring_link_2_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                              </body>
+                              <body name="right_ring_link_1_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                            </body>
+                          </body>
+                          <body name="right_thumb_link_0" pos="-0.0182 0.019333 -0.045987" quat="0.47771441756824273 -0.5213338040146993 -0.5213338044812392 -0.4777144171407377">
+                            <joint name="right_thumb_joint_0" type="hinge" ref="0.0" class="motor" range="0.263 1.396" axis="-1 0 0" />
+                            <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0176" diaginertia="1.89273333333e-05 1.43008213333e-05 1.89273333333e-05" />
+                            <geom name="right_thumb_link_0_collision" pos="-0.0179 0.009 0.0145" quat="1.0 0.0 0.0 0.0" type="box" size="0.0179 0.017 0.02275" class="collision" />
+                            <geom name="right_thumb_link_0_visual" pos="0 0 0" quat="8.948966624990769e-10 1.0 0.0 0.0" material="black" type="mesh" mesh="link_12.0_right.STL" class="visual" />
+                            <body name="right_thumb_link_1" pos="-0.027 0.005 0.0399" quat="1.0 0.0 0.0 0.0">
+                              <joint name="right_thumb_joint_1" type="hinge" ref="0.0" class="motor" range="-0.105 1.163" axis="0 0 1" />
+                              <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0119" diaginertia="4.24250866667e-06 4.52362633333e-06 4.24250866667e-06" />
+                              <geom name="right_thumb_link_1_collision" pos="0 0 0.00885" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.00885" class="collision" />
+                              <geom name="right_thumb_link_1_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_13.0.STL" class="visual" />
+                              <body name="right_thumb_link_2" pos="0 0 0.0177" quat="1.0 0.0 0.0 0.0">
+                                <joint name="right_thumb_joint_2" type="hinge" ref="0.0" class="motor" range="-0.189 1.644" axis="0 1 0" />
+                                <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.038" diaginertia="4.30439933333e-05 1.44451933333e-05 4.30439933333e-05" />
+                                <geom name="right_thumb_link_2_collision" pos="0 0 0.0257" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0257" class="collision" />
+                                <geom name="right_thumb_link_2_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_14.0.STL" class="visual" />
+                                <body name="right_thumb_link_3" pos="0 0 0.0514" quat="1.0 0.0 0.0 0.0">
+                                  <joint name="right_thumb_joint_3" type="hinge" ref="0.0" class="motor" range="-0.162 1.719" axis="0 1 0" />
+                                  <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0388" diaginertia="3.29223173333e-05 1.47493026667e-05 3.29223173333e-05" />
+                                  <geom name="right_thumb_link_3_collision" pos="0 0 0.02115" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.02115" class="collision" />
+                                  <geom name="right_thumb_link_3_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_15.0.STL" class="visual" />
+                                  <body name="right_thumb_biotac_tip" pos="0 0 0.0423" quat="1.0 0.0 0.0 0.0">
+                                    <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0168" diaginertia="9.68e-07 9.68e-07 9.68e-07" />
+                                    <geom name="right_thumb_biotac_tip_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="sphere" size="0.012" class="collision" />
+                                    <geom name="right_thumb_biotac_tip_visual" pos="0 0 0" quat="1 0 0 0" material="white" type="mesh" mesh="link_15.0_tip.STL" class="visual" />
+                                  </body>
+                                  <body name="right_thumb_link_3_sphere2" pos="0.0 0.0 0.025" quat="1.0 0.0 0.0 0.0" />
+                                  <body name="right_thumb_link_3_sphere3" pos="0.0 0.0 0.055" quat="1.0 0.0 0.0 0.0" />
+                                </body>
+                                <body name="right_thumb_link_2_sphere2" pos="0.0 0.0 0.025" quat="1.0 0.0 0.0 0.0" />
+                              </body>
+                            </body>
+                          </body>
+                          <body name="right_palm_x" pos="0.25 0. 0." quat="1.0 0.0 0.0 0.0">
+                            <inertial mass="0.04" diaginertia="5.1458e-05 5.1458e-05 6.125e-05" />
+                          </body>
+                          <body name="right_palm_x_neg" pos="-0.25 0. 0." quat="1.0 0.0 0.0 0.0">
+                            <inertial mass="0.04" diaginertia="5.1458e-05 5.1458e-05 6.125e-05" />
+                          </body>
+                          <body name="right_palm_y" pos="0. 0.25 0." quat="1.0 0.0 0.0 0.0">
+                            <inertial mass="0.04" diaginertia="5.1458e-05 5.1458e-05 6.125e-05" />
+                          </body>
+                          <body name="right_palm_y_neg" pos="0. -0.25 0." quat="1.0 0.0 0.0 0.0">
+                            <inertial mass="0.04" diaginertia="5.1458e-05 5.1458e-05 6.125e-05" />
+                          </body>
+                          <body name="right_palm_z" pos="0. 0. 0.25" quat="1.0 0.0 0.0 0.0">
+                            <inertial mass="0.04" diaginertia="5.1458e-05 5.1458e-05 6.125e-05" />
+                          </body>
+                          <body name="right_palm_z_neg" pos="0. 0. -0.25" quat="1.0 0.0 0.0 0.0">
+                            <inertial mass="0.04" diaginertia="5.1458e-05 5.1458e-05 6.125e-05" />
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                    <body name="right_iiwa14_link_6_sphere2" pos="0 0 0" quat="1.0 0.0 0.0 0.0" />
+                    <body name="right_iiwa14_link_6_sphere3" pos="0 0 -0.05" quat="1.0 0.0 0.0 0.0" />
+                  </body>
+                </body>
+                <body name="right_iiwa14_link_4_sphere2" pos="0 0.15 0" quat="1.0 0.0 0.0 0.0" />
+                <body name="right_iiwa14_link_4_sphere3" pos="0 0.25 0" quat="1.0 0.0 0.0 0.0" />
+              </body>
+            </body>
+            <body name="right_iiwa14_link_2_sphere2" pos="0 0.15 0" quat="1.0 0.0 0.0 0.0" />
+            <body name="right_iiwa14_link_2_sphere3" pos="0 0.25 0" quat="1.0 0.0 0.0 0.0" />
+          </body>
+        </body>
+      </body>
+      <body name="left_iiwa14_link_0" pos="0.0 0.1722 0.2" quat="0.9212277395152892 -0.30268334872695646 0.1619034662613374 -0.18305602957441713">
+        <inertial pos="-0.1 0 0.07" quat="1.0 0.0 0.0 0.0" mass="5" diaginertia="0.05 0.06 0.03" />
+        <geom name="left_iiwa14_link_0_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_0.stl" class="collision" />
+        <geom name="left_iiwa14_link_0_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Grey" type="mesh" mesh="link_0.stl" class="visual" />
+        <body name="left_iiwa14_link_1" pos="0 0 0.1575" quat="1.0 0.0 0.0 0.0">
+          <joint name="left_iiwa14_joint_1" type="hinge" ref="0.0" class="motor" range="-2.96705972839 2.96705972839" axis="0 0 1" />
+          <inertial pos="0 -0.03 0.12" quat="1.0 0.0 0.0 0.0" mass="4" diaginertia="0.1 0.09 0.02" />
+          <geom name="left_iiwa14_link_1_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_1.stl" class="collision" />
+          <geom name="left_iiwa14_link_1_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Orange" type="mesh" mesh="link_1.stl" class="visual" />
+          <body name="left_iiwa14_link_2" pos="0 0 0.2025" quat="-7.312301077203117e-14 -7.312301077167311e-14 0.7071067811848163 0.7071067811882787">
+            <joint name="left_iiwa14_joint_2" type="hinge" ref="0.0" class="motor" range="-2.09439510239 2.09439510239" axis="0 0 1" />
+            <inertial pos="0.0003 0.059 0.042" quat="1.0 0.0 0.0 0.0" mass="4" diaginertia="0.05 0.018 0.044" />
+            <geom name="left_iiwa14_link_2_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_2.stl" class="collision" />
+            <geom name="left_iiwa14_link_2_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Orange" type="mesh" mesh="link_2.stl" class="visual" />
+            <body name="left_iiwa14_link_3" pos="0 0.2045 0" quat="-7.312301077203117e-14 -7.312301077167311e-14 0.7071067811848163 0.7071067811882787">
+              <joint name="left_iiwa14_joint_3" type="hinge" ref="0.0" class="motor" range="-2.96705972839 2.96705972839" axis="0 0 1" />
+              <inertial pos="0 0.03 0.13" quat="1.0 0.0 0.0 0.0" mass="3" diaginertia="0.08 0.075 0.01" />
+              <geom name="left_iiwa14_link_3_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_3.stl" class="collision" />
+              <geom name="left_iiwa14_link_3_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Orange" type="mesh" mesh="link_3.stl" class="visual" />
+              <body name="left_iiwa14_link_4" pos="0 0 0.2155" quat="0.7071067811882787 0.7071067811848163 0.0 0.0">
+                <joint name="left_iiwa14_joint_4" type="hinge" ref="0.0" class="motor" range="-2.09439510239 2.09439510239" axis="0 0 1" />
+                <inertial pos="0 0.067 0.034" quat="1.0 0.0 0.0 0.0" mass="2.7" diaginertia="0.03 0.01 0.029" />
+                <geom name="left_iiwa14_link_4_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_4.stl" class="collision" />
+                <geom name="left_iiwa14_link_4_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Orange" type="mesh" mesh="link_4.stl" class="visual" />
+                <body name="left_iiwa14_link_5" pos="0 0.1845 0" quat="-7.312301077203117e-14 7.312301077167311e-14 0.7071067811882787 0.7071067811848163">
+                  <joint name="left_iiwa14_joint_5" type="hinge" ref="0.0" class="motor" range="-2.96705972839 2.96705972839" axis="0 0 1" />
+                  <inertial pos="0.0001 0.021 0.076" quat="1.0 0.0 0.0 0.0" mass="1.7" diaginertia="0.02 0.018 0.005" />
+                  <geom name="left_iiwa14_link_5_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_5.stl" class="collision" />
+                  <geom name="left_iiwa14_link_5_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Orange" type="mesh" mesh="link_5.stl" class="visual" />
+                  <body name="left_iiwa14_link_6" pos="0 0 0.2155" quat="0.7071067811882787 0.7071067811848163 0.0 0.0">
+                    <joint name="left_iiwa14_joint_6" type="hinge" ref="0.0" class="motor" range="-2.09439510239 2.09439510239" axis="0 0 1" />
+                    <inertial pos="0 0.0006 0.0004" quat="1.0 0.0 0.0 0.0" mass="1.8" diaginertia="0.005 0.0036 0.0047" />
+                    <geom name="left_iiwa14_link_6_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_6.stl" class="collision" />
+                    <geom name="left_iiwa14_link_6_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Orange" type="mesh" mesh="link_6.stl" class="visual" />
+                    <body name="left_iiwa14_link_7" pos="0 0.081 0" quat="-7.312301077203117e-14 7.312301077167311e-14 0.7071067811882787 0.7071067811848163">
+                      <joint name="left_iiwa14_joint_7" type="hinge" ref="0.0" class="motor" range="-3.05432619099 3.05432619099" axis="0 0 1" />
+                      <inertial pos="0 0 0.02" quat="1.0 0.0 0.0 0.0" mass="0.3" diaginertia="0.001 0.001 0.001" />
+                      <geom name="left_iiwa14_link_7_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="link_7.stl" class="collision" />
+                      <geom name="left_iiwa14_link_7_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="Grey" type="mesh" mesh="link_7.stl" class="visual" />
+                      <body name="left_iiwa14_link_ee" pos="0 0 0.045" quat="1.0 0.0 0.0 0.0">
+                        <body name="left_allegro_custom_mount" pos="-0.0128878 -0.0562605 0.006" quat="0.7073882691671998 0.0 0.0 0.706825181105366">
+                          <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.4375" diaginertia="0.000394 0.000394 0.000729" />
+                          <geom name="left_allegro_custom_mount_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="allegro-left-to-kuka-mount.stl" scale="0.001 0.001 0.001" class="collision" />
+                          <geom name="left_allegro_custom_mount_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" material="white" type="mesh" mesh="allegro-left-to-kuka-mount.stl" scale="0.001 0.001 0.001" class="visual" />
+                        </body>
+                        <body name="left_allegro_custom_mount2" pos="0 0 0.006" quat="0.0005633121735972125 0.707388044876899 -0.7068249569936026 -0.0005628637715330792">
+                          <geom name="left_allegro_custom_mount2_collision" pos="0 0 0" quat="0.0007963267107332633 0.0 0.0 0.9999996829318346" type="mesh" mesh="kuka_gopro_v2.stl" scale="0.001 0.001 0.001" class="collision" />
+                          <geom name="left_allegro_custom_mount2_visual" pos="0 0 0" quat="0.0007963267107332633 0.0 0.0 0.9999996829318346" material="white" type="mesh" mesh="kuka_gopro_v2.stl" scale="0.001 0.001 0.001" class="visual" />
+                        </body>
+                        <body name="left_palm_link" pos="-0.14 0 0.0325" quat="0.7073882691671998 0.0 -0.706825181105366 0.0">
+                          <body name="left_palm_link_content" pos="0 0 0" quat="1.0 0.0 0.0 0.0">
+                            <inertial pos="0 0 0.0475" quat="1.0 0.0 0.0 0.0" mass="0.4154" diaginertia="0.0001 0.0001 0.0001" />
+                            <geom name="left_palm_link_content_collision" pos="-0.009300 0 -0.0475" quat="1.0 0.0 0.0 0.0" type="box" size="0.0204 0.0565 0.0475" class="collision" />
+                            <geom name="left_palm_link_content_visual" pos="0 0 0 " quat="0.7071067815029413 -0.7071067808701538 0.0 0.0" material="black" type="mesh" mesh="base_link_left.STL" class="visual" />
+                          </body>
+                          <body name="left_palm_link_sphere2" pos="-0.02 0.03 -0.03" quat="1.0 0.0 0.0 0.0" />
+                          <body name="left_palm_link_sphere3" pos="-0.02 -0.03 -0.03" quat="1.0 0.0 0.0 0.0" />
+                          <body name="left_palm_link_sphere4" pos="-0.02 0.03 -0.1" quat="1.0 0.0 0.0 0.0" />
+                          <body name="left_palm_link_sphere5" pos="-0.02 -0.03 -0.1" quat="1.0 0.0 0.0 0.0" />
+                          <body name="left_palm_link_sphere6" pos="-0.02 0.03 -0.17" quat="1.0 0.0 0.0 0.0" />
+                          <body name="left_palm_link_sphere7" pos="-0.02 -0.03 -0.17" quat="1.0 0.0 0.0 0.0" />
+                          <body name="left_index_link_0" pos="0 -0.0435 -0.001542" quat="0.999048221582942 0.04361938734050142 0.0 0.0">
+                            <joint name="left_index_joint_0" type="hinge" ref="0.0" class="motor" range="-0.47 0.47" axis="0 0 1" />
+                            <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0119" diaginertia="1.01666658333e-06 6.47677333333e-07 1.01666658333e-06" />
+                            <geom name="left_index_link_0_collision" pos="0 0 0.0082" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0082" class="collision" />
+                            <geom name="left_index_link_0_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_0.0.STL" class="visual" />
+                            <body name="left_index_link_1" pos="0 0 0.0164" quat="1.0 0.0 0.0 0.0">
+                              <joint name="left_index_joint_1" type="hinge" ref="0.0" class="motor" range="-0.196 1.61" axis="0 1 0" />
+                              <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.065" diaginertia="7.95654166667e-05 2.47088833333e-05 7.95654166667e-05" />
+                              <geom name="left_index_link_1_collision" pos="0 0 0.027" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.027" class="collision" />
+                              <geom name="left_index_link_1_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_1.0.STL" class="visual" />
+                              <body name="left_index_link_2" pos="0 0 0.054" quat="1.0 0.0 0.0 0.0">
+                                <joint name="left_index_joint_2" type="hinge" ref="0.0" class="motor" range="-0.174 1.709" axis="0 1 0" />
+                                <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0355" diaginertia="2.63979183333e-05 1.34948516667e-05 2.63979183333e-05" />
+                                <geom name="left_index_link_2_collision" pos="0 0 0.0192" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0192" class="collision" />
+                                <geom name="left_index_link_2_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_2.0.STL" class="visual" />
+                                <body name="left_index_link_3" pos="0 0 0.0384" quat="1.0 0.0 0.0 0.0">
+                                  <joint name="left_index_joint_3" type="hinge" ref="0.0" class="motor" range="-0.227 1.618" axis="0 1 0" />
+                                  <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0096" diaginertia="4.701248e-06 3.649312e-06 4.701248e-06" />
+                                  <geom name="left_index_link_3_collision" pos="0 0 0.01335" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.01335" class="collision" />
+                                  <geom name="left_index_link_3_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_3.0.STL" class="visual" />
+                                  <body name="left_index_biotac_tip" pos="0 0 0.0267" quat="1.0 0.0 0.0 0.0">
+                                    <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0168" diaginertia="9.68e-07 9.68e-07 9.68e-07" />
+                                    <geom name="left_index_biotac_tip_collision" pos="0 0 0" quat="1 0 0 0" type="sphere" size="0.012" class="collision" />
+                                    <geom name="left_index_biotac_tip_visual" pos="0 0 0" quat="1 0 0 0" material="white" type="mesh" mesh="link_3.0_tip.STL" class="visual" />
+                                  </body>
+                                  <body name="left_index_link_3_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                                </body>
+                                <body name="left_index_link_2_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                              </body>
+                              <body name="left_index_link_1_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                            </body>
+                          </body>
+                          <body name="left_middle_link_0" pos="0 0 0.0007" quat="1.0 0.0 0.0 0.0">
+                            <joint name="left_middle_joint_0" type="hinge" ref="0.0" class="motor" range="-0.47 0.47" axis="0 0 1" />
+                            <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0119" diaginertia="1.01666658333e-06 6.47677333333e-07 1.01666658333e-06" />
+                            <geom name="left_middle_link_0_collision" pos="0 0 0.0082" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0082" class="collision" />
+                            <geom name="left_middle_link_0_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_0.0.STL" class="visual" />
+                            <body name="left_middle_link_1" pos="0 0 0.0164" quat="1.0 0.0 0.0 0.0">
+                              <joint name="left_middle_joint_1" type="hinge" ref="0.0" class="motor" range="-0.196 1.61" axis="0 1 0" />
+                              <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.065" diaginertia="7.95654166667e-05 2.47088833333e-05 7.95654166667e-05" />
+                              <geom name="left_middle_link_1_collision" pos="0 0 0.027" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.027" class="collision" />
+                              <geom name="left_middle_link_1_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_1.0.STL" class="visual" />
+                              <body name="left_middle_link_2" pos="0 0 0.054" quat="1.0 0.0 0.0 0.0">
+                                <joint name="left_middle_joint_2" type="hinge" ref="0.0" class="motor" range="-0.174 1.709" axis="0 1 0" />
+                                <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0355" diaginertia="2.63979183333e-05 1.34948516667e-05 2.63979183333e-05" />
+                                <geom name="left_middle_link_2_collision" pos="0 0 0.0192" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0192" class="collision" />
+                                <geom name="left_middle_link_2_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_2.0.STL" class="visual" />
+                                <body name="left_middle_link_3" pos="0 0 0.0384" quat="1.0 0.0 0.0 0.0">
+                                  <joint name="left_middle_joint_3" type="hinge" ref="0.0" class="motor" range="-0.227 1.618" axis="0 1 0" />
+                                  <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0096" diaginertia="4.701248e-06 3.649312e-06 4.701248e-06" />
+                                  <geom name="left_middle_link_3_collision" pos="0 0 0.01335" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.01335" class="collision" />
+                                  <geom name="left_middle_link_3_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_3.0.STL" class="visual" />
+                                  <body name="left_middle_biotac_tip" pos="0 0 0.0267" quat="1.0 0.0 0.0 0.0">
+                                    <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0168" diaginertia="9.68e-07 9.68e-07 9.68e-07" />
+                                    <geom name="left_middle_biotac_tip_collision" pos="0 0 0" quat="1 0 0 0" type="sphere" size="0.012" class="collision" />
+                                    <geom name="left_middle_biotac_tip_visual" pos="0 0 0" quat="1 0 0 0" material="white" type="mesh" mesh="link_3.0_tip.STL" class="visual" />
+                                  </body>
+                                  <body name="left_middle_link_3_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                                </body>
+                                <body name="left_middle_link_2_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                              </body>
+                              <body name="left_middle_link_1_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                            </body>
+                          </body>
+                          <body name="left_ring_link_0" pos="0 0.0435 -0.001542" quat="0.999048221582942 -0.04361938734050142 0.0 0.0">
+                            <joint name="left_ring_joint_0" type="hinge" ref="0.0" class="motor" range="-0.47 0.47" axis="0 0 1" />
+                            <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0119" diaginertia="1.01666658333e-06 6.47677333333e-07 1.01666658333e-06" />
+                            <geom name="left_ring_link_0_collision" pos="0 0 0.0082" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0082" class="collision" />
+                            <geom name="left_ring_link_0_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_0.0.STL" class="visual" />
+                            <body name="left_ring_link_1" pos="0 0 0.0164" quat="1.0 0.0 0.0 0.0">
+                              <joint name="left_ring_joint_1" type="hinge" ref="0.0" class="motor" range="-0.196 1.61" axis="0 1 0" />
+                              <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.065" diaginertia="7.95654166667e-05 2.47088833333e-05 7.95654166667e-05" />
+                              <geom name="left_ring_link_1_collision" pos="0 0 0.027" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.027" class="collision" />
+                              <geom name="left_ring_link_1_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_1.0.STL" class="visual" />
+                              <body name="left_ring_link_2" pos="0 0 0.054" quat="1.0 0.0 0.0 0.0">
+                                <joint name="left_ring_joint_2" type="hinge" ref="0.0" class="motor" range="-0.174 1.709" axis="0 1 0" />
+                                <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0355" diaginertia="2.63979183333e-05 1.34948516667e-05 2.63979183333e-05" />
+                                <geom name="left_ring_link_2_collision" pos="0 0 0.0192" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0192" class="collision" />
+                                <geom name="left_ring_link_2_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_2.0.STL" class="visual" />
+                                <body name="left_ring_link_3" pos="0 0 0.0384" quat="1.0 0.0 0.0 0.0">
+                                  <joint name="left_ring_joint_3" type="hinge" ref="0.0" class="motor" range="-0.227 1.618" axis="0 1 0" />
+                                  <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0096" diaginertia="4.701248e-06 3.649312e-06 4.701248e-06" />
+                                  <geom name="left_ring_link_3_collision" pos="0 0 0.01335" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.01335" class="collision" />
+                                  <geom name="left_ring_link_3_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_3.0.STL" class="visual" />
+                                  <body name="left_ring_biotac_tip" pos="0 0 0.0267" quat="1.0 0.0 0.0 0.0">
+                                    <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0168" diaginertia="9.68e-07 9.68e-07 9.68e-07" />
+                                    <geom name="left_ring_biotac_tip_collision" pos="0 0 0" quat="1 0 0 0" type="sphere" size="0.012" class="collision" />
+                                    <geom name="left_ring_biotac_tip_visual" pos="0 0 0" quat="1 0 0 0" material="white" type="mesh" mesh="link_3.0_tip.STL" class="visual" />
+                                  </body>
+                                  <body name="left_ring_link_3_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                                </body>
+                                <body name="left_ring_link_2_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                              </body>
+                              <body name="left_ring_link_1_sphere2" pos="0.0 0.0 0.027" quat="1.0 0.0 0.0 0.0" />
+                            </body>
+                          </body>
+                          <body name="left_thumb_link_0" pos="-0.0182 -0.019333 -0.045987" quat="0.47771441756824273 0.5213338040146993 -0.5213338044812392 0.4777144171407377">
+                            <joint name="left_thumb_joint_0" type="hinge" ref="0.0" class="motor" range="0.263 1.396" axis="+1 0 0" />
+                            <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0176" diaginertia="1.89273333333e-05 1.43008213333e-05 1.89273333333e-05" />
+                            <geom name="left_thumb_link_0_collision" pos="-0.0179 -0.009 0.0145" quat="1.0 0.0 0.0 0.0" type="box" size="0.0179 0.017 0.02275" class="collision" />
+                            <geom name="left_thumb_link_0_visual" pos="0 0 0" quat="8.948966624990769e-10 1.0 0.0 0.0" material="black" type="mesh" mesh="link_12.0_left.STL" class="visual" />
+                            <body name="left_thumb_link_1" pos="-0.027 -0.005 0.0399" quat="1.0 0.0 0.0 0.0">
+                              <joint name="left_thumb_joint_1" type="hinge" ref="0.0" class="motor" range="-0.105 1.163" axis="0 0 -1" />
+                              <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0119" diaginertia="4.24250866667e-06 4.52362633333e-06 4.24250866667e-06" />
+                              <geom name="left_thumb_link_1_collision" pos="0 0 0.00885" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.00885" class="collision" />
+                              <geom name="left_thumb_link_1_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_13.0.STL" class="visual" />
+                              <body name="left_thumb_link_2" pos="0 0 0.0177" quat="1.0 0.0 0.0 0.0">
+                                <joint name="left_thumb_joint_2" type="hinge" ref="0.0" class="motor" range="-0.189 1.644" axis="0 1 0" />
+                                <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.038" diaginertia="4.30439933333e-05 1.44451933333e-05 4.30439933333e-05" />
+                                <geom name="left_thumb_link_2_collision" pos="0 0 0.0257" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.0257" class="collision" />
+                                <geom name="left_thumb_link_2_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_14.0.STL" class="visual" />
+                                <body name="left_thumb_link_3" pos="0 0 0.0514" quat="1.0 0.0 0.0 0.0">
+                                  <joint name="left_thumb_joint_3" type="hinge" ref="0.0" class="motor" range="-0.162 1.719" axis="0 1 0" />
+                                  <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0388" diaginertia="3.29223173333e-05 1.47493026667e-05 3.29223173333e-05" />
+                                  <geom name="left_thumb_link_3_collision" pos="0 0 0.02115" quat="1.0 0.0 0.0 0.0" type="box" size="0.0098 0.01375 0.02115" class="collision" />
+                                  <geom name="left_thumb_link_3_visual" pos="0 0 0" quat="1 0 0 0" material="black" type="mesh" mesh="link_15.0.STL" class="visual" />
+                                  <body name="left_thumb_biotac_tip" pos="0 0 0.0423" quat="1.0 0.0 0.0 0.0">
+                                    <inertial pos="0 0 0" quat="1.0 0.0 0.0 0.0" mass="0.0168" diaginertia="9.68e-07 9.68e-07 9.68e-07" />
+                                    <geom name="left_thumb_biotac_tip_collision" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="sphere" size="0.012" class="collision" />
+                                    <geom name="left_thumb_biotac_tip_visual" pos="0 0 0" quat="1 0 0 0" material="white" type="mesh" mesh="link_15.0_tip.STL" class="visual" />
+                                  </body>
+                                  <body name="left_thumb_link_3_sphere2" pos="0.0 0.0 0.025" quat="1.0 0.0 0.0 0.0" />
+                                  <body name="left_thumb_link_3_sphere3" pos="0.0 0.0 0.055" quat="1.0 0.0 0.0 0.0" />
+                                </body>
+                                <body name="left_thumb_link_2_sphere2" pos="0.0 0.0 0.025" quat="1.0 0.0 0.0 0.0" />
+                              </body>
+                            </body>
+                          </body>
+                          <body name="left_palm_x" pos="0.25 0. 0." quat="1.0 0.0 0.0 0.0">
+                            <inertial mass="0.04" diaginertia="5.1458e-05 5.1458e-05 6.125e-05" />
+                          </body>
+                          <body name="left_palm_x_neg" pos="-0.25 0. 0." quat="1.0 0.0 0.0 0.0">
+                            <inertial mass="0.04" diaginertia="5.1458e-05 5.1458e-05 6.125e-05" />
+                          </body>
+                          <body name="left_palm_y" pos="0. 0.25 0." quat="1.0 0.0 0.0 0.0">
+                            <inertial mass="0.04" diaginertia="5.1458e-05 5.1458e-05 6.125e-05" />
+                          </body>
+                          <body name="left_palm_y_neg" pos="0. -0.25 0." quat="1.0 0.0 0.0 0.0">
+                            <inertial mass="0.04" diaginertia="5.1458e-05 5.1458e-05 6.125e-05" />
+                          </body>
+                          <body name="left_palm_z" pos="0. 0. 0.25" quat="1.0 0.0 0.0 0.0">
+                            <inertial mass="0.04" diaginertia="5.1458e-05 5.1458e-05 6.125e-05" />
+                          </body>
+                          <body name="left_palm_z_neg" pos="0. 0. -0.25" quat="1.0 0.0 0.0 0.0">
+                            <inertial mass="0.04" diaginertia="5.1458e-05 5.1458e-05 6.125e-05" />
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                    <body name="left_iiwa14_link_6_sphere2" pos="0 0 0" quat="1.0 0.0 0.0 0.0" />
+                    <body name="left_iiwa14_link_6_sphere3" pos="0 0 -0.05" quat="1.0 0.0 0.0 0.0" />
+                  </body>
+                </body>
+                <body name="left_iiwa14_link_4_sphere2" pos="0 0.15 0" quat="1.0 0.0 0.0 0.0" />
+                <body name="left_iiwa14_link_4_sphere3" pos="0 0.25 0" quat="1.0 0.0 0.0 0.0" />
+              </body>
+            </body>
+            <body name="left_iiwa14_link_2_sphere2" pos="0 0.15 0" quat="1.0 0.0 0.0 0.0" />
+            <body name="left_iiwa14_link_2_sphere3" pos="0 0.25 0" quat="1.0 0.0 0.0 0.0" />
+          </body>
+        </body>
+      </body>
+      <site name="base_link_site" pos="0 0 0" quat="1 0 0 0" />
+      <camera name="front_camera" mode="track" fovy="90.0" quat="4.329780281177467e-17 4.329780281177466e-17 0.7071067811865475 0.7071067811865476" pos="0.0 2.0 0.5" />
+      <camera name="side_camera" mode="track" fovy="90.0" quat="-0.5 -0.4999999999999999 0.5 0.5000000000000001" pos="-2.0 0.0 0.5" />
+    </body>
+  </worldbody>
+
+  <actuator>
+    <motor name="right_iiwa14_joint_1_ctrl" joint="right_iiwa14_joint_1" class="motor" />
+    <motor name="right_iiwa14_joint_2_ctrl" joint="right_iiwa14_joint_2" class="motor" />
+    <motor name="right_iiwa14_joint_3_ctrl" joint="right_iiwa14_joint_3" class="motor" />
+    <motor name="right_iiwa14_joint_4_ctrl" joint="right_iiwa14_joint_4" class="motor" />
+    <motor name="right_iiwa14_joint_5_ctrl" joint="right_iiwa14_joint_5" class="motor" />
+    <motor name="right_iiwa14_joint_6_ctrl" joint="right_iiwa14_joint_6" class="motor" />
+    <motor name="right_iiwa14_joint_7_ctrl" joint="right_iiwa14_joint_7" class="motor" />
+    <motor name="right_index_joint_0_ctrl" joint="right_index_joint_0" class="motor" />
+    <motor name="right_index_joint_1_ctrl" joint="right_index_joint_1" class="motor" />
+    <motor name="right_index_joint_2_ctrl" joint="right_index_joint_2" class="motor" />
+    <motor name="right_index_joint_3_ctrl" joint="right_index_joint_3" class="motor" />
+    <motor name="right_middle_joint_0_ctrl" joint="right_middle_joint_0" class="motor" />
+    <motor name="right_middle_joint_1_ctrl" joint="right_middle_joint_1" class="motor" />
+    <motor name="right_middle_joint_2_ctrl" joint="right_middle_joint_2" class="motor" />
+    <motor name="right_middle_joint_3_ctrl" joint="right_middle_joint_3" class="motor" />
+    <motor name="right_ring_joint_0_ctrl" joint="right_ring_joint_0" class="motor" />
+    <motor name="right_ring_joint_1_ctrl" joint="right_ring_joint_1" class="motor" />
+    <motor name="right_ring_joint_2_ctrl" joint="right_ring_joint_2" class="motor" />
+    <motor name="right_ring_joint_3_ctrl" joint="right_ring_joint_3" class="motor" />
+    <motor name="right_thumb_joint_0_ctrl" joint="right_thumb_joint_0" class="motor" />
+    <motor name="right_thumb_joint_1_ctrl" joint="right_thumb_joint_1" class="motor" />
+    <motor name="right_thumb_joint_2_ctrl" joint="right_thumb_joint_2" class="motor" />
+    <motor name="right_thumb_joint_3_ctrl" joint="right_thumb_joint_3" class="motor" />
+    <motor name="left_iiwa14_joint_1_ctrl" joint="left_iiwa14_joint_1" class="motor" />
+    <motor name="left_iiwa14_joint_2_ctrl" joint="left_iiwa14_joint_2" class="motor" />
+    <motor name="left_iiwa14_joint_3_ctrl" joint="left_iiwa14_joint_3" class="motor" />
+    <motor name="left_iiwa14_joint_4_ctrl" joint="left_iiwa14_joint_4" class="motor" />
+    <motor name="left_iiwa14_joint_5_ctrl" joint="left_iiwa14_joint_5" class="motor" />
+    <motor name="left_iiwa14_joint_6_ctrl" joint="left_iiwa14_joint_6" class="motor" />
+    <motor name="left_iiwa14_joint_7_ctrl" joint="left_iiwa14_joint_7" class="motor" />
+    <motor name="left_index_joint_0_ctrl" joint="left_index_joint_0" class="motor" />
+    <motor name="left_index_joint_1_ctrl" joint="left_index_joint_1" class="motor" />
+    <motor name="left_index_joint_2_ctrl" joint="left_index_joint_2" class="motor" />
+    <motor name="left_index_joint_3_ctrl" joint="left_index_joint_3" class="motor" />
+    <motor name="left_middle_joint_0_ctrl" joint="left_middle_joint_0" class="motor" />
+    <motor name="left_middle_joint_1_ctrl" joint="left_middle_joint_1" class="motor" />
+    <motor name="left_middle_joint_2_ctrl" joint="left_middle_joint_2" class="motor" />
+    <motor name="left_middle_joint_3_ctrl" joint="left_middle_joint_3" class="motor" />
+    <motor name="left_ring_joint_0_ctrl" joint="left_ring_joint_0" class="motor" />
+    <motor name="left_ring_joint_1_ctrl" joint="left_ring_joint_1" class="motor" />
+    <motor name="left_ring_joint_2_ctrl" joint="left_ring_joint_2" class="motor" />
+    <motor name="left_ring_joint_3_ctrl" joint="left_ring_joint_3" class="motor" />
+    <motor name="left_thumb_joint_0_ctrl" joint="left_thumb_joint_0" class="motor" />
+    <motor name="left_thumb_joint_1_ctrl" joint="left_thumb_joint_1" class="motor" />
+    <motor name="left_thumb_joint_2_ctrl" joint="left_thumb_joint_2" class="motor" />
+    <motor name="left_thumb_joint_3_ctrl" joint="left_thumb_joint_3" class="motor" />
+  </actuator>
+
+  <contact>
+    <exclude body1="right_iiwa14_link_0" body2="right_iiwa14_link_1" />
+    <exclude body1="right_iiwa14_link_1" body2="right_iiwa14_link_2" />
+    <exclude body1="right_iiwa14_link_2" body2="right_iiwa14_link_3" />
+    <exclude body1="right_iiwa14_link_3" body2="right_iiwa14_link_4" />
+    <exclude body1="right_iiwa14_link_4" body2="right_iiwa14_link_5" />
+    <exclude body1="right_iiwa14_link_5" body2="right_iiwa14_link_6" />
+    <exclude body1="right_iiwa14_link_6" body2="right_iiwa14_link_7" />
+    <exclude body1="right_index_link_0" body2="right_index_link_1" />
+    <exclude body1="right_index_link_1" body2="right_index_link_2" />
+    <exclude body1="right_index_link_2" body2="right_index_link_3" />
+    <exclude body1="right_index_link_3" body2="right_index_biotac_tip" />
+    <exclude body1="right_middle_link_0" body2="right_middle_link_1" />
+    <exclude body1="right_middle_link_1" body2="right_middle_link_2" />
+    <exclude body1="right_middle_link_2" body2="right_middle_link_3" />
+    <exclude body1="right_middle_link_3" body2="right_middle_biotac_tip" />
+    <exclude body1="right_ring_link_0" body2="right_ring_link_1" />
+    <exclude body1="right_ring_link_1" body2="right_ring_link_2" />
+    <exclude body1="right_ring_link_2" body2="right_ring_link_3" />
+    <exclude body1="right_ring_link_3" body2="right_ring_biotac_tip" />
+    <exclude body1="right_thumb_link_0" body2="right_thumb_link_1" />
+    <exclude body1="right_thumb_link_1" body2="right_thumb_link_2" />
+    <exclude body1="right_thumb_link_2" body2="right_thumb_link_3" />
+    <exclude body1="right_thumb_link_3" body2="right_thumb_biotac_tip" />
+    <exclude body1="left_iiwa14_link_0" body2="left_iiwa14_link_1" />
+    <exclude body1="left_iiwa14_link_1" body2="left_iiwa14_link_2" />
+    <exclude body1="left_iiwa14_link_2" body2="left_iiwa14_link_3" />
+    <exclude body1="left_iiwa14_link_3" body2="left_iiwa14_link_4" />
+    <exclude body1="left_iiwa14_link_4" body2="left_iiwa14_link_5" />
+    <exclude body1="left_iiwa14_link_5" body2="left_iiwa14_link_6" />
+    <exclude body1="left_iiwa14_link_6" body2="left_iiwa14_link_7" />
+    <exclude body1="left_index_link_0" body2="left_index_link_1" />
+    <exclude body1="left_index_link_1" body2="left_index_link_2" />
+    <exclude body1="left_index_link_2" body2="left_index_link_3" />
+    <exclude body1="left_index_link_3" body2="left_index_biotac_tip" />
+    <exclude body1="left_middle_link_0" body2="left_middle_link_1" />
+    <exclude body1="left_middle_link_1" body2="left_middle_link_2" />
+    <exclude body1="left_middle_link_2" body2="left_middle_link_3" />
+    <exclude body1="left_middle_link_3" body2="left_middle_biotac_tip" />
+    <exclude body1="left_ring_link_0" body2="left_ring_link_1" />
+    <exclude body1="left_ring_link_1" body2="left_ring_link_2" />
+    <exclude body1="left_ring_link_2" body2="left_ring_link_3" />
+    <exclude body1="left_ring_link_3" body2="left_ring_biotac_tip" />
+    <exclude body1="left_thumb_link_0" body2="left_thumb_link_1" />
+    <exclude body1="left_thumb_link_1" body2="left_thumb_link_2" />
+    <exclude body1="left_thumb_link_2" body2="left_thumb_link_3" />
+    <exclude body1="left_thumb_link_3" body2="left_thumb_biotac_tip" />
+  </contact>
+
+  <sensor>
+    <framepos name="base_link_site_pos" objtype="site" objname="base_link_site" />
+    <framequat name="base_link_site_quat" objtype="site" objname="base_link_site" />
+    <framelinvel name="base_link_site_linvel" objtype="site" objname="base_link_site" />
+    <frameangvel name="base_link_site_angvel" objtype="site" objname="base_link_site" />
+    <velocimeter name="base_link_site_vel" site="base_link_site" />
+  </sensor>
+</mujoco>
