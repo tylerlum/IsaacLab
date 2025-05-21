@@ -49,7 +49,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     decimation = 4
     action_scale = 0.5
     action_space = 46
-    observation_space = 150
+    observation_space = 147
     state_space = 0
     debug_vis = True
 
@@ -89,7 +89,6 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     contact_sensor = ContactSensorCfg(
         prim_path="/World/envs/env_.*/Robot/.*",
         history_length=3,
-        track_air_time=True,
         update_period=SIM_DT,
     )
 
@@ -98,35 +97,6 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         intensity=750.0,
         texture_file=f"{ISAAC_NUCLEUS_DIR}/Materials/Textures/Skies/PolyHaven/kloofendal_43d_clear_puresky_4k.hdr",
     )
-
-    # command
-    base_velocity_command = mdp.UniformVelocityCommandCfg(
-        asset_name="robot",
-        resampling_time_range=(10.0, 10.0),
-        rel_standing_envs=0.02,
-        rel_heading_envs=1.0,
-        heading_command=True,
-        heading_control_stiffness=0.5,
-        debug_vis=True,
-        ranges=mdp.UniformVelocityCommandCfg.Ranges(
-            lin_vel_x=(0.0, 1.0),
-            lin_vel_y=(-0.5, 0.5),
-            ang_vel_z=(-1.0, 1.0),
-            heading=(-math.pi, math.pi),
-        ),
-    )
-
-    command_vel_visualizer_cfg: VisualizationMarkersCfg = (
-        GREEN_ARROW_X_MARKER_CFG.replace(prim_path="/Visuals/Command/velocity_command")
-    )
-    """The configuration for the command velocity visualization marker. Defaults to GREEN_ARROW_X_MARKER_CFG."""
-    command_vel_visualizer_cfg.markers["arrow"].scale = (1.0, 0.4, 0.4)
-
-    current_vel_visualizer_cfg: VisualizationMarkersCfg = (
-        BLUE_ARROW_X_MARKER_CFG.replace(prim_path="/Visuals/Command/velocity_current")
-    )
-    """The configuration for the current velocity visualization marker. Defaults to BLUE_ARROW_X_MARKER_CFG."""
-    current_vel_visualizer_cfg.markers["arrow"].scale = (1.0, 0.4, 0.4)
 
     pose_visualizer_cfg: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
         prim_path="/Visuals/Command/pose"
@@ -144,85 +114,7 @@ REWARD_NAMES = [
     # "undesired_contacts",
     "flat_orientation_l2",
     "termination_penalty",
-    "track_lin_vel_xy_exp",
-    "track_ang_vel_z_exp",
 ]
-
-
-def sample_commands(
-    num_envs: int,
-    device: torch.device,
-    lin_vel_x: tuple[float, float],
-    lin_vel_y: tuple[float, float],
-    ang_vel_z: tuple[float, float],
-    heading: tuple[float, float],
-    rel_heading_envs: float,
-    rel_standing_envs: float,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Sample new commands at every reset
-
-    There are 3 types of envs:
-    * Heading envs: follow heading command (vel_commands_b will be changing at each timestep to track the heading)
-    * Standing envs: zero velocity command
-    * Normal envs: follow fixed randomly-sampled velocity command
-    """
-    # Sample vel commands to be used for normal envs
-    r = torch.empty(num_envs, device=device)
-    vel_commands_b = torch.zeros(num_envs, 3, device=device)
-    vel_commands_b[:, 0] = r.uniform_(*lin_vel_x)
-    vel_commands_b[:, 1] = r.uniform_(*lin_vel_y)
-    vel_commands_b[:, 2] = r.uniform_(*ang_vel_z)
-
-    # Sample which envs are heading envs or standing envs
-    heading_commands = r.uniform_(*heading)
-    is_heading_env = r.uniform_(0.0, 1.0) <= rel_heading_envs
-    is_standing_env = r.uniform_(0.0, 1.0) <= rel_standing_envs
-    is_heading_env[is_standing_env] = False
-
-    return vel_commands_b, heading_commands, is_heading_env, is_standing_env
-
-
-def update_commands(
-    vel_commands_b: torch.Tensor,
-    heading_commands: torch.Tensor,
-    heading: torch.Tensor,
-    is_heading_env: torch.Tensor,
-    is_standing_env: torch.Tensor,
-    heading_control_stiffness: float,
-    ang_vel_z: tuple[float, float],
-) -> torch.Tensor:
-    heading_error = math_utils.wrap_to_pi(heading_commands - heading)
-
-    new_vel_commands_b = vel_commands_b.clone()
-    new_vel_commands_b[is_heading_env, 2] = torch.clip(
-        heading_control_stiffness * heading_error[is_heading_env],
-        min=ang_vel_z[0],
-        max=ang_vel_z[1],
-    )
-    new_vel_commands_b[is_standing_env, :] = 0.0
-    return new_vel_commands_b
-
-
-def resolve_xy_velocity_to_arrow(
-    xy_velocity_b: torch.Tensor,
-    scale: tuple[float, float, float],
-    device: torch.device,
-    base_quat_w: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    # scale
-    arrow_scale = torch.tensor(scale, device=device).repeat(xy_velocity_b.shape[0], 1)
-    SCALE_FACTOR = 5.0
-    arrow_scale[:, 0] *= torch.linalg.norm(xy_velocity_b, dim=1) * SCALE_FACTOR
-
-    # direction
-    heading_angle = torch.atan2(xy_velocity_b[:, 1], xy_velocity_b[:, 0])
-    zeros = torch.zeros_like(heading_angle)
-    arrow_quat = math_utils.quat_from_euler_xyz(zeros, zeros, heading_angle)
-
-    # convert everything back from base to world frame
-    arrow_quat = math_utils.quat_mul(base_quat_w, arrow_quat)
-    return arrow_scale, arrow_quat
 
 
 class AverageMeter(nn.Module):
@@ -310,19 +202,6 @@ class BimanualEnv(DirectRLEnv):
             for reward_name in REWARD_NAMES
         }
 
-        # Commands
-        (
-            self.vel_commands_b,
-            self.heading_commands,
-            self.is_heading_env,
-            self.is_standing_env,
-        ) = (
-            torch.zeros(self.num_envs, 3, device=self.device),
-            torch.zeros(self.num_envs, device=self.device),
-            torch.zeros(self.num_envs, device=self.device, dtype=torch.bool),
-            torch.zeros(self.num_envs, device=self.device, dtype=torch.bool),
-        )
-
         # Logging
         self.wandb_dict = {}
         self.reward_metric = AverageMeter().to(self.device)
@@ -383,7 +262,6 @@ class BimanualEnv(DirectRLEnv):
             "base_lin_vel": self.robot.data.root_lin_vel_b,
             "base_ang_vel": self.robot.data.root_ang_vel_b,
             "projected_gravity": self.robot.data.projected_gravity_b,
-            "velocity_commands": self.vel_commands_b,
             "joint_pos": self.robot.data.joint_pos - self.robot.data.default_joint_pos,
             "joint_vel": self.robot.data.joint_vel - self.robot.data.default_joint_vel,
             "actions": self.raw_actions,
@@ -448,8 +326,6 @@ class BimanualEnv(DirectRLEnv):
 
             # rough_env_cfg.py
             "termination_penalty": self.reset_terminated.float(),  # (don't terminate) This works because _get_dones() is called before _get_rewards()
-            "track_lin_vel_xy_exp": torch.exp(-(self.vel_commands_b[:, :2] - robot_lin_vel_rotated[:, :2]).square().sum(dim=1) / 0.5**2),  # (track the commanded lin_vel_xy)
-            "track_ang_vel_z_exp": torch.exp(-(self.vel_commands_b[:, 2] - self.robot.data.root_ang_vel_w[:, 2]).square() / 0.5**2),  #  (track the commanded ang_vel_z)
             # "feet_air_time": torch.where(single_stance.unsqueeze(-1), in_mode_time, 0.0).min(dim=1).values.clamp(max=0.4) * (self.vel_commands_b[:, :2].norm(dim=1) > 0.1),  # (Promote stable single-stance gait)
             # "feet_slide": (self.robot.data.body_lin_vel_w[:, self._ankle_link_idxs, :2].norm(dim=-1) * contacts[:, self._contact_ankle_link_idxs]).sum(dim=1),  # (don't slide feet)
             # "dof_pos_limits_ankle": (under_min + over_max)[:, self._ankle_joint_idxs].sum(dim=1),  # (don't exceed dof pos limits of ankles)
@@ -475,8 +351,6 @@ class BimanualEnv(DirectRLEnv):
 
                 # rough_env_cfg.py
                 "termination_penalty": -200.0,
-                "track_lin_vel_xy_exp": 1.0,
-                "track_ang_vel_z_exp": 1.0,
             }
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
@@ -515,16 +389,6 @@ class BimanualEnv(DirectRLEnv):
 
     #### END OF STEP START  ####
     def _end_of_step(self):
-        self.vel_commands_b[:] = update_commands(
-            vel_commands_b=self.vel_commands_b,
-            heading_commands=self.heading_commands,
-            heading=self.robot.data.heading_w,
-            is_heading_env=self.is_heading_env,
-            is_standing_env=self.is_standing_env,
-            heading_control_stiffness=self.cfg.base_velocity_command.heading_control_stiffness,
-            ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z,
-        )
-
         # Update metrics
         self.aggregated_reward_buf += self.reward_buf
         for reward_name in REWARD_NAMES:
@@ -599,7 +463,6 @@ class BimanualEnv(DirectRLEnv):
 
         died = time_out
         return died, time_out
-
 
     #### DONES END ####
 
@@ -690,31 +553,6 @@ class BimanualEnv(DirectRLEnv):
             len(env_ids), self.cfg.action_space, device=self.device
         )
 
-        (
-            self.vel_commands_b[env_ids],
-            self.heading_commands[env_ids],
-            self.is_heading_env[env_ids],
-            self.is_standing_env[env_ids],
-        ) = sample_commands(
-            num_envs=len(env_ids),
-            device=self.device,
-            lin_vel_x=self.cfg.base_velocity_command.ranges.lin_vel_x,
-            lin_vel_y=self.cfg.base_velocity_command.ranges.lin_vel_y,
-            ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z,
-            heading=self.cfg.base_velocity_command.ranges.heading,
-            rel_heading_envs=self.cfg.base_velocity_command.rel_heading_envs,
-            rel_standing_envs=self.cfg.base_velocity_command.rel_standing_envs,
-        )
-        self.vel_commands_b[:] = update_commands(
-            vel_commands_b=self.vel_commands_b,
-            heading_commands=self.heading_commands,
-            heading=self.robot.data.heading_w,
-            is_heading_env=self.is_heading_env,
-            is_standing_env=self.is_standing_env,
-            heading_control_stiffness=self.cfg.base_velocity_command.heading_control_stiffness,
-            ang_vel_z=self.cfg.base_velocity_command.ranges.ang_vel_z,
-        )
-
         self._compute_intermediate_values()
 
     #### RESET END ####
@@ -723,28 +561,14 @@ class BimanualEnv(DirectRLEnv):
     def _set_debug_vis_impl(self, debug_vis: bool):
         # create markers if necessary for the first tome
         if debug_vis:
-            if not hasattr(self, "command_vel_visualizer"):
-                self.command_vel_visualizer = VisualizationMarkers(
-                    self.cfg.command_vel_visualizer_cfg
-                )
-            if not hasattr(self, "current_vel_visualizer"):
-                self.current_vel_visualizer = VisualizationMarkers(
-                    self.cfg.current_vel_visualizer_cfg
-                )
             if not hasattr(self, "pose_visualizer"):
                 self.pose_visualizer = VisualizationMarkers(
                     self.cfg.pose_visualizer_cfg
                 )
 
             # set their visibility to true
-            self.command_vel_visualizer.set_visibility(True)
-            self.current_vel_visualizer.set_visibility(True)
             self.pose_visualizer.set_visibility(True)
         else:
-            if hasattr(self, "command_vel_visualizer"):
-                self.command_vel_visualizer.set_visibility(False)
-            if hasattr(self, "current_vel_visualizer"):
-                self.current_vel_visualizer.set_visibility(False)
             if hasattr(self, "pose_visualizer"):
                 self.pose_visualizer.set_visibility(False)
 
@@ -755,31 +579,8 @@ class BimanualEnv(DirectRLEnv):
 
         # Place marker above the robot
         base_pos_w = self.robot.data.root_pos_w.clone()
-        base_pos_w[:, 2] += 1.0
+        base_pos_w[:, 2] += 0.1
 
-        # Convert the velocity command to an arrow
-        vel_command_arrow_scale, vel_command_arrow_quat = resolve_xy_velocity_to_arrow(
-            xy_velocity_b=self.vel_commands_b[:, :2],
-            scale=self.command_vel_visualizer.cfg.markers["arrow"].scale,
-            device=self.device,
-            base_quat_w=self.robot.data.root_quat_w,
-        )
-        vel_arrow_scale, vel_arrow_quat = resolve_xy_velocity_to_arrow(
-            xy_velocity_b=self.robot.data.root_lin_vel_b[:, :2],
-            scale=self.current_vel_visualizer.cfg.markers["arrow"].scale,
-            device=self.device,
-            base_quat_w=self.robot.data.root_quat_w,
-        )
-
-        # update the markers
-        self.command_vel_visualizer.visualize(
-            translations=base_pos_w,
-            orientations=vel_command_arrow_quat,
-            scales=vel_command_arrow_scale,
-        )
-        self.current_vel_visualizer.visualize(
-            translations=base_pos_w, orientations=vel_arrow_quat, scales=vel_arrow_scale
-        )
         self.pose_visualizer.visualize(
             translations=base_pos_w,
             orientations=self.robot.data.root_quat_w,
