@@ -21,7 +21,7 @@ from isaaclab_assets import ISAACLAB_ASSETS_DATA_DIR
 
 BIMANUAL_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/bimanual_kuka_allegro_v3/usd/bimanual_kuka_allegro.usd",
+        usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/bimanual_kuka_allegro_v4/usd/bimanual_kuka_allegro.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
@@ -36,6 +36,7 @@ BIMANUAL_CFG = ArticulationCfg(
             enabled_self_collisions=True,
             solver_position_iteration_count=8,
             solver_velocity_iteration_count=4,
+            fix_root_link=True,
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
@@ -62,7 +63,7 @@ BIMANUAL_CFG = ArticulationCfg(
             "right_ring_joint_1": 0.0,
             "right_ring_joint_2": 0.0,
             "right_ring_joint_3": 0.0,
-            "right_thumb_joint_0": 0.0,
+            "right_thumb_joint_0": 0.5,
             "right_thumb_joint_1": 0.0,
             "right_thumb_joint_2": 0.0,
             "right_thumb_joint_3": 0.0,
@@ -87,7 +88,7 @@ BIMANUAL_CFG = ArticulationCfg(
             "left_ring_joint_1": 0.0,
             "left_ring_joint_2": 0.0,
             "left_ring_joint_3": 0.0,
-            "left_thumb_joint_0": 0.0,
+            "left_thumb_joint_0": 0.5,
             "left_thumb_joint_1": 0.0,
             "left_thumb_joint_2": 0.0,
             "left_thumb_joint_3": 0.0,
