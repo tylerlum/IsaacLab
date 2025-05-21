@@ -116,7 +116,11 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             scale=(1, 1, 1),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
-            pos=(float(TABLE_X) + 0.1, float(TABLE_Y), float(TABLE_Z) + TABLE_LENGTH_Z / 2 + 0.05),
+            pos=(
+                float(TABLE_X) + 0.1,
+                float(TABLE_Y),
+                float(TABLE_Z) + TABLE_LENGTH_Z / 2 + 0.05,
+            ),
             rot=(float(TABLE_QW), float(TABLE_QX), float(TABLE_QY), float(TABLE_QZ)),
         ),
     )
@@ -125,7 +129,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     goal_object: RigidObjectCfg = RigidObjectCfg(
         prim_path=f"{ENV_REGEX_NS}/GoalObject",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/starbucks_bottle/usd/starbucks_bottle.usd",
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_starbucks_bottle/usd/starbucks_bottle.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,
                 disable_gravity=False,
@@ -147,7 +151,11 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             ),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
-            pos=(float(TABLE_X), float(TABLE_Y), float(TABLE_Z) + TABLE_LENGTH_Z / 2 + 0.1),
+            pos=(
+                float(TABLE_X),
+                float(TABLE_Y),
+                float(TABLE_Z) + TABLE_LENGTH_Z / 2 + 0.1,
+            ),
             rot=(float(TABLE_QW), float(TABLE_QX), float(TABLE_QY), float(TABLE_QZ)),
         ),
     )
@@ -245,6 +253,7 @@ class BimanualEnv(DirectRLEnv):
 
     def __init__(self, cfg: BimanualEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
+
         self._setup_keyboard()
         self._setup_robot_idxs()
 
@@ -352,7 +361,6 @@ class BimanualEnv(DirectRLEnv):
 
         # add goal object to scene
         self.goal_object = RigidObject(self.cfg.goal_object)
-        sim_utils.make_uninstanceable(self.cfg.goal_object.prim_path)
         self.scene.rigid_objects["goal_object"] = self.goal_object
 
         # add table to scene
