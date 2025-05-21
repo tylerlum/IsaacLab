@@ -30,7 +30,15 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.math import quat_rotate_inverse, yaw_quat
 from isaaclab_assets.robots.bimanual import BIMANUAL_CFG
-
+from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
+    TABLE_X,
+    TABLE_Y,
+    TABLE_Z,
+    TABLE_QX,
+    TABLE_QY,
+    TABLE_QZ,
+    TABLE_QW,
+)
 import isaaclab_tasks.manager_based.locomotion.velocity.mdp as mdp
 import wandb
 
@@ -43,6 +51,7 @@ physics_material = sim_utils.RigidBodyMaterialCfg(
 )
 
 ENV_REGEX_NS = "/World/envs/env_.*"
+
 
 @configclass
 class BimanualEnvCfg(DirectRLEnvCfg):
@@ -105,7 +114,10 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             # mass_props=sim_utils.MassPropertiesCfg(density=400.0),
             scale=(1.2, 1.2, 1.2),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, -0.17, 0.56), rot=(1.0, 0.0, 0.0, 0.0)),
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=(float(TABLE_X), float(TABLE_Y), float(TABLE_Z)),
+            rot=(float(TABLE_QW), float(TABLE_QX), float(TABLE_QY), float(TABLE_QZ)),
+        ),
     )
 
     # contact sensor
