@@ -220,7 +220,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
 
 
 REWARD_NAMES = [
-    "index_fingertip_to_goal_object_dist",
+    "right_index_fingertip_to_goal_dist",
+    "left_index_fingertip_to_goal_dist",
 ]
 
 
@@ -272,27 +273,12 @@ class BimanualEnv(DirectRLEnv):
         )
 
         # State
-        self.raw_actions = torch.zeros(
-            self.num_envs, self.cfg.action_space, device=self.device
-        )
-        self.prev_raw_actions = torch.zeros(
-            self.num_envs, self.cfg.action_space, device=self.device
-        )
-
-        self.aggregated_reward_buf = torch.zeros(self.num_envs, device=self.device)
-        self.individual_aggregated_reward_bufs = {
-            reward_name: torch.zeros(self.num_envs, device=self.device)
-            for reward_name in REWARD_NAMES
-        }
-        self.individual_weighted_aggregated_reward_bufs = {
-            reward_name: torch.zeros(self.num_envs, device=self.device)
-            for reward_name in REWARD_NAMES
-        }
+        self._reset_state(env_ids=None)
 
         # Logging
         self.wandb_dict = {}
 
-        self._setup_metrics()
+        self._update_metrics(env_ids=None)
 
         # Debug
         self.set_debug_vis(self.cfg.debug_vis)
@@ -334,15 +320,29 @@ class BimanualEnv(DirectRLEnv):
         print(f"len(self._contact_link_idxs): {len(self._contact_link_idxs)}")
         print("!" * 100)
 
-    def _setup_metrics(self):
-        self.reward_metric = AverageMeter().to(self.device)
-        self.individual_reward_metrics = {
-            reward_name: AverageMeter().to(self.device) for reward_name in REWARD_NAMES
-        }
-        self.individual_weighted_reward_metrics = {
-            reward_name: AverageMeter().to(self.device) for reward_name in REWARD_NAMES
-        }
-        self.episode_length_metric = AverageMeter().to(self.device)
+    def _update_metrics(self, env_ids: torch.Tensor | None):
+        if env_ids is None or len(env_ids) == self.num_envs:
+            env_ids = self.robot._ALL_INDICES
+
+        if not hasattr(self, "FIRST_METRIC_UPDATE"):
+            self.FIRST_METRIC_UPDATE = True
+            self.reward_metric = AverageMeter().to(self.device)
+            self.individual_reward_metrics = {
+                reward_name: AverageMeter().to(self.device) for reward_name in REWARD_NAMES
+            }
+            self.individual_weighted_reward_metrics = {
+                reward_name: AverageMeter().to(self.device) for reward_name in REWARD_NAMES
+            }
+            self.episode_length_metric = AverageMeter().to(self.device)
+        else:
+            self.reward_metric.update(self.aggregated_reward_buf[env_ids])
+            for reward_name, metric in self.individual_reward_metrics.items():
+                metric.update(self.individual_aggregated_reward_bufs[reward_name][env_ids])
+            for reward_name, metric in self.individual_weighted_reward_metrics.items():
+                metric.update(
+                    self.individual_weighted_aggregated_reward_bufs[reward_name][env_ids]
+                )
+            self.episode_length_metric.update(self.episode_length_buf[env_ids])
 
     def _setup_scene(self):
         # add articulation to scene
@@ -455,7 +455,8 @@ class BimanualEnv(DirectRLEnv):
 
         # fmt: off
         self.individual_reward_bufs = {
-            "index_fingertip_to_goal_object_dist": torch.zeros(self.num_envs, device=self.device),
+            "right_index_fingertip_to_goal_dist": torch.zeros(self.num_envs, device=self.device),
+            "left_index_fingertip_to_goal_dist": torch.zeros(self.num_envs, device=self.device),
         }
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
             f"Individual reward buffers and reward names do not match: {self.individual_reward_bufs.keys()} vs {REWARD_NAMES}\nOnly in individual reward buffers: {set(self.individual_reward_bufs.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_bufs.keys())}"
@@ -463,7 +464,8 @@ class BimanualEnv(DirectRLEnv):
 
         if not hasattr(self, "reward_weights"):
             self.individual_reward_weights = {
-                "index_fingertip_to_goal_object_dist": 1.0,
+                "right_index_fingertip_to_goal_dist": 1.0,
+                "left_index_fingertip_to_goal_dist": 1.0,
             }
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
@@ -577,23 +579,11 @@ class BimanualEnv(DirectRLEnv):
             env_ids = self.robot._ALL_INDICES
 
         # Update metrics
-        self.reward_metric.update(self.aggregated_reward_buf[env_ids])
-        for reward_name, metric in self.individual_reward_metrics.items():
-            metric.update(self.individual_aggregated_reward_bufs[reward_name][env_ids])
-        for reward_name, metric in self.individual_weighted_reward_metrics.items():
-            metric.update(
-                self.individual_weighted_aggregated_reward_bufs[reward_name][env_ids]
-            )
-        self.episode_length_metric.update(self.episode_length_buf[env_ids])
+        self._update_metrics(env_ids)
+        self._reset_state(env_ids)
 
         self.robot.reset(env_ids)
         super()._reset_idx(env_ids)
-
-        # Reset metrics
-        self.aggregated_reward_buf[env_ids] = 0
-        for reward_name in REWARD_NAMES:
-            self.individual_aggregated_reward_bufs[reward_name][env_ids] = 0
-            self.individual_weighted_aggregated_reward_bufs[reward_name][env_ids] = 0
 
         # Reset robot
         root_state = self.robot.data.default_root_state[env_ids].clone()
@@ -622,15 +612,45 @@ class BimanualEnv(DirectRLEnv):
         self.robot.write_joint_position_to_sim(joint_pos, None, env_ids)
         self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids)
 
-        # Reset state
-        self.raw_actions[env_ids] = torch.zeros(
-            len(env_ids), self.cfg.action_space, device=self.device
-        )
-        self.prev_raw_actions[env_ids] = torch.zeros(
-            len(env_ids), self.cfg.action_space, device=self.device
-        )
-
         self._compute_intermediate_values()
+
+    def _reset_state(self, env_ids: torch.Tensor | None):
+        if env_ids is None or len(env_ids) == self.num_envs:
+            env_ids = self.robot._ALL_INDICES
+
+        if not hasattr(self, "FIRST_RESET_COMPLETED"):
+            self.FIRST_RESET_COMPLETED = False
+
+            self.raw_actions = torch.zeros(
+                self.num_envs, self.cfg.action_space, device=self.device
+            )
+            self.prev_raw_actions = torch.zeros(
+                self.num_envs, self.cfg.action_space, device=self.device
+            )
+
+            self.aggregated_reward_buf = torch.zeros(self.num_envs, device=self.device)
+            self.individual_aggregated_reward_bufs = {
+                reward_name: torch.zeros(self.num_envs, device=self.device)
+                for reward_name in REWARD_NAMES
+            }
+            self.individual_weighted_aggregated_reward_bufs = {
+                reward_name: torch.zeros(self.num_envs, device=self.device)
+                for reward_name in REWARD_NAMES
+            }
+        else:
+            self.raw_actions[env_ids] = torch.zeros(
+                len(env_ids), self.cfg.action_space, device=self.device
+            )
+            self.prev_raw_actions[env_ids] = torch.zeros(
+                len(env_ids), self.cfg.action_space, device=self.device
+            )
+
+            self.aggregated_reward_buf[env_ids] = 0
+            for reward_name in REWARD_NAMES:
+                self.individual_aggregated_reward_bufs[reward_name][env_ids] = 0
+                self.individual_weighted_aggregated_reward_bufs[reward_name][
+                    env_ids
+                ] = 0
 
     #### RESET END ####
 
