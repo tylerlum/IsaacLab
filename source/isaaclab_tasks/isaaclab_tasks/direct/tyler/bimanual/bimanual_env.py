@@ -95,7 +95,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     episode_length_s = 6.0
     decimation = 4
     action_scale = 1.0
-    action_space = 22
+    action_space = 46
     observation_space = 228
     state_space = 0
     debug_vis = True
@@ -330,6 +330,12 @@ class BimanualEnv(DirectRLEnv):
 
         self._setup_keyboard()
         self._setup_robot_idxs()
+
+        # Action offset
+        self.action_offset = self.robot.data.default_joint_pos[:, self._joint_dof_idxs]
+        assert self.action_offset.shape == (self.num_envs, self.cfg.action_space), (
+            f"self.action_offset.shape: {self.action_offset.shape} != (self.num_envs, self.cfg.action_space): {(self.num_envs, self.cfg.action_space)}"
+        )
 
         # State
         self._reset_state(env_ids=None)
@@ -602,42 +608,43 @@ class BimanualEnv(DirectRLEnv):
 
         # Update fabric targets
         # Action is in [-1, 1] => [min, max]
-        self.fabric_palm_target.copy_(
-            rescale(
-                values=self.raw_actions[:, : NUM_BIMANUAL * 6],
-                old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
-                old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
-                new_mins=self.fabric_palm_mins,
-                new_maxs=self.fabric_palm_maxs,
-            )
-        )
-        self.fabric_hand_target.copy_(
-            rescale(
-                values=self.raw_actions[:, NUM_BIMANUAL * 6 :],
-                old_mins=torch.ones_like(self.fabric_hand_mins) * -1,
-                old_maxs=torch.ones_like(self.fabric_hand_maxs) * 1,
-                new_mins=self.fabric_hand_mins,
-                new_maxs=self.fabric_hand_maxs,
-            )
-        )
+        # self.fabric_palm_target.copy_(
+        #     rescale(
+        #         values=self.raw_actions[:, : NUM_BIMANUAL * 6],
+        #         old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
+        #         old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
+        #         new_mins=self.fabric_palm_mins,
+        #         new_maxs=self.fabric_palm_maxs,
+        #     )
+        # )
+        # self.fabric_hand_target.copy_(
+        #     rescale(
+        #         values=self.raw_actions[:, NUM_BIMANUAL * 6 :],
+        #         old_mins=torch.ones_like(self.fabric_hand_mins) * -1,
+        #         old_maxs=torch.ones_like(self.fabric_hand_maxs) * 1,
+        #         new_mins=self.fabric_hand_mins,
+        #         new_maxs=self.fabric_hand_maxs,
+        #     )
+        # )
 
     def _apply_action(self):
         import time
 
         # Step fabric
-        start_step_fabric_time = time.time()
-        with torch.no_grad():
-            self.fabric_cuda_graph.replay()
-            self.fabric_q.copy_(self.fabric_q_new)
-            self.fabric_qd.copy_(self.fabric_qd_new)
-            self.fabric_qdd.copy_(self.fabric_qdd_new)
-        end_step_fabric_time = time.time()
-        # print(f"Time taken for step_fabric: {end_step_fabric_time - start_step_fabric_time}")
+        # start_step_fabric_time = time.time()
+        # with torch.no_grad():
+        #     self.fabric_cuda_graph.replay()
+        #     self.fabric_q.copy_(self.fabric_q_new)
+        #     self.fabric_qd.copy_(self.fabric_qd_new)
+        #     self.fabric_qdd.copy_(self.fabric_qdd_new)
+        # end_step_fabric_time = time.time()
+        # # print(f"Time taken for step_fabric: {end_step_fabric_time - start_step_fabric_time}")
 
-        start_convert_fabric_to_isaaclab_time = time.time()
-        position_targets = fabric_to_isaaclab_joint_order_torch(self.fabric_q.clone())
-        end_convert_fabric_to_isaaclab_time = time.time()
-        # print(f"Time taken for convert_fabric_to_isaaclab: {end_convert_fabric_to_isaaclab_time - start_convert_fabric_to_isaaclab_time}")
+        # start_convert_fabric_to_isaaclab_time = time.time()
+        # position_targets = fabric_to_isaaclab_joint_order_torch(self.fabric_q.clone())
+        # end_convert_fabric_to_isaaclab_time = time.time()
+        # # print(f"Time taken for convert_fabric_to_isaaclab: {end_convert_fabric_to_isaaclab_time - start_convert_fabric_to_isaaclab_time}")
+        position_targets = self.cfg.action_scale * self.raw_actions + self.action_offset
 
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
