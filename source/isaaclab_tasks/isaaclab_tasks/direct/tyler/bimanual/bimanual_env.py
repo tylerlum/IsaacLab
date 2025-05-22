@@ -68,7 +68,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
 )
 import wandb
 
-VISUALIZE_FABRIC_SPHERES = True
+VISUALIZE_FABRIC_SPHERES = False
 if VISUALIZE_FABRIC_SPHERES:
     NUM_FABRIC_SPHERES = 80
 else:
@@ -515,7 +515,7 @@ class BimanualEnv(DirectRLEnv):
         )
 
     def fabric_robot_collision_spheres(self) -> torch.Tensor:
-        USE_ISAACLAB_STATE = False
+        USE_ISAACLAB_STATE = True
         if USE_ISAACLAB_STATE:
             q = isaaclab_to_fabric_joint_order_torch(self.robot.data.joint_pos)
         else:
