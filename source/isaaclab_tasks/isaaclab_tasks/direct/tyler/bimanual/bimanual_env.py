@@ -632,12 +632,12 @@ class BimanualEnv(DirectRLEnv):
             self.fabric_qd.copy_(self.fabric_qd_new)
             self.fabric_qdd.copy_(self.fabric_qdd_new)
         end_step_fabric_time = time.time()
-        print(f"Time taken for step_fabric: {end_step_fabric_time - start_step_fabric_time}")
+        # print(f"Time taken for step_fabric: {end_step_fabric_time - start_step_fabric_time}")
 
         start_convert_fabric_to_isaaclab_time = time.time()
         position_targets = fabric_to_isaaclab_joint_order_torch(self.fabric_q.clone())
         end_convert_fabric_to_isaaclab_time = time.time()
-        print(f"Time taken for convert_fabric_to_isaaclab: {end_convert_fabric_to_isaaclab_time - start_convert_fabric_to_isaaclab_time}")
+        # print(f"Time taken for convert_fabric_to_isaaclab: {end_convert_fabric_to_isaaclab_time - start_convert_fabric_to_isaaclab_time}")
 
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
@@ -648,7 +648,7 @@ class BimanualEnv(DirectRLEnv):
             position_targets
         )
         end_set_joint_position_target_time = time.time()
-        print(f"Time taken for set_joint_position_target: {end_set_joint_position_target_time - start_set_joint_position_target_time}")
+        # print(f"Time taken for set_joint_position_target: {end_set_joint_position_target_time - start_set_joint_position_target_time}")
 
     def _compute_intermediate_values(self):
         pass
