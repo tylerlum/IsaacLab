@@ -841,6 +841,7 @@ class BimanualEnv(DirectRLEnv):
                 GeneralKeyboard,
                 KeyboardCommand,
             )
+
             # kbc = keyboard callback
             self.keyboard = GeneralKeyboard(
                 commands=[
@@ -848,7 +849,9 @@ class BimanualEnv(DirectRLEnv):
                         key=carb.input.KeyboardInput.R, func=self._reset_kbc, args=[]
                     ),
                     KeyboardCommand(
-                        key=carb.input.KeyboardInput.B, func=self._breakpoint_kbc, args=[]
+                        key=carb.input.KeyboardInput.B,
+                        func=self._breakpoint_kbc,
+                        args=[],
                     ),
                 ]
             )
