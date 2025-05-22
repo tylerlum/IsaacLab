@@ -43,6 +43,8 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.robot_constants import (
     THUMB_FINGERTIP_IDX,
     RIGHT_FINGERTIP_LINK_NAMES,
     LEFT_FINGERTIP_LINK_NAMES,
+    RIGHT_PALM_LINK_NAME,
+    LEFT_PALM_LINK_NAME,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
     TABLE_X,
@@ -72,9 +74,9 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 20.0
     decimation = 4
-    action_scale = 0.5
+    action_scale = 1.0
     action_space = 46
-    observation_space = 147
+    observation_space = 128
     state_space = 0
     debug_vis = True
 
@@ -336,17 +338,15 @@ class BimanualEnv(DirectRLEnv):
         self._left_fingertip_link_idxs, self._left_fingertip_link_names = (
             self.robot.find_bodies(LEFT_FINGERTIP_LINK_NAMES)
         )
+        self._right_palm_link_idxs, self._right_palm_link_names = (
+            self.robot.find_bodies(RIGHT_PALM_LINK_NAME)
+        )
+        self._left_palm_link_idxs, self._left_palm_link_names = self.robot.find_bodies(
+            LEFT_PALM_LINK_NAME
+        )
         print("!" * 100)
         print(f"len(self._link_idxs): {len(self._link_idxs)}")
         print(f"self._link_names: {self._link_names}")
-        print(
-            f"len(self._right_fingertip_link_idxs): {len(self._right_fingertip_link_idxs)}"
-        )
-        print(f"self._right_fingertip_link_names: {self._right_fingertip_link_names}")
-        print(
-            f"len(self._left_fingertip_link_idxs): {len(self._left_fingertip_link_idxs)}"
-        )
-        print(f"self._left_fingertip_link_names: {self._left_fingertip_link_names}")
         print("!" * 100)
 
         # Contact sensor link idxs
@@ -430,6 +430,9 @@ class BimanualEnv(DirectRLEnv):
         assert self.raw_actions.shape == (self.num_envs, self.cfg.action_space), (
             f"self.raw_actions.shape: {self.raw_actions.shape} != (self.num_envs, self.cfg.action_space): {(self.num_envs, self.cfg.action_space)}"
         )
+        assert torch.all(torch.le(self.raw_actions, 1.0)) and torch.all(
+            torch.ge(self.raw_actions, -1.0)
+        ), f"self.raw_actions: {self.raw_actions}"
 
     def _apply_action(self):
         position_targets = self.cfg.action_scale * self.raw_actions + self.action_offset
@@ -447,13 +450,23 @@ class BimanualEnv(DirectRLEnv):
 
     def _get_observations(self) -> dict:
         obs_dict = {
-            "base_lin_vel": self.robot.data.root_lin_vel_b,
-            "base_ang_vel": self.robot.data.root_ang_vel_b,
-            "projected_gravity": self.robot.data.projected_gravity_b,
-            "joint_pos": self.robot.data.joint_pos - self.robot.data.default_joint_pos,
-            "joint_vel": self.robot.data.joint_vel - self.robot.data.default_joint_vel,
-            "actions": self.raw_actions,
+            "q": self.robot.data.joint_pos,
+            "qd": self.robot.data.joint_vel,
+            "right_fingertip_positions": (
+                self.right_fingertip_positions - self.scene.env_origins.unsqueeze(dim=1)
+            ).reshape(self.num_envs, -1),
+            "left_fingertip_positions": (
+                self.left_fingertip_positions - self.scene.env_origins.unsqueeze(dim=1)
+            ).reshape(self.num_envs, -1),
+            "right_goal_position": self.right_goal_position - self.scene.env_origins,
+            "left_goal_position": self.left_goal_position - self.scene.env_origins,
+            "right_palm_position": self.right_palm_position - self.scene.env_origins,
+            "left_palm_position": self.left_palm_position - self.scene.env_origins,
         }
+
+        for k, v in obs_dict.items():
+            if v.ndim != 2:
+                print(f"{k}: {v.shape} (WRONG)")
 
         obs = torch.cat(
             [obs_dict[key] for key in obs_dict],
@@ -475,9 +488,10 @@ class BimanualEnv(DirectRLEnv):
     def _get_rewards(self) -> torch.Tensor:
         # fmt: off
         self.individual_reward_bufs = {
-            "right_index_fingertip_to_goal_dist": torch.norm(self.right_index_fingertip_position - self.right_goal_position, dim=-1, p=2),
-            "left_index_fingertip_to_goal_dist": torch.norm(self.left_index_fingertip_position - self.left_goal_position, dim=-1, p=2),
+            "right_index_fingertip_to_goal_dist": -(self.right_index_fingertip_position - self.right_goal_position).norm(dim=-1, p=2),
+            "left_index_fingertip_to_goal_dist": -(self.left_index_fingertip_position - self.left_goal_position).norm(dim=-1, p=2),
         }
+        # fmt: on
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
             f"Individual reward buffers and reward names do not match: {self.individual_reward_bufs.keys()} vs {REWARD_NAMES}\nOnly in individual reward buffers: {set(self.individual_reward_bufs.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_bufs.keys())}"
         )
@@ -495,7 +509,6 @@ class BimanualEnv(DirectRLEnv):
                 [self.individual_reward_weights[name] for name in REWARD_NAMES],
                 device=self.device,
             ).reshape(1, -1)
-        # fmt: on
 
         self.reward_matrix = torch.stack(
             [self.individual_reward_bufs[name] for name in REWARD_NAMES], dim=1
@@ -524,7 +537,7 @@ class BimanualEnv(DirectRLEnv):
 
     #### END OF STEP START  ####
     def _end_of_step(self):
-        # Update metrics
+        # Update aggregated rewards
         self.aggregated_reward_buf += self.reward_buf
         for reward_name in REWARD_NAMES:
             self.individual_aggregated_reward_bufs[reward_name] += (
@@ -586,8 +599,13 @@ class BimanualEnv(DirectRLEnv):
     #### DONES START ####
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         self._compute_intermediate_values()
-        time_out = self.episode_length_buf >= self.max_episode_length - 1
 
+        """
+        Reset Conditions:
+        - Time out: episode_length_buf >= max_episode_length - 1
+        - Died: never
+        """
+        time_out = self.episode_length_buf >= self.max_episode_length - 1
         died = torch.zeros_like(time_out)
         return died, time_out
 
@@ -863,6 +881,14 @@ class BimanualEnv(DirectRLEnv):
     @property
     def robot_position(self) -> torch.Tensor:
         return self.robot.data.body_pos_w[:, 0]
+
+    @property
+    def right_palm_position(self) -> torch.Tensor:
+        return self.robot.data.body_pos_w[:, self._right_palm_link_idxs].squeeze(dim=1)
+
+    @property
+    def left_palm_position(self) -> torch.Tensor:
+        return self.robot.data.body_pos_w[:, self._left_palm_link_idxs].squeeze(dim=1)
 
     @property
     def right_fingertip_positions(self) -> torch.Tensor:
