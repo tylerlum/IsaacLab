@@ -68,6 +68,8 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
 )
 import wandb
 
+FINGER_GOALS = True
+
 USE_FABRIC = False
 
 VISUALIZE_FABRIC_SPHERES = False
@@ -98,7 +100,11 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     decimation = 4
     action_scale = 0.1
     action_space = 46
-    observation_space = 136
+    observation_space = 136 + (
+        6 if FINGER_GOALS else 0
+    ) + (
+        46 * 2 if USE_FABRIC else 0
+    )
     state_space = 0
     debug_vis = True
 
@@ -240,6 +246,19 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     """The configuration for the pose visualization marker. Defaults to FRAME_MARKER_CFG."""
     pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
 
+    right_goal_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/right_goal"
+    )
+    right_goal_visualizer.markers[
+        "sphere"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
+    left_goal_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/left_goal"
+    )
+    left_goal_visualizer.markers[
+        "sphere"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
+
     object_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
         prim_path="/Visuals/Command/object_pose"
     )
@@ -281,11 +300,17 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     ]
 
 
-REWARD_NAMES = [
-    "right_index_fingertip_to_object_dist",
-    "left_index_fingertip_to_object_dist",
-    # "object_to_goal_dist",
-]
+if FINGER_GOALS:
+    REWARD_NAMES = [
+        "right_index_fingertip_to_goal_dist",
+        "left_index_fingertip_to_goal_dist",
+    ]
+else:
+    REWARD_NAMES = [
+        "right_index_fingertip_to_object_dist",
+        "left_index_fingertip_to_object_dist",
+        # "object_to_goal_dist",
+    ]
 
 
 def assert_equals(a, b):
@@ -686,6 +711,14 @@ class BimanualEnv(DirectRLEnv):
             "object_orientation": self.object_orientation,
             "goal_object_orientation": self.goal_object_orientation,
         }
+        if FINGER_GOALS:
+            obs_dict["right_goal_position"] = (
+                self.right_goal_position - self.scene.env_origins
+            )
+            obs_dict["left_goal_position"] = (
+                self.left_goal_position - self.scene.env_origins
+            )
+
         if USE_FABRIC:
             obs_dict["fabric_q"] = self.fabric_q
             obs_dict["fabric_qd"] = self.fabric_qd
@@ -713,22 +746,34 @@ class BimanualEnv(DirectRLEnv):
 
     def _get_rewards(self) -> torch.Tensor:
         # fmt: off
-        self.individual_reward_bufs = {
-            "right_index_fingertip_to_object_dist": -(self.right_index_fingertip_position - self.object_position).norm(dim=-1, p=2),
-            "left_index_fingertip_to_object_dist": -(self.left_index_fingertip_position - self.object_position).norm(dim=-1, p=2),
-            # "object_to_goal_dist": -(self.object_position - self.goal_object_position).norm(dim=-1, p=2),
-        }
+        if FINGER_GOALS:
+            self.individual_reward_bufs = {
+                "right_index_fingertip_to_goal_dist": -(self.right_index_fingertip_position - self.right_goal_position).norm(dim=-1, p=2),
+                "left_index_fingertip_to_goal_dist": -(self.left_index_fingertip_position - self.left_goal_position).norm(dim=-1, p=2),
+            }
+        else:
+            self.individual_reward_bufs = {
+                "right_index_fingertip_to_object_dist": -(self.right_index_fingertip_position - self.object_position).norm(dim=-1, p=2),
+                "left_index_fingertip_to_object_dist": -(self.left_index_fingertip_position - self.object_position).norm(dim=-1, p=2),
+                # "object_to_goal_dist": -(self.object_position - self.goal_object_position).norm(dim=-1, p=2),
+            }
         # fmt: on
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
             f"Individual reward buffers and reward names do not match: {self.individual_reward_bufs.keys()} vs {REWARD_NAMES}\nOnly in individual reward buffers: {set(self.individual_reward_bufs.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_bufs.keys())}"
         )
 
         if not hasattr(self, "reward_weights"):
-            self.individual_reward_weights = {
-                "right_index_fingertip_to_object_dist": 1.0,
-                "left_index_fingertip_to_object_dist": 1.0,
-                # "object_to_goal_dist": 3.0,
-            }
+            if FINGER_GOALS:
+                self.individual_reward_weights = {
+                    "right_index_fingertip_to_goal_dist": 1.0,
+                    "left_index_fingertip_to_goal_dist": 1.0,
+                }
+            else:
+                self.individual_reward_weights = {
+                    "right_index_fingertip_to_object_dist": 1.0,
+                    "left_index_fingertip_to_object_dist": 1.0,
+                    # "object_to_goal_dist": 3.0,
+                }
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
             )
@@ -921,6 +966,10 @@ class BimanualEnv(DirectRLEnv):
 
             self.filtered_position_targets = torch.zeros_like(self.robot.data.joint_pos)
 
+            if FINGER_GOALS:
+                self.right_goal_position = self._sample_right_goal_position(env_ids)
+                self.left_goal_position = self._sample_left_goal_position(env_ids)
+
             if USE_FABRIC:
                 self.fabric_q = isaaclab_to_fabric_joint_order_torch(
                     self.robot.data.joint_pos.clone().float()
@@ -943,12 +992,35 @@ class BimanualEnv(DirectRLEnv):
                 ] = 0
 
             self.filtered_position_targets[env_ids] = self.robot.data.joint_pos[env_ids]
+
+            if FINGER_GOALS:
+                self.right_goal_position[env_ids] = self._sample_right_goal_position(
+                    env_ids
+                )
+                self.left_goal_position[env_ids] = self._sample_left_goal_position(
+                    env_ids
+                )
+
             if USE_FABRIC:
                 self.fabric_q[env_ids] = isaaclab_to_fabric_joint_order_torch(
                     self.robot.data.joint_pos[env_ids].clone().float()
                 )
                 self.fabric_qd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
                 self.fabric_qdd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
+
+    def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
+        return self.table_position[env_ids] + sample_uniform_tensor(
+            low=torch.tensor([-0.5, -0.5, 0.05], device=self.device),
+            high=torch.tensor([0.5, -0.1, 0.5], device=self.device),
+            N=len(env_ids),
+        )
+
+    def _sample_left_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
+        return self.table_position[env_ids] + sample_uniform_tensor(
+            low=torch.tensor([-0.5, 0.1, 0.05], device=self.device),
+            high=torch.tensor([0.5, 0.5, 0.5], device=self.device),
+            N=len(env_ids),
+        )
 
     def _sample_initial_object_pose(self, env_ids: torch.Tensor) -> torch.Tensor:
         position = self.table_position[env_ids] + sample_uniform_tensor(
@@ -992,6 +1064,16 @@ class BimanualEnv(DirectRLEnv):
         if debug_vis:
             if not hasattr(self, "pose_visualizer"):
                 self.pose_visualizer = VisualizationMarkers(self.cfg.pose_visualizer)
+            if FINGER_GOALS:
+                if not hasattr(self, "right_goal_visualizer"):
+                    self.right_goal_visualizer = VisualizationMarkers(
+                        self.cfg.right_goal_visualizer
+                    )
+                if not hasattr(self, "left_goal_visualizer"):
+                    self.left_goal_visualizer = VisualizationMarkers(
+                        self.cfg.left_goal_visualizer
+                    )
+
             if not hasattr(self, "object_pose_visualizer"):
                 self.object_pose_visualizer = VisualizationMarkers(
                     self.cfg.object_pose_visualizer
@@ -1024,6 +1106,9 @@ class BimanualEnv(DirectRLEnv):
 
             # set their visibility to true
             self.pose_visualizer.set_visibility(True)
+            if FINGER_GOALS:
+                self.right_goal_visualizer.set_visibility(True)
+                self.left_goal_visualizer.set_visibility(True)
             self.object_pose_visualizer.set_visibility(True)
             self.goal_object_pose_visualizer.set_visibility(True)
             self.right_fingertip_visualizer.set_visibility(True)
@@ -1035,6 +1120,11 @@ class BimanualEnv(DirectRLEnv):
         else:
             if hasattr(self, "pose_visualizer"):
                 self.pose_visualizer.set_visibility(False)
+            if FINGER_GOALS:
+                if hasattr(self, "right_goal_visualizer"):
+                    self.right_goal_visualizer.set_visibility(False)
+                if hasattr(self, "left_goal_visualizer"):
+                    self.left_goal_visualizer.set_visibility(False)
             if hasattr(self, "object_pose_visualizer"):
                 self.object_pose_visualizer.set_visibility(False)
             if hasattr(self, "goal_object_pose_visualizer"):
@@ -1064,6 +1154,20 @@ class BimanualEnv(DirectRLEnv):
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
+        if FINGER_GOALS:
+            self.right_goal_visualizer.visualize(
+                translations=self.right_goal_position,
+                scales=torch.tensor([0.03, 0.03, 0.03], device=self.device)
+                .unsqueeze(dim=0)
+                .repeat_interleave(self.num_envs, dim=0),
+            )
+            self.left_goal_visualizer.visualize(
+                translations=self.left_goal_position,
+                scales=torch.tensor([0.03, 0.03, 0.03], device=self.device)
+                .unsqueeze(dim=0)
+                .repeat_interleave(self.num_envs, dim=0),
+            )
+
         self.object_pose_visualizer.visualize(
             translations=self.object_position,
             orientations=self.object_orientation,
