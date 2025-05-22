@@ -71,7 +71,8 @@ import wandb
 FINGER_GOALS = False
 FILTER_ARM_ACTIONS = True
 
-USE_FABRIC = False
+USE_FABRIC = True
+USE_FABRIC_CUDA_GRAPH = True
 
 VISUALIZE_FABRIC_SPHERES = False
 if VISUALIZE_FABRIC_SPHERES:
@@ -484,7 +485,7 @@ class BimanualEnv(DirectRLEnv):
             batch_size=self.num_envs,
             device=self.device,
             timestep=self.cfg.sim.dt,
-            graph_capturable=True,
+            graph_capturable=USE_FABRIC_CUDA_GRAPH,
             fabric_params=fabric_params,
         )
         self.fabric_hand_mins = torch.tensor(
@@ -534,30 +535,31 @@ class BimanualEnv(DirectRLEnv):
 
         self.fabric_integrator = DisplacementIntegrator(self.fabric)
 
-        fabric_inputs = [
-            self.fabric_hand_target,
-            self.fabric_palm_target,
-            "euler_zyx",
-            self.fabric_q.detach(),
-            self.fabric_qd.detach(),
-            self.fabric_object_ids,
-            self.fabric_object_indicator,
-        ]
-        (
-            self.fabric_cuda_graph,
-            self.fabric_q_new,
-            self.fabric_qd_new,
-            self.fabric_qdd_new,
-        ) = capture_fabric(
-            fabric=self.fabric,
-            q=self.fabric_q,
-            qd=self.fabric_qd,
-            qdd=self.fabric_qdd,
-            timestep=self.cfg.sim.dt,
-            fabric_integrator=self.fabric_integrator,
-            inputs=fabric_inputs,
-            device=self.device,
-        )
+        if USE_FABRIC_CUDA_GRAPH:
+            fabric_inputs = [
+                self.fabric_hand_target,
+                self.fabric_palm_target,
+                "euler_zyx",
+                self.fabric_q.detach(),
+                self.fabric_qd.detach(),
+                self.fabric_object_ids,
+                self.fabric_object_indicator,
+            ]
+            (
+                self.fabric_cuda_graph,
+                self.fabric_q_new,
+                self.fabric_qd_new,
+                self.fabric_qdd_new,
+            ) = capture_fabric(
+                fabric=self.fabric,
+                q=self.fabric_q,
+                qd=self.fabric_qd,
+                qdd=self.fabric_qdd,
+                timestep=self.cfg.sim.dt,
+                fabric_integrator=self.fabric_integrator,
+                inputs=fabric_inputs,
+                device=self.device,
+            )
 
     def fabric_robot_collision_spheres(self) -> torch.Tensor:
         USE_ISAACLAB_STATE = False
@@ -656,10 +658,28 @@ class BimanualEnv(DirectRLEnv):
     def _apply_action(self):
         if USE_FABRIC:
             # Step fabric
-            self.fabric_cuda_graph.replay()
-            self.fabric_q.copy_(self.fabric_q_new)
-            self.fabric_qd.copy_(self.fabric_qd_new)
-            self.fabric_qdd.copy_(self.fabric_qdd_new)
+            if USE_FABRIC_CUDA_GRAPH:
+                self.fabric_cuda_graph.replay()
+                self.fabric_q.copy_(self.fabric_q_new)
+                self.fabric_qd.copy_(self.fabric_qd_new)
+                self.fabric_qdd.copy_(self.fabric_qdd_new)
+
+            else:
+                # Set the targets
+                self.fabric.set_features(
+                    self.fabric_hand_target,
+                    self.fabric_palm_target,
+                    "euler_zyx",
+                    self.fabric_q.detach(),
+                    self.fabric_qd.detach(),
+                    self.fabric_object_ids,
+                    self.fabric_object_indicator,
+                )
+
+                # Integrate fabrics one step producing new position and velocity.
+                self.fabric_q, self.fabric_qd, self.fabric_qdd = self.fabric_integrator.step(
+                    self.fabric_q.detach(), self.fabric_qd.detach(), self.fabric_qdd.detach(), self.cfg.sim.dt
+                )
 
             position_targets = fabric_to_isaaclab_joint_order_torch(
                 self.fabric_q.clone()
