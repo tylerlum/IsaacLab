@@ -421,11 +421,15 @@ class BimanualEnv(DirectRLEnv):
         )
         from fabrics_sim.integrator.integrators import DisplacementIntegrator
         from fabrics_sim.utils.path_utils import get_params_path
-        from fabrics_sim.utils.utils import capture_fabric
+        from fabrics_sim.utils.utils import capture_fabric, initialize_warp
         from fabrics_sim.worlds.world_mesh_model import WorldMeshesModel
         from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_world import (
             world_dict_robot_frame,
         )
+
+        # Set the warp cache directory based on device int
+        warp_cache_dir = ""
+        initialize_warp(str(self.device))
 
         USE_FABRIC_WORLD = True
         if USE_FABRIC_WORLD:
@@ -458,7 +462,7 @@ class BimanualEnv(DirectRLEnv):
             batch_size=self.num_envs,
             device=self.device,
             timestep=self.cfg.sim.dt,
-            graph_capturable=True,
+            graph_capturable=False,
             fabric_params=fabric_params,
         )
         self.fabric_hand_mins = torch.tensor(
@@ -586,6 +590,7 @@ class BimanualEnv(DirectRLEnv):
         self.cfg.light.func("/World/Light", self.cfg.light)
 
     def _pre_physics_step(self, actions: torch.Tensor):
+        actions = torch.clip(actions, min=-1.0, max=1.0)
         self.prev_raw_actions = self.raw_actions.clone()
         self.raw_actions = actions.clone()
         assert self.raw_actions.shape == self.prev_raw_actions.shape, (
@@ -653,6 +658,7 @@ class BimanualEnv(DirectRLEnv):
             self.fabric_q, self.fabric_qd, self.fabric_qdd = self.fabric_integrator.step(
                 self.fabric_q.detach(), self.fabric_qd.detach(), self.fabric_qdd.detach(), self.cfg.sim.dt
             )
+            pass
 
         # end_step_fabric_time = time.time()
         # # print(f"Time taken for step_fabric: {end_step_fabric_time - start_step_fabric_time}")
