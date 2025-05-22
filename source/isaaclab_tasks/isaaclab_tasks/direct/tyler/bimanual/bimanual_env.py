@@ -68,6 +68,8 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
 )
 import wandb
 
+USE_FABRIC = False
+
 VISUALIZE_FABRIC_SPHERES = False
 if VISUALIZE_FABRIC_SPHERES:
     NUM_FABRIC_SPHERES = 80
@@ -95,8 +97,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     episode_length_s = 6.0
     decimation = 4
     action_scale = 1.0
-    action_space = 22
-    observation_space = 228
+    action_space = 46
+    observation_space = 136
     state_space = 0
     debug_vis = True
 
@@ -331,9 +333,16 @@ class BimanualEnv(DirectRLEnv):
         self._setup_keyboard()
         self._setup_robot_idxs()
 
+        # Action offset
+        self.action_offset = self.robot.data.default_joint_pos[:, self._joint_dof_idxs]
+        assert self.action_offset.shape == (self.num_envs, self.cfg.action_space), (
+            f"self.action_offset.shape: {self.action_offset.shape} != (self.num_envs, self.cfg.action_space): {(self.num_envs, self.cfg.action_space)}"
+        )
+
         # State
         self._reset_state(env_ids=None)
-        self._setup_fabric_action_space()
+        if USE_FABRIC:
+            self._setup_fabric_action_space()
 
         # Logging
         self.wandb_dict = {}
@@ -591,43 +600,47 @@ class BimanualEnv(DirectRLEnv):
             torch.ge(self.raw_actions, -1.0)
         ), f"self.raw_actions: {self.raw_actions}"
 
-        # Actions are in robot frame
-        # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
+        if USE_FABRIC:
+            # Actions are in robot frame
+            # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
 
-        # World: X = forward, Y = left, Z = up
-        # Palm: x = palm normal, y = palm-to_thumb, z= palm-to-finger
-        # 0 = forward, 1 = left, 2 = up
-        # 3 = euler_Z, 4 = euler_Y, 5 = euler_X
+            # World: X = forward, Y = left, Z = up
+            # Palm: x = palm normal, y = palm-to_thumb, z= palm-to-finger
+            # 0 = forward, 1 = left, 2 = up
+            # 3 = euler_Z, 4 = euler_Y, 5 = euler_X
 
-        # Update fabric targets
-        # Action is in [-1, 1] => [min, max]
-        self.fabric_palm_target.copy_(
-            rescale(
-                values=self.raw_actions[:, : NUM_BIMANUAL * 6],
-                old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
-                old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
-                new_mins=self.fabric_palm_mins,
-                new_maxs=self.fabric_palm_maxs,
+            # Update fabric targets
+            # Action is in [-1, 1] => [min, max]
+            self.fabric_palm_target.copy_(
+                rescale(
+                    values=self.raw_actions[:, : NUM_BIMANUAL * 6],
+                    old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
+                    old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
+                    new_mins=self.fabric_palm_mins,
+                    new_maxs=self.fabric_palm_maxs,
+                )
             )
-        )
-        self.fabric_hand_target.copy_(
-            rescale(
-                values=self.raw_actions[:, NUM_BIMANUAL * 6 :],
-                old_mins=torch.ones_like(self.fabric_hand_mins) * -1,
-                old_maxs=torch.ones_like(self.fabric_hand_maxs) * 1,
-                new_mins=self.fabric_hand_mins,
-                new_maxs=self.fabric_hand_maxs,
+            self.fabric_hand_target.copy_(
+                rescale(
+                    values=self.raw_actions[:, NUM_BIMANUAL * 6 :],
+                    old_mins=torch.ones_like(self.fabric_hand_mins) * -1,
+                    old_maxs=torch.ones_like(self.fabric_hand_maxs) * 1,
+                    new_mins=self.fabric_hand_mins,
+                    new_maxs=self.fabric_hand_maxs,
+                )
             )
-        )
 
     def _apply_action(self):
-        # Step fabric
-        self.fabric_cuda_graph.replay()
-        self.fabric_q.copy_(self.fabric_q_new)
-        self.fabric_qd.copy_(self.fabric_qd_new)
-        self.fabric_qdd.copy_(self.fabric_qdd_new)
+        if USE_FABRIC:
+            # Step fabric
+            self.fabric_cuda_graph.replay()
+            self.fabric_q.copy_(self.fabric_q_new)
+            self.fabric_qd.copy_(self.fabric_qd_new)
+            self.fabric_qdd.copy_(self.fabric_qdd_new)
 
-        position_targets = fabric_to_isaaclab_joint_order_torch(self.fabric_q.clone())
+            position_targets = fabric_to_isaaclab_joint_order_torch(self.fabric_q.clone())
+        else:
+            position_targets = self.cfg.action_scale * self.raw_actions + self.action_offset
 
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
@@ -656,9 +669,10 @@ class BimanualEnv(DirectRLEnv):
             "goal_object_position": self.goal_object_position - self.scene.env_origins,
             "object_orientation": self.object_orientation,
             "goal_object_orientation": self.goal_object_orientation,
-            "fabric_q": self.fabric_q,
-            "fabric_qd": self.fabric_qd,
         }
+        if USE_FABRIC:
+            obs_dict["fabric_q"] = self.fabric_q
+            obs_dict["fabric_qd"] = self.fabric_qd
 
         for k, v in obs_dict.items():
             if v.ndim != 2:
@@ -843,7 +857,9 @@ class BimanualEnv(DirectRLEnv):
         self.robot.write_root_velocity_to_sim(default_velocity, env_ids=env_ids)
         self.robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
         self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
-        self.robot.set_joint_position_target(joint_pos, joint_ids=self._joint_dof_idxs, env_ids=env_ids)
+        self.robot.set_joint_position_target(
+            joint_pos, joint_ids=self._joint_dof_idxs, env_ids=env_ids
+        )
 
         self.object.write_root_pose_to_sim(
             self._sample_initial_object_pose(env_ids), env_ids=env_ids
@@ -887,11 +903,12 @@ class BimanualEnv(DirectRLEnv):
                 for reward_name in REWARD_NAMES
             }
 
-            self.fabric_q = isaaclab_to_fabric_joint_order_torch(
-                self.robot.data.joint_pos.clone().float()
-            )
-            self.fabric_qd = torch.zeros_like(self.fabric_q)
-            self.fabric_qdd = torch.zeros_like(self.fabric_q)
+            if USE_FABRIC:
+                self.fabric_q = isaaclab_to_fabric_joint_order_torch(
+                    self.robot.data.joint_pos.clone().float()
+                )
+                self.fabric_qd = torch.zeros_like(self.fabric_q)
+                self.fabric_qdd = torch.zeros_like(self.fabric_q)
         else:
             self.raw_actions[env_ids] = torch.zeros(
                 len(env_ids), self.cfg.action_space, device=self.device
@@ -907,11 +924,12 @@ class BimanualEnv(DirectRLEnv):
                     env_ids
                 ] = 0
 
-            self.fabric_q[env_ids] = isaaclab_to_fabric_joint_order_torch(
-                self.robot.data.joint_pos[env_ids].clone().float()
-            )
-            self.fabric_qd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
-            self.fabric_qdd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
+            if USE_FABRIC:
+                self.fabric_q[env_ids] = isaaclab_to_fabric_joint_order_torch(
+                    self.robot.data.joint_pos[env_ids].clone().float()
+                )
+                self.fabric_qd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
+                self.fabric_qdd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
 
     def _sample_initial_object_pose(self, env_ids: torch.Tensor) -> torch.Tensor:
         position = self.table_position[env_ids] + sample_uniform_tensor(
