@@ -96,7 +96,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 6.0
     decimation = 4
-    action_scale = 1.0
+    action_scale = 0.1
     action_space = 46
     observation_space = 136
     state_space = 0
@@ -651,7 +651,7 @@ class BimanualEnv(DirectRLEnv):
 
             FILTER_ACTIONS = True
             if FILTER_ACTIONS:
-                ALPHA = 0.5
+                ALPHA = 0.9
                 self.filtered_position_targets = (
                     ALPHA * self.filtered_position_targets
                     + (1 - ALPHA) * position_targets
