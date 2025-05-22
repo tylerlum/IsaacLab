@@ -69,6 +69,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
 import wandb
 
 FINGER_GOALS = True
+FILTER_ACTIONS = True
 
 USE_FABRIC = False
 
@@ -102,6 +103,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     action_space = 46
     observation_space = 136 + (
         6 if FINGER_GOALS else 0
+    ) + (
+        46 if FILTER_ACTIONS else 0
     ) + (
         46 * 2 if USE_FABRIC else 0
     )
@@ -674,7 +677,6 @@ class BimanualEnv(DirectRLEnv):
 
             position_targets = self.cfg.action_scale * self.raw_actions + action_offset
 
-            FILTER_ACTIONS = True
             if FILTER_ACTIONS:
                 ALPHA = 0.9
                 self.filtered_position_targets = (
@@ -718,6 +720,8 @@ class BimanualEnv(DirectRLEnv):
             obs_dict["left_goal_position"] = (
                 self.left_goal_position - self.scene.env_origins
             )
+        if FILTER_ACTIONS:
+            obs_dict["filtered_position_targets"] = self.filtered_position_targets
 
         if USE_FABRIC:
             obs_dict["fabric_q"] = self.fabric_q
