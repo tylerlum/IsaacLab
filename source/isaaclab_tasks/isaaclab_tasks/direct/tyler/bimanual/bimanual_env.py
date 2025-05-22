@@ -69,12 +69,12 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
 import wandb
 
 FINGER_GOALS = False
-FILTER_ARM_ACTIONS = True
+FILTER_ARM_ACTIONS = False
 
 USE_FABRIC = True
 USE_FABRIC_CUDA_GRAPH = True
 
-VISUALIZE_FABRIC_SPHERES = False
+VISUALIZE_FABRIC_SPHERES = True
 if VISUALIZE_FABRIC_SPHERES:
     NUM_FABRIC_SPHERES = 80
 else:
@@ -83,7 +83,10 @@ else:
 OBJECT_LENGTH_Z = 0.22
 
 NUM_BIMANUAL = 2
-SIM_DT = 0.005
+SIM_DT = 1 / 120
+
+FABRIC_DT = 1 / 60
+NUM_FABRIC_DECIMATION = 1
 
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
@@ -99,15 +102,15 @@ ENV_REGEX_NS = "/World/envs/env_.*"
 class BimanualEnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 6.0
-    decimation = 4
+    decimation = 2
     arm_action_scale = 0.1
     hand_action_scale = 2.0
-    action_space = 46
+    action_space = (11 * 2 if USE_FABRIC else 23 * 2)
     observation_space = (
         136
         + (6 if FINGER_GOALS else 0)
-        + (14 if FILTER_ARM_ACTIONS else 0)
-        + (46 * 2 if USE_FABRIC else 0)
+        + (7 * 2 if FILTER_ARM_ACTIONS else 0)
+        + (23 * 2 * 2 if USE_FABRIC else 0)
     )
     state_space = 0
     debug_vis = True
@@ -484,7 +487,7 @@ class BimanualEnv(DirectRLEnv):
         self.fabric = BimanualKukaAllegroPoseFabricV2(
             batch_size=self.num_envs,
             device=self.device,
-            timestep=self.cfg.sim.dt,
+            timestep=FABRIC_DT,
             graph_capturable=USE_FABRIC_CUDA_GRAPH,
             fabric_params=fabric_params,
         )
@@ -555,7 +558,7 @@ class BimanualEnv(DirectRLEnv):
                 q=self.fabric_q,
                 qd=self.fabric_qd,
                 qdd=self.fabric_qdd,
-                timestep=self.cfg.sim.dt,
+                timestep=FABRIC_DT,
                 fabric_integrator=self.fabric_integrator,
                 inputs=fabric_inputs,
                 device=self.device,
@@ -654,32 +657,41 @@ class BimanualEnv(DirectRLEnv):
                     new_maxs=self.fabric_hand_maxs,
                 )
             )
+            self.fabric_steps_counter = 0
 
     def _apply_action(self):
         if USE_FABRIC:
-            # Step fabric
-            if USE_FABRIC_CUDA_GRAPH:
-                self.fabric_cuda_graph.replay()
-                self.fabric_q.copy_(self.fabric_q_new)
-                self.fabric_qd.copy_(self.fabric_qd_new)
-                self.fabric_qdd.copy_(self.fabric_qdd_new)
+            if self.fabric_steps_counter < NUM_FABRIC_DECIMATION:
+                self.fabric_steps_counter += 1
 
-            else:
-                # Set the targets
-                self.fabric.set_features(
-                    self.fabric_hand_target,
-                    self.fabric_palm_target,
-                    "euler_zyx",
-                    self.fabric_q.detach(),
-                    self.fabric_qd.detach(),
-                    self.fabric_object_ids,
-                    self.fabric_object_indicator,
-                )
+                # Step fabric
+                if USE_FABRIC_CUDA_GRAPH:
+                    self.fabric_cuda_graph.replay()
+                    self.fabric_q.copy_(self.fabric_q_new)
+                    self.fabric_qd.copy_(self.fabric_qd_new)
+                    self.fabric_qdd.copy_(self.fabric_qdd_new)
 
-                # Integrate fabrics one step producing new position and velocity.
-                self.fabric_q, self.fabric_qd, self.fabric_qdd = self.fabric_integrator.step(
-                    self.fabric_q.detach(), self.fabric_qd.detach(), self.fabric_qdd.detach(), self.cfg.sim.dt
-                )
+                else:
+                    # Set the targets
+                    self.fabric.set_features(
+                        self.fabric_hand_target,
+                        self.fabric_palm_target,
+                        "euler_zyx",
+                        self.fabric_q.detach(),
+                        self.fabric_qd.detach(),
+                        self.fabric_object_ids,
+                        self.fabric_object_indicator,
+                    )
+
+                    # Integrate fabrics one step producing new position and velocity.
+                    self.fabric_q, self.fabric_qd, self.fabric_qdd = (
+                        self.fabric_integrator.step(
+                            self.fabric_q.detach(),
+                            self.fabric_qd.detach(),
+                            self.fabric_qdd.detach(),
+                            FABRIC_DT,
+                        )
+                    )
 
             position_targets = fabric_to_isaaclab_joint_order_torch(
                 self.fabric_q.clone()
