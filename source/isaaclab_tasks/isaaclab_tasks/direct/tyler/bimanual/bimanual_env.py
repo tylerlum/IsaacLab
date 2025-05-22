@@ -508,31 +508,31 @@ class BimanualEnv(DirectRLEnv):
 
         self.fabric_integrator = DisplacementIntegrator(self.fabric)
 
-        fabric_inputs = [
-            self.fabric_hand_target,
-            self.fabric_palm_target,
-            "euler_zyx",
-            self.fabric_q.detach(),
-            self.fabric_qd.detach(),
-            self.fabric_object_ids,
-            self.fabric_object_indicator,
-        ]
-        with torch.no_grad():
-            (
-                self.fabric_cuda_graph,
-                self.fabric_q_new,
-                self.fabric_qd_new,
-                self.fabric_qdd_new,
-            ) = capture_fabric(
-                fabric=self.fabric,
-                q=self.fabric_q,
-                qd=self.fabric_qd,
-                qdd=self.fabric_qdd,
-                timestep=self.cfg.sim.dt,
-                fabric_integrator=self.fabric_integrator,
-                inputs=fabric_inputs,
-                device=self.device,
-            )
+        # fabric_inputs = [
+        #     self.fabric_hand_target,
+        #     self.fabric_palm_target,
+        #     "euler_zyx",
+        #     self.fabric_q.detach(),
+        #     self.fabric_qd.detach(),
+        #     self.fabric_object_ids,
+        #     self.fabric_object_indicator,
+        # ]
+        # with torch.no_grad():
+        #     (
+        #         self.fabric_cuda_graph,
+        #         self.fabric_q_new,
+        #         self.fabric_qd_new,
+        #         self.fabric_qdd_new,
+        #     ) = capture_fabric(
+        #         fabric=self.fabric,
+        #         q=self.fabric_q,
+        #         qd=self.fabric_qd,
+        #         qdd=self.fabric_qdd,
+        #         timestep=self.cfg.sim.dt,
+        #         fabric_integrator=self.fabric_integrator,
+        #         inputs=fabric_inputs,
+        #         device=self.device,
+        #     )
 
     def fabric_robot_collision_spheres(self) -> torch.Tensor:
         USE_ISAACLAB_STATE = False
@@ -633,10 +633,27 @@ class BimanualEnv(DirectRLEnv):
         # Step fabric
         # start_step_fabric_time = time.time()
         with torch.no_grad():
-            self.fabric_cuda_graph.replay()
-            self.fabric_q.copy_(self.fabric_q_new)
-            self.fabric_qd.copy_(self.fabric_qd_new)
-            self.fabric_qdd.copy_(self.fabric_qdd_new)
+            # self.fabric_cuda_graph.replay()
+            # self.fabric_q.copy_(self.fabric_q_new)
+            # self.fabric_qd.copy_(self.fabric_qd_new)
+            # self.fabric_qdd.copy_(self.fabric_qdd_new)
+
+            # Set the targets
+            self.fabric.set_features(
+                self.fabric_hand_target,
+                self.fabric_palm_target,
+                "euler_zyx",
+                self.fabric_q.detach(),
+                self.fabric_qd.detach(),
+                self.fabric_object_ids,
+                self.fabric_object_indicator,
+            )
+
+            # Integrate fabrics one step producing new position and velocity.
+            self.fabric_q, self.fabric_qd, self.fabric_qdd = self.fabric_integrator.step(
+                self.fabric_q.detach(), self.fabric_qd.detach(), self.fabric_qdd.detach(), self.cfg.sim.dt
+            )
+
         # end_step_fabric_time = time.time()
         # # print(f"Time taken for step_fabric: {end_step_fabric_time - start_step_fabric_time}")
 
