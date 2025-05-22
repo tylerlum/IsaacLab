@@ -608,24 +608,24 @@ class BimanualEnv(DirectRLEnv):
 
         # Update fabric targets
         # Action is in [-1, 1] => [min, max]
-        # self.fabric_palm_target.copy_(
-        #     rescale(
-        #         values=self.raw_actions[:, : NUM_BIMANUAL * 6],
-        #         old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
-        #         old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
-        #         new_mins=self.fabric_palm_mins,
-        #         new_maxs=self.fabric_palm_maxs,
-        #     )
-        # )
-        # self.fabric_hand_target.copy_(
-        #     rescale(
-        #         values=self.raw_actions[:, NUM_BIMANUAL * 6 :],
-        #         old_mins=torch.ones_like(self.fabric_hand_mins) * -1,
-        #         old_maxs=torch.ones_like(self.fabric_hand_maxs) * 1,
-        #         new_mins=self.fabric_hand_mins,
-        #         new_maxs=self.fabric_hand_maxs,
-        #     )
-        # )
+        self.fabric_palm_target.copy_(
+            rescale(
+                values=self.raw_actions[:, : NUM_BIMANUAL * 6],
+                old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
+                old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
+                new_mins=self.fabric_palm_mins,
+                new_maxs=self.fabric_palm_maxs,
+            )
+        )
+        self.fabric_hand_target.copy_(
+            rescale(
+                values=self.raw_actions[:, -NUM_BIMANUAL * 5 :],
+                old_mins=torch.ones_like(self.fabric_hand_mins) * -1,
+                old_maxs=torch.ones_like(self.fabric_hand_maxs) * 1,
+                new_mins=self.fabric_hand_mins,
+                new_maxs=self.fabric_hand_maxs,
+            )
+        )
 
     def _apply_action(self):
         import time
