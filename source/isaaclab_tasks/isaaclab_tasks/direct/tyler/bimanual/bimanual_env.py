@@ -841,24 +841,23 @@ class BimanualEnv(DirectRLEnv):
                 GeneralKeyboard,
                 KeyboardCommand,
             )
+            # kbc = keyboard callback
+            self.keyboard = GeneralKeyboard(
+                commands=[
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.R, func=self._reset_kbc, args=[]
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.B, func=self._breakpoint_kbc, args=[]
+                    ),
+                ]
+            )
         except AttributeError as e:
             print("~" * 100)
             print(f"Error importing keyboard: {e}")
             print("Keyboard not available, likely because we are in headless mode.")
             print("~" * 100)
             return
-
-        # kbc = keyboard callback
-        self.keyboard = GeneralKeyboard(
-            commands=[
-                KeyboardCommand(
-                    key=carb.input.KeyboardInput.R, func=self._reset_kbc, args=[]
-                ),
-                KeyboardCommand(
-                    key=carb.input.KeyboardInput.B, func=self._breakpoint_kbc, args=[]
-                ),
-            ]
-        )
 
     def _reset_kbc(self):
         print("In reset_kbc")
