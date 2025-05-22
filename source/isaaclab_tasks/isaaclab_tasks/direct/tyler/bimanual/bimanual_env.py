@@ -68,7 +68,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
 )
 import wandb
 
-FINGER_GOALS = True
+FINGER_GOALS = False
 FILTER_ACTIONS = True
 
 USE_FABRIC = False
