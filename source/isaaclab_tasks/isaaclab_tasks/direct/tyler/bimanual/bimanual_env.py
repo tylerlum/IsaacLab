@@ -762,10 +762,6 @@ class BimanualEnv(DirectRLEnv):
         if env_ids is None or len(env_ids) == self.num_envs:
             env_ids = self.robot._ALL_INDICES
 
-        # Update metrics
-        self._update_metrics(env_ids)
-        self._reset_state(env_ids)
-
         self.robot.reset(env_ids)
         super()._reset_idx(env_ids)
 
@@ -802,6 +798,9 @@ class BimanualEnv(DirectRLEnv):
         self.goal_object.write_root_pose_to_sim(
             self._sample_final_object_pose(env_ids), env_ids
         )
+
+        self._update_metrics(env_ids)
+        self._reset_state(env_ids)
 
         self._compute_intermediate_values()
 
