@@ -1,1 +1,2 @@
 NUM_XYZ = 3
+NUM_QUAT = 4
