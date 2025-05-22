@@ -333,12 +333,6 @@ class BimanualEnv(DirectRLEnv):
         self._setup_keyboard()
         self._setup_robot_idxs()
 
-        # Action offset
-        self.action_offset = self.robot.data.default_joint_pos[:, self._joint_dof_idxs]
-        assert self.action_offset.shape == (self.num_envs, self.cfg.action_space), (
-            f"self.action_offset.shape: {self.action_offset.shape} != (self.num_envs, self.cfg.action_space): {(self.num_envs, self.cfg.action_space)}"
-        )
-
         # State
         self._reset_state(env_ids=None)
         if USE_FABRIC:
@@ -638,9 +632,31 @@ class BimanualEnv(DirectRLEnv):
             self.fabric_qd.copy_(self.fabric_qd_new)
             self.fabric_qdd.copy_(self.fabric_qdd_new)
 
-            position_targets = fabric_to_isaaclab_joint_order_torch(self.fabric_q.clone())
+            position_targets = fabric_to_isaaclab_joint_order_torch(
+                self.fabric_q.clone()
+            )
         else:
-            position_targets = self.cfg.action_scale * self.raw_actions + self.action_offset
+            ABSOLUTE_CONTROL = False
+            if ABSOLUTE_CONTROL:
+                action_offset = self.robot.data.default_joint_pos[
+                    :, self._joint_dof_idxs
+                ]
+            else:
+                action_offset = self.robot.data.joint_pos[:, self._joint_dof_idxs]
+            assert action_offset.shape == (self.num_envs, self.cfg.action_space), (
+                f"action_offset.shape: {action_offset.shape} != (self.num_envs, self.cfg.action_space): {(self.num_envs, self.cfg.action_space)}"
+            )
+
+            position_targets = self.cfg.action_scale * self.raw_actions + action_offset
+
+            FILTER_ACTIONS = True
+            if FILTER_ACTIONS:
+                ALPHA = 0.5
+                self.filtered_position_targets = (
+                    ALPHA * self.filtered_position_targets
+                    + (1 - ALPHA) * position_targets
+                )
+                position_targets = self.filtered_position_targets
 
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
@@ -903,6 +919,8 @@ class BimanualEnv(DirectRLEnv):
                 for reward_name in REWARD_NAMES
             }
 
+            self.filtered_position_targets = torch.zeros_like(self.robot.data.joint_pos)
+
             if USE_FABRIC:
                 self.fabric_q = isaaclab_to_fabric_joint_order_torch(
                     self.robot.data.joint_pos.clone().float()
@@ -924,6 +942,7 @@ class BimanualEnv(DirectRLEnv):
                     env_ids
                 ] = 0
 
+            self.filtered_position_targets[env_ids] = self.robot.data.joint_pos[env_ids]
             if USE_FABRIC:
                 self.fabric_q[env_ids] = isaaclab_to_fabric_joint_order_torch(
                     self.robot.data.joint_pos[env_ids].clone().float()
