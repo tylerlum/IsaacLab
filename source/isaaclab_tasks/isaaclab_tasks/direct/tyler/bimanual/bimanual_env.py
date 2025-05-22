@@ -248,10 +248,10 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     progress_visualizer.markers[
         "cylinder"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=BLUE_RGB)
-    progress_visualizer_full: VisualizationMarkersCfg = CYLINDER_MARKER_CFG.replace(
+    progress_full_visualizer: VisualizationMarkersCfg = CYLINDER_MARKER_CFG.replace(
         prim_path="/Visuals/Command/progress_full"
     )
-    progress_visualizer_full.markers[
+    progress_full_visualizer.markers[
         "cylinder"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
 
@@ -722,9 +722,9 @@ class BimanualEnv(DirectRLEnv):
                 self.progress_visualizer = VisualizationMarkers(
                     self.cfg.progress_visualizer
                 )
-            if not hasattr(self, "progress_visualizer_full"):
-                self.progress_visualizer_full = VisualizationMarkers(
-                    self.cfg.progress_visualizer_full
+            if not hasattr(self, "progress_full_visualizer"):
+                self.progress_full_visualizer = VisualizationMarkers(
+                    self.cfg.progress_full_visualizer
                 )
 
             # set their visibility to true
@@ -734,7 +734,7 @@ class BimanualEnv(DirectRLEnv):
             self.right_goal_visualizer.set_visibility(True)
             self.left_goal_visualizer.set_visibility(True)
             self.progress_visualizer.set_visibility(True)
-            self.progress_visualizer_full.set_visibility(True)
+            self.progress_full_visualizer.set_visibility(True)
         else:
             if hasattr(self, "pose_visualizer"):
                 self.pose_visualizer.set_visibility(False)
@@ -748,8 +748,8 @@ class BimanualEnv(DirectRLEnv):
                 self.left_goal_visualizer.set_visibility(False)
             if hasattr(self, "progress_visualizer"):
                 self.progress_visualizer.set_visibility(False)
-            if hasattr(self, "progress_visualizer_full"):
-                self.progress_visualizer_full.set_visibility(False)
+            if hasattr(self, "progress_full_visualizer"):
+                self.progress_full_visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
         # Make sure the robot is initialized
@@ -808,7 +808,7 @@ class BimanualEnv(DirectRLEnv):
         )
         progress_scale_full = torch.ones_like(progress_pos) * 0.2
         progress_scale_full[:, 1] = progress_full * MAX_SCALE
-        self.progress_visualizer_full.visualize(
+        self.progress_full_visualizer.visualize(
             translations=progress_pos,
             scales=progress_scale_full,
         )
