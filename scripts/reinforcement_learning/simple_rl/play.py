@@ -60,9 +60,14 @@ parser.add_argument(
     help="Use the pre-trained checkpoint from Nucleus.",
 )
 parser.add_argument(
+    "--use_best_checkpoint",
+    action="store_true",
+    help="Use the best saved model.",
+)
+parser.add_argument(
     "--use_last_checkpoint",
     action="store_true",
-    help="When no checkpoint provided, use the last saved model. Otherwise use the best saved model.",
+    help="Use the last saved model.",
 )
 parser.add_argument(
     "--real-time",
@@ -138,27 +143,25 @@ def main(
                 "[INFO] Unfortunately a pre-trained checkpoint is currently unavailable for this task."
             )
             return
-    elif args_cli.checkpoint is not None:
-        checkpoint_path = retrieve_file_path(args_cli.checkpoint)
-    else:
+    elif args_cli.use_best_checkpoint:
         log_root_path = os.path.join("logs", "simple_rl", args_cli.task)
         log_root_path = os.path.abspath(log_root_path)
         print(f"[INFO] Looking for checkpoint in directory: {log_root_path}")
-
-        # specify name of checkpoint
-        if args_cli.use_last_checkpoint:
-            checkpoint_file = ".*"
-        else:
-            # this loads the best checkpoint
-            checkpoint_file = "best.pth"
-        # get path to previous checkpoint
-        try:
-            checkpoint_path = get_checkpoint_path(
-                log_root_path, ".*", checkpoint_file, other_dirs=["nn"]
-            )
-        except (ValueError, FileNotFoundError):
-            checkpoint_path = None
-            print(f"[INFO] No checkpoint found in {log_root_path}, setting checkpoint_path to {checkpoint_path}")
+        checkpoint_path = get_checkpoint_path(
+            log_root_path, ".*", "best.pth", other_dirs=["nn"]
+        )
+    elif args_cli.use_last_checkpoint:
+        log_root_path = os.path.join("logs", "simple_rl", args_cli.task)
+        log_root_path = os.path.abspath(log_root_path)
+        print(f"[INFO] Looking for checkpoint in directory: {log_root_path}")
+        checkpoint_path = get_checkpoint_path(
+            log_root_path, ".*", ".*", other_dirs=["nn"]
+        )
+    elif args_cli.checkpoint is not None:
+        checkpoint_path = retrieve_file_path(args_cli.checkpoint)
+    else:
+        print("[INFO] No checkpoint provided")
+        checkpoint_path = None
 
     if checkpoint_path is not None:
         print(f"[INFO]: Loading model checkpoint from: {checkpoint_path}")
