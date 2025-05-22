@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+from typing import List
 
 import yaml
 from pathlib import Path
@@ -66,6 +67,8 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
     TABLE_LENGTH_Z,
 )
 import wandb
+
+NUM_SPHERES = 80
 
 NUM_BIMANUAL = 2
 SIM_DT = 0.005
@@ -254,12 +257,21 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         "cylinder"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
 
+    collision_sphere_visualizers: List[VisualizationMarkersCfg] = [
+        SPHERE_MARKER_CFG.replace(prim_path=f"/Visuals/CollisionSphere_{i}")
+        for i in range(NUM_SPHERES)
+    ]
+
 
 REWARD_NAMES = [
     "right_index_fingertip_to_object_dist",
     "left_index_fingertip_to_object_dist",
     "object_to_goal_dist",
 ]
+
+
+def assert_equals(a, b):
+    assert a == b, f"a: {a} != b: {b}"
 
 
 class AverageMeter(nn.Module):
@@ -393,6 +405,7 @@ class BimanualEnv(DirectRLEnv):
             world_dict_robot_frame,
         )
 
+        # TODO: Figure out object collisions
         if False:
             self.fabric_world_dict = world_dict_robot_frame.copy()
         else:
@@ -494,6 +507,19 @@ class BimanualEnv(DirectRLEnv):
             inputs=fabric_inputs,
             device=self.device,
         )
+
+    def fabric_robot_collision_spheres(self) -> torch.Tensor:
+        q = isaaclab_to_fabric_joint_order_torch(self.robot.data.joint_pos)
+
+        N = q.shape[0]
+        assert_equals(q.shape, (N, NUM_BIMANUAL * 23))
+        sphere_positions, _ = self.fabric.get_taskmap("body_points")(q.detach(), None)
+        sphere_positions = sphere_positions.reshape(N, -1, NUM_XYZ)
+        return sphere_positions
+
+    def fabric_robot_collision_sphere_radii(self) -> torch.Tensor:
+        body_sphere_radii = self.fabric.get_sphere_radii()
+        return body_sphere_radii
 
     def _setup_scene(self):
         # add articulation to scene
@@ -904,6 +930,11 @@ class BimanualEnv(DirectRLEnv):
                 self.progress_full_visualizer = VisualizationMarkers(
                     self.cfg.progress_full_visualizer
                 )
+            if not hasattr(self, "collision_sphere_visualizers"):
+                self.collision_sphere_visualizers = [
+                    VisualizationMarkers(cfg)
+                    for cfg in self.cfg.collision_sphere_visualizers
+                ]
 
             # set their visibility to true
             self.pose_visualizer.set_visibility(True)
@@ -911,6 +942,8 @@ class BimanualEnv(DirectRLEnv):
             self.left_fingertip_visualizer.set_visibility(True)
             self.progress_visualizer.set_visibility(True)
             self.progress_full_visualizer.set_visibility(True)
+            for visualizer in self.collision_sphere_visualizers:
+                visualizer.set_visibility(True)
         else:
             if hasattr(self, "pose_visualizer"):
                 self.pose_visualizer.set_visibility(False)
@@ -922,6 +955,9 @@ class BimanualEnv(DirectRLEnv):
                 self.progress_visualizer.set_visibility(False)
             if hasattr(self, "progress_full_visualizer"):
                 self.progress_full_visualizer.set_visibility(False)
+            if hasattr(self, "collision_sphere_visualizers"):
+                for visualizer in self.collision_sphere_visualizers:
+                    visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
         # Make sure the robot is initialized
@@ -939,13 +975,13 @@ class BimanualEnv(DirectRLEnv):
 
         self.right_fingertip_visualizer.visualize(
             translations=self.right_index_fingertip_position,
-            scales=torch.tensor([2.0, 2.0, 2.0], device=self.device)
+            scales=torch.tensor([0.03, 0.03, 0.03], device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         self.left_fingertip_visualizer.visualize(
             translations=self.left_index_fingertip_position,
-            scales=torch.tensor([2.0, 2.0, 2.0], device=self.device)
+            scales=torch.tensor([0.03, 0.03, 0.03], device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
@@ -971,6 +1007,31 @@ class BimanualEnv(DirectRLEnv):
             translations=progress_pos,
             scales=progress_scale_full,
         )
+
+        fabric_collision_spheres = self.fabric_robot_collision_spheres() + self.scene.env_origins.unsqueeze(dim=1)
+        fabric_collision_sphere_radii = self.fabric_robot_collision_sphere_radii()
+        n_spheres = fabric_collision_spheres.shape[1]
+        assert_equals(
+            fabric_collision_spheres.shape, (self.num_envs, n_spheres, NUM_XYZ)
+        )
+        assert_equals(len(fabric_collision_sphere_radii), n_spheres)
+        assert NUM_SPHERES == n_spheres, (
+            f"NUM_SPHERES: {NUM_SPHERES}, n_spheres: {n_spheres}"
+        )
+        for i in range(n_spheres):
+            self.collision_sphere_visualizers[i].visualize(
+                translations=fabric_collision_spheres[:, i, :],
+                scales=torch.tensor(
+                    [
+                        fabric_collision_sphere_radii[i],
+                        fabric_collision_sphere_radii[i],
+                        fabric_collision_sphere_radii[i],
+                    ],
+                    device=self.device,
+                )
+                .unsqueeze(dim=0)
+                .repeat_interleave(self.num_envs, dim=0),
+            )
 
     #### DEBUG END ####
 
