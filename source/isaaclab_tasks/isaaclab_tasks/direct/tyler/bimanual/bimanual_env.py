@@ -69,7 +69,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
 import wandb
 
 FINGER_GOALS = False
-FILTER_ACTIONS = True
+FILTER_ARM_ACTIONS = True
 
 USE_FABRIC = False
 
@@ -99,12 +99,13 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 6.0
     decimation = 4
-    action_scale = 0.1
+    arm_action_scale = 0.1
+    hand_action_scale = 0.5
     action_space = 46
     observation_space = 136 + (
         6 if FINGER_GOALS else 0
     ) + (
-        46 if FILTER_ACTIONS else 0
+        14 if FILTER_ARM_ACTIONS else 0
     ) + (
         46 * 2 if USE_FABRIC else 0
     )
@@ -664,26 +665,32 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_q.clone()
             )
         else:
-            ABSOLUTE_CONTROL = False
-            if ABSOLUTE_CONTROL:
-                action_offset = self.robot.data.default_joint_pos[
+            # Arm
+            ABSOLUTE_ARM_CONTROL = False
+            if ABSOLUTE_ARM_CONTROL:
+                arm_action_offset = self.robot.data.default_joint_pos[
                     :, self._joint_dof_idxs
-                ]
+                ][:, :14]
             else:
-                action_offset = self.robot.data.joint_pos[:, self._joint_dof_idxs]
-            assert action_offset.shape == (self.num_envs, self.cfg.action_space), (
-                f"action_offset.shape: {action_offset.shape} != (self.num_envs, self.cfg.action_space): {(self.num_envs, self.cfg.action_space)}"
+                arm_action_offset = self.robot.data.joint_pos[:, self._joint_dof_idxs][:, :14]
+            assert arm_action_offset.shape == (self.num_envs, 14), (
+                f"arm_action_offset.shape: {arm_action_offset.shape} != (self.num_envs, 14): {(self.num_envs, 14)}"
             )
+            arm_position_targets = self.cfg.arm_action_scale * self.raw_actions[:, :14] + arm_action_offset
 
-            position_targets = self.cfg.action_scale * self.raw_actions + action_offset
+            # Hand
+            hand_action_offset = self.robot.data.default_joint_pos[:, self._joint_dof_idxs][:, 14:]
+            hand_position_targets = self.cfg.hand_action_scale * self.raw_actions[:, 14:] + hand_action_offset
 
-            if FILTER_ACTIONS:
+            if FILTER_ARM_ACTIONS:
                 ALPHA = 0.9
-                self.filtered_position_targets = (
-                    ALPHA * self.filtered_position_targets
-                    + (1 - ALPHA) * position_targets
+                self.filtered_arm_position_targets = (
+                    ALPHA * self.filtered_arm_position_targets
+                    + (1 - ALPHA) * arm_position_targets
                 )
-                position_targets = self.filtered_position_targets
+                arm_position_targets = self.filtered_arm_position_targets
+
+            position_targets = torch.cat([arm_position_targets, hand_position_targets], dim=-1)
 
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
@@ -720,8 +727,8 @@ class BimanualEnv(DirectRLEnv):
             obs_dict["left_goal_position"] = (
                 self.left_goal_position - self.scene.env_origins
             )
-        if FILTER_ACTIONS:
-            obs_dict["filtered_position_targets"] = self.filtered_position_targets
+        if FILTER_ARM_ACTIONS:
+            obs_dict["filtered_arm_position_targets"] = self.filtered_arm_position_targets
 
         if USE_FABRIC:
             obs_dict["fabric_q"] = self.fabric_q
@@ -968,7 +975,7 @@ class BimanualEnv(DirectRLEnv):
                 for reward_name in REWARD_NAMES
             }
 
-            self.filtered_position_targets = torch.zeros_like(self.robot.data.joint_pos)
+            self.filtered_arm_position_targets = torch.zeros_like(self.robot.data.joint_pos[:, :14])
 
             if FINGER_GOALS:
                 self.right_goal_position = self._sample_right_goal_position(env_ids)
@@ -995,7 +1002,7 @@ class BimanualEnv(DirectRLEnv):
                     env_ids
                 ] = 0
 
-            self.filtered_position_targets[env_ids] = self.robot.data.joint_pos[env_ids]
+            self.filtered_arm_position_targets[env_ids] = self.robot.data.joint_pos[env_ids, :14]
 
             if FINGER_GOALS:
                 self.right_goal_position[env_ids] = self._sample_right_goal_position(
