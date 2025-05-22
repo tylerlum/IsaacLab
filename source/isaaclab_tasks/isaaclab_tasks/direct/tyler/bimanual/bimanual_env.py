@@ -68,7 +68,11 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
 )
 import wandb
 
-NUM_SPHERES = 80
+VISUALIZE_FABRIC_SPHERES = True
+if VISUALIZE_FABRIC_SPHERES:
+    NUM_FABRIC_SPHERES = 80
+else:
+    NUM_FABRIC_SPHERES = 0
 
 NUM_BIMANUAL = 2
 SIM_DT = 0.005
@@ -259,7 +263,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
 
     collision_sphere_visualizers: List[VisualizationMarkersCfg] = [
         SPHERE_MARKER_CFG.replace(prim_path=f"/Visuals/CollisionSphere_{i}")
-        for i in range(NUM_SPHERES)
+        for i in range(NUM_FABRIC_SPHERES)
     ]
 
 
@@ -1008,30 +1012,31 @@ class BimanualEnv(DirectRLEnv):
             scales=progress_scale_full,
         )
 
-        fabric_collision_spheres = self.fabric_robot_collision_spheres() + self.scene.env_origins.unsqueeze(dim=1)
-        fabric_collision_sphere_radii = self.fabric_robot_collision_sphere_radii()
-        n_spheres = fabric_collision_spheres.shape[1]
-        assert_equals(
-            fabric_collision_spheres.shape, (self.num_envs, n_spheres, NUM_XYZ)
-        )
-        assert_equals(len(fabric_collision_sphere_radii), n_spheres)
-        assert NUM_SPHERES == n_spheres, (
-            f"NUM_SPHERES: {NUM_SPHERES}, n_spheres: {n_spheres}"
-        )
-        for i in range(n_spheres):
-            self.collision_sphere_visualizers[i].visualize(
-                translations=fabric_collision_spheres[:, i, :],
-                scales=torch.tensor(
-                    [
-                        fabric_collision_sphere_radii[i],
-                        fabric_collision_sphere_radii[i],
-                        fabric_collision_sphere_radii[i],
-                    ],
-                    device=self.device,
-                )
-                .unsqueeze(dim=0)
-                .repeat_interleave(self.num_envs, dim=0),
+        if VISUALIZE_FABRIC_SPHERES:
+            fabric_collision_spheres = self.fabric_robot_collision_spheres() + self.scene.env_origins.unsqueeze(dim=1)
+            fabric_collision_sphere_radii = self.fabric_robot_collision_sphere_radii()
+            n_spheres = fabric_collision_spheres.shape[1]
+            assert_equals(
+                fabric_collision_spheres.shape, (self.num_envs, n_spheres, NUM_XYZ)
             )
+            assert_equals(len(fabric_collision_sphere_radii), n_spheres)
+            assert NUM_FABRIC_SPHERES == n_spheres, (
+                f"NUM_FABRIC_SPHERES: {NUM_FABRIC_SPHERES}, n_spheres: {n_spheres}"
+            )
+            for i in range(n_spheres):
+                self.collision_sphere_visualizers[i].visualize(
+                    translations=fabric_collision_spheres[:, i, :],
+                    scales=torch.tensor(
+                        [
+                            fabric_collision_sphere_radii[i],
+                            fabric_collision_sphere_radii[i],
+                            fabric_collision_sphere_radii[i],
+                        ],
+                        device=self.device,
+                    )
+                    .unsqueeze(dim=0)
+                    .repeat_interleave(self.num_envs, dim=0),
+                )
 
     #### DEBUG END ####
 
