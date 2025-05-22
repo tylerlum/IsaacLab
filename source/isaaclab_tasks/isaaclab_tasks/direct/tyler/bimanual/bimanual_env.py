@@ -31,8 +31,14 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab_assets.robots.bimanual import BIMANUAL_CFG
-from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import sample_uniform_tensor, rescale
-from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import isaaclab_to_fabric_joint_order_torch, fabric_to_isaaclab_joint_order_torch
+from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
+    sample_uniform_tensor,
+    rescale,
+)
+from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
+    isaaclab_to_fabric_joint_order_torch,
+    fabric_to_isaaclab_joint_order_torch,
+)
 from isaaclab_tasks.direct.tyler.bimanual.utils.constants import NUM_XYZ, NUM_QUAT
 from isaaclab_tasks.direct.tyler.bimanual.utils.color_constants import (
     RED_RGB,
@@ -79,8 +85,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     episode_length_s = 20.0
     decimation = 4
     action_scale = 1.0
-    action_space = 46
-    observation_space = 136
+    action_space = 22
+    observation_space = 228
     state_space = 0
     debug_vis = True
 
@@ -297,12 +303,6 @@ class BimanualEnv(DirectRLEnv):
         self._setup_keyboard()
         self._setup_robot_idxs()
 
-        # Action offset
-        self.action_offset = self.robot.data.default_joint_pos[:, self._joint_dof_idxs]
-        assert self.action_offset.shape == (self.num_envs, self.cfg.action_space), (
-            f"self.action_offset.shape: {self.action_offset.shape} != (self.num_envs, self.cfg.action_space): {(self.num_envs, self.cfg.action_space)}"
-        )
-
         # State
         self._reset_state(env_ids=None)
         self._setup_fabric_action_space()
@@ -489,13 +489,11 @@ class BimanualEnv(DirectRLEnv):
             q=self.fabric_q,
             qd=self.fabric_qd,
             qdd=self.fabric_qdd,
-            timestep=self.sim_dt,
+            timestep=self.cfg.sim.dt,
             fabric_integrator=self.fabric_integrator,
             inputs=fabric_inputs,
             device=self.device,
         )
-
-
 
     def _setup_scene(self):
         # add articulation to scene
@@ -534,9 +532,6 @@ class BimanualEnv(DirectRLEnv):
         assert self.raw_actions.shape == self.prev_raw_actions.shape, (
             f"self.raw_actions.shape: {self.raw_actions.shape} != self.prev_raw_actions.shape: {self.prev_raw_actions.shape}"
         )
-        assert self.raw_actions.shape == self.action_offset.shape, (
-            f"self.raw_actions.shape: {self.raw_actions.shape} != self.action_offset.shape: {self.action_offset.shape}"
-        )
         assert self.raw_actions.shape == (self.num_envs, self.cfg.action_space), (
             f"self.raw_actions.shape: {self.raw_actions.shape} != (self.num_envs, self.cfg.action_space): {(self.num_envs, self.cfg.action_space)}"
         )
@@ -574,17 +569,13 @@ class BimanualEnv(DirectRLEnv):
         )
 
     def _apply_action(self):
-        # position_targets = self.cfg.action_scale * self.raw_actions + self.action_offset
-
         # Step fabric
         self.fabric_cuda_graph.replay()
         self.fabric_q.copy_(self.fabric_q_new)
         self.fabric_qd.copy_(self.fabric_qd_new)
         self.fabric_qdd.copy_(self.fabric_qdd_new)
 
-        position_targets = fabric_to_isaaclab_joint_order_torch(
-            self.fabric_q.clone()
-        )
+        position_targets = fabric_to_isaaclab_joint_order_torch(self.fabric_q.clone())
 
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
@@ -839,7 +830,7 @@ class BimanualEnv(DirectRLEnv):
             }
 
             self.fabric_q = isaaclab_to_fabric_joint_order_torch(
-                self.robot.data.joint_pos.clone()
+                self.robot.data.joint_pos.clone().float()
             )
             self.fabric_qd = torch.zeros_like(self.fabric_q)
             self.fabric_qdd = torch.zeros_like(self.fabric_q)
@@ -859,7 +850,7 @@ class BimanualEnv(DirectRLEnv):
                 ] = 0
 
             self.fabric_q[env_ids] = isaaclab_to_fabric_joint_order_torch(
-                self.robot.data.joint_pos[env_ids]
+                self.robot.data.joint_pos[env_ids].clone().float()
             )
             self.fabric_qd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
             self.fabric_qdd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
