@@ -76,6 +76,7 @@ else:
 
 NUM_BIMANUAL = 2
 SIM_DT = 0.005
+
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
     restitution_combine_mode="multiply",
@@ -409,10 +410,11 @@ class BimanualEnv(DirectRLEnv):
             world_dict_robot_frame,
         )
 
-        # TODO: Figure out object collisions
-        if False:
+        USE_FABRIC_WORLD = True
+        if USE_FABRIC_WORLD:
             self.fabric_world_dict = world_dict_robot_frame.copy()
         else:
+            raise ValueError("If not fabric world given, the self-collisions do not work for some reason")
             self.fabric_world_dict = {}
 
         # Load fabric params and potentially modify
@@ -513,7 +515,11 @@ class BimanualEnv(DirectRLEnv):
         )
 
     def fabric_robot_collision_spheres(self) -> torch.Tensor:
-        q = isaaclab_to_fabric_joint_order_torch(self.robot.data.joint_pos)
+        USE_ISAACLAB_STATE = False
+        if USE_ISAACLAB_STATE:
+            q = isaaclab_to_fabric_joint_order_torch(self.robot.data.joint_pos)
+        else:
+            q = self.fabric_q
 
         N = q.shape[0]
         assert_equals(q.shape, (N, NUM_BIMANUAL * 23))
@@ -524,6 +530,9 @@ class BimanualEnv(DirectRLEnv):
     def fabric_robot_collision_sphere_radii(self) -> torch.Tensor:
         body_sphere_radii = self.fabric.get_sphere_radii()
         return body_sphere_radii
+
+    def fabric_collision_status(self) -> torch.Tensor:
+        return self.fabric.collision_status
 
     def _setup_scene(self):
         # add articulation to scene

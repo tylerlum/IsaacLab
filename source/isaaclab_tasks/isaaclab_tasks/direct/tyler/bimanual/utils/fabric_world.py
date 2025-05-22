@@ -47,12 +47,6 @@ world_dict_table_frame = {
         "scaling": f"{2 * TABLE_X_LEN} {THICKNESS} {MAX_HEIGHT}",
         "transform": f"0 {-0.5 * TABLE_Y_LEN} {0.5 * MAX_HEIGHT} 0 0 0 1",  # x y z qx qy qz qw
     },
-    "back_wall": {
-        "env_index": "all",
-        "type": "box",
-        "scaling": f"{THICKNESS} {TABLE_Y_LEN} {MAX_HEIGHT}",
-        "transform": f"{-SIDE_TABLE_X_LEN} 0 {0.5 * MAX_HEIGHT} 0 0 0 1",  # x y z qx qy qz qw
-    },
     "front_wall": {
         "env_index": "all",
         "type": "box",
@@ -64,12 +58,6 @@ world_dict_table_frame = {
         "type": "box",
         "scaling": f"{TABLE_X_LEN} {TABLE_Y_LEN} {THICKNESS}",
         "transform": f"{0.5 * TABLE_X_LEN} 0 0 0 0 0 1",  # x y z qx qy qz qw
-    },
-    "side_table": {
-        "env_index": "all",
-        "type": "box",
-        "scaling": f"{SIDE_TABLE_X_LEN} {SIDE_TABLE_Y_LEN} {THICKNESS}",
-        "transform": f"{-0.5 * SIDE_TABLE_X_LEN} {0.5 * SIDE_TABLE_Y_LEN} 0 0 0 0 1",  # x y z qx qy qz qw
     },
     "ceiling": {
         "env_index": "all",
