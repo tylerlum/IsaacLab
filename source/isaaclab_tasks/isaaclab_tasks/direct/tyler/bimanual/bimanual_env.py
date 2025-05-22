@@ -74,6 +74,8 @@ if VISUALIZE_FABRIC_SPHERES:
 else:
     NUM_FABRIC_SPHERES = 0
 
+OBJECT_LENGTH_Z = 0.22
+
 NUM_BIMANUAL = 2
 SIM_DT = 0.005
 
@@ -90,7 +92,7 @@ ENV_REGEX_NS = "/World/envs/env_.*"
 @configclass
 class BimanualEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 20.0
+    episode_length_s = 6.0
     decimation = 4
     action_scale = 1.0
     action_space = 22
@@ -152,7 +154,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             pos=(
                 float(TABLE_X) + 0.1,
                 float(TABLE_Y),
-                float(TABLE_Z) + TABLE_LENGTH_Z / 2 + 0.05,
+                float(TABLE_Z) + TABLE_LENGTH_Z / 2 + OBJECT_LENGTH_Z / 2 + 0.02,
             ),
             rot=(float(TABLE_QW), float(TABLE_QX), float(TABLE_QY), float(TABLE_QZ)),
         ),
@@ -187,7 +189,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             pos=(
                 float(TABLE_X),
                 float(TABLE_Y),
-                float(TABLE_Z) + TABLE_LENGTH_Z / 2 + 0.1,
+                float(TABLE_Z) + TABLE_LENGTH_Z / 2 + OBJECT_LENGTH_Z / 2 + 0.1,
             ),
             rot=(float(TABLE_QW), float(TABLE_QX), float(TABLE_QY), float(TABLE_QZ)),
         ),
@@ -423,7 +425,9 @@ class BimanualEnv(DirectRLEnv):
         if USE_FABRIC_WORLD:
             self.fabric_world_dict = world_dict_robot_frame.copy()
         else:
-            raise ValueError("If not fabric world given, the self-collisions do not work for some reason")
+            raise ValueError(
+                "If not fabric world given, the self-collisions do not work for some reason"
+            )
             self.fabric_world_dict = {}
 
         # Load fabric params and potentially modify
@@ -524,7 +528,7 @@ class BimanualEnv(DirectRLEnv):
         )
 
     def fabric_robot_collision_spheres(self) -> torch.Tensor:
-        USE_ISAACLAB_STATE = True
+        USE_ISAACLAB_STATE = False
         if USE_ISAACLAB_STATE:
             q = isaaclab_to_fabric_joint_order_torch(self.robot.data.joint_pos)
         else:
@@ -834,17 +838,24 @@ class BimanualEnv(DirectRLEnv):
         joint_vel = joint_vel.clamp_(-joint_vel_limits, joint_vel_limits)
 
         self.robot.write_root_pose_to_sim(
-            torch.cat([default_position, default_orientation], dim=-1), env_ids
+            torch.cat([default_position, default_orientation], dim=-1), env_ids=env_ids
         )
-        self.robot.write_root_velocity_to_sim(default_velocity, env_ids)
-        self.robot.write_joint_position_to_sim(joint_pos, None, env_ids)
-        self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids)
+        self.robot.write_root_velocity_to_sim(default_velocity, env_ids=env_ids)
+        self.robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
+        self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
+        self.robot.set_joint_position_target(joint_pos, joint_ids=self._joint_dof_idxs, env_ids=env_ids)
 
         self.object.write_root_pose_to_sim(
-            self._sample_initial_object_pose(env_ids), env_ids
+            self._sample_initial_object_pose(env_ids), env_ids=env_ids
+        )
+        self.object.write_root_velocity_to_sim(
+            torch.zeros_like(default_velocity), env_ids=env_ids
         )
         self.goal_object.write_root_pose_to_sim(
-            self._sample_final_object_pose(env_ids), env_ids
+            self._sample_final_object_pose(env_ids), env_ids=env_ids
+        )
+        self.goal_object.write_root_velocity_to_sim(
+            torch.zeros_like(default_velocity), env_ids=env_ids
         )
 
         self._update_metrics(env_ids)
@@ -904,8 +915,12 @@ class BimanualEnv(DirectRLEnv):
 
     def _sample_initial_object_pose(self, env_ids: torch.Tensor) -> torch.Tensor:
         position = self.table_position[env_ids] + sample_uniform_tensor(
-            low=torch.tensor([-0.4, -0.5, 0.05], device=self.device),
-            high=torch.tensor([0.4, 0.5, 0.06], device=self.device),
+            low=torch.tensor(
+                [-0.4, -0.5, OBJECT_LENGTH_Z / 2 + 0.02], device=self.device
+            ),
+            high=torch.tensor(
+                [0.4, 0.5, OBJECT_LENGTH_Z / 2 + 0.03], device=self.device
+            ),
             N=len(env_ids),
         )
         orientation = (
@@ -917,8 +932,12 @@ class BimanualEnv(DirectRLEnv):
 
     def _sample_final_object_pose(self, env_ids: torch.Tensor) -> torch.Tensor:
         position = self.table_position[env_ids] + sample_uniform_tensor(
-            low=torch.tensor([-0.4, -0.5, 0.05 + 0.01], device=self.device),
-            high=torch.tensor([0.4, 0.5, 0.06 + 0.5], device=self.device),
+            low=torch.tensor(
+                [-0.4, -0.5, OBJECT_LENGTH_Z / 2 + 0.02], device=self.device
+            ),
+            high=torch.tensor(
+                [0.4, 0.5, OBJECT_LENGTH_Z / 2 + 0.5], device=self.device
+            ),
             N=len(env_ids),
         )
         orientation = (
@@ -937,9 +956,13 @@ class BimanualEnv(DirectRLEnv):
             if not hasattr(self, "pose_visualizer"):
                 self.pose_visualizer = VisualizationMarkers(self.cfg.pose_visualizer)
             if not hasattr(self, "object_pose_visualizer"):
-                self.object_pose_visualizer = VisualizationMarkers(self.cfg.object_pose_visualizer)
+                self.object_pose_visualizer = VisualizationMarkers(
+                    self.cfg.object_pose_visualizer
+                )
             if not hasattr(self, "goal_object_pose_visualizer"):
-                self.goal_object_pose_visualizer = VisualizationMarkers(self.cfg.goal_object_pose_visualizer)
+                self.goal_object_pose_visualizer = VisualizationMarkers(
+                    self.cfg.goal_object_pose_visualizer
+                )
             if not hasattr(self, "right_fingertip_visualizer"):
                 self.right_fingertip_visualizer = VisualizationMarkers(
                     self.cfg.right_fingertip_visualizer
@@ -1055,7 +1078,10 @@ class BimanualEnv(DirectRLEnv):
         )
 
         if VISUALIZE_FABRIC_SPHERES:
-            fabric_collision_spheres = self.fabric_robot_collision_spheres() + self.scene.env_origins.unsqueeze(dim=1)
+            fabric_collision_spheres = (
+                self.fabric_robot_collision_spheres()
+                + self.scene.env_origins.unsqueeze(dim=1)
+            )
             fabric_collision_sphere_radii = self.fabric_robot_collision_sphere_radii()
             n_spheres = fabric_collision_spheres.shape[1]
             assert_equals(
