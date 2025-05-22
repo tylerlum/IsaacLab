@@ -511,21 +511,22 @@ class BimanualEnv(DirectRLEnv):
             self.fabric_object_ids,
             self.fabric_object_indicator,
         ]
-        (
-            self.fabric_cuda_graph,
-            self.fabric_q_new,
-            self.fabric_qd_new,
-            self.fabric_qdd_new,
-        ) = capture_fabric(
-            fabric=self.fabric,
-            q=self.fabric_q,
-            qd=self.fabric_qd,
-            qdd=self.fabric_qdd,
-            timestep=self.cfg.sim.dt,
-            fabric_integrator=self.fabric_integrator,
-            inputs=fabric_inputs,
-            device=self.device,
-        )
+        with torch.no_grad():
+            (
+                self.fabric_cuda_graph,
+                self.fabric_q_new,
+                self.fabric_qd_new,
+                self.fabric_qdd_new,
+            ) = capture_fabric(
+                fabric=self.fabric,
+                q=self.fabric_q,
+                qd=self.fabric_qd,
+                qdd=self.fabric_qdd,
+                timestep=self.cfg.sim.dt,
+                fabric_integrator=self.fabric_integrator,
+                inputs=fabric_inputs,
+                device=self.device,
+            )
 
     def fabric_robot_collision_spheres(self) -> torch.Tensor:
         USE_ISAACLAB_STATE = False
@@ -625,10 +626,11 @@ class BimanualEnv(DirectRLEnv):
 
         # Step fabric
         start_step_fabric_time = time.time()
-        self.fabric_cuda_graph.replay()
-        self.fabric_q.copy_(self.fabric_q_new)
-        self.fabric_qd.copy_(self.fabric_qd_new)
-        self.fabric_qdd.copy_(self.fabric_qdd_new)
+        with torch.no_grad():
+            self.fabric_cuda_graph.replay()
+            self.fabric_q.copy_(self.fabric_q_new)
+            self.fabric_qd.copy_(self.fabric_qd_new)
+            self.fabric_qdd.copy_(self.fabric_qdd_new)
         end_step_fabric_time = time.time()
         print(f"Time taken for step_fabric: {end_step_fabric_time - start_step_fabric_time}")
 
@@ -900,9 +902,9 @@ class BimanualEnv(DirectRLEnv):
 
             self.fabric_q = isaaclab_to_fabric_joint_order_torch(
                 self.robot.data.joint_pos.clone().float()
-            )
-            self.fabric_qd = torch.zeros_like(self.fabric_q)
-            self.fabric_qdd = torch.zeros_like(self.fabric_q)
+            ).requires_grad_(False)
+            self.fabric_qd = torch.zeros_like(self.fabric_q).requires_grad_(False)
+            self.fabric_qdd = torch.zeros_like(self.fabric_q).requires_grad_(False)
         else:
             self.raw_actions[env_ids] = torch.zeros(
                 len(env_ids), self.cfg.action_space, device=self.device
@@ -920,9 +922,9 @@ class BimanualEnv(DirectRLEnv):
 
             self.fabric_q[env_ids] = isaaclab_to_fabric_joint_order_torch(
                 self.robot.data.joint_pos[env_ids].clone().float()
-            )
-            self.fabric_qd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
-            self.fabric_qdd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
+            ).requires_grad_(False)
+            self.fabric_qd[env_ids] = torch.zeros_like(self.fabric_q[env_ids]).requires_grad_(False)
+            self.fabric_qdd[env_ids] = torch.zeros_like(self.fabric_q[env_ids]).requires_grad_(False)
 
     def _sample_initial_object_pose(self, env_ids: torch.Tensor) -> torch.Tensor:
         position = self.table_position[env_ids] + sample_uniform_tensor(
