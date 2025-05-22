@@ -102,12 +102,11 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     arm_action_scale = 0.1
     hand_action_scale = 2.0
     action_space = 46
-    observation_space = 136 + (
-        6 if FINGER_GOALS else 0
-    ) + (
-        14 if FILTER_ARM_ACTIONS else 0
-    ) + (
-        46 * 2 if USE_FABRIC else 0
+    observation_space = (
+        136
+        + (6 if FINGER_GOALS else 0)
+        + (14 if FILTER_ARM_ACTIONS else 0)
+        + (46 * 2 if USE_FABRIC else 0)
     )
     state_space = 0
     debug_vis = True
@@ -313,7 +312,8 @@ else:
     REWARD_NAMES = [
         "right_index_fingertip_to_object_dist",
         "left_index_fingertip_to_object_dist",
-        # "object_to_goal_dist",
+        "object_lifted",
+        "object_to_goal_dist",
     ]
 
 
@@ -672,15 +672,24 @@ class BimanualEnv(DirectRLEnv):
                     :, self._joint_dof_idxs
                 ][:, :14]
             else:
-                arm_action_offset = self.robot.data.joint_pos[:, self._joint_dof_idxs][:, :14]
+                arm_action_offset = self.robot.data.joint_pos[:, self._joint_dof_idxs][
+                    :, :14
+                ]
             assert arm_action_offset.shape == (self.num_envs, 14), (
                 f"arm_action_offset.shape: {arm_action_offset.shape} != (self.num_envs, 14): {(self.num_envs, 14)}"
             )
-            arm_position_targets = self.cfg.arm_action_scale * self.raw_actions[:, :14] + arm_action_offset
+            arm_position_targets = (
+                self.cfg.arm_action_scale * self.raw_actions[:, :14] + arm_action_offset
+            )
 
             # Hand
-            hand_action_offset = self.robot.data.default_joint_pos[:, self._joint_dof_idxs][:, 14:]
-            hand_position_targets = self.cfg.hand_action_scale * self.raw_actions[:, 14:] + hand_action_offset
+            hand_action_offset = self.robot.data.default_joint_pos[
+                :, self._joint_dof_idxs
+            ][:, 14:]
+            hand_position_targets = (
+                self.cfg.hand_action_scale * self.raw_actions[:, 14:]
+                + hand_action_offset
+            )
 
             if FILTER_ARM_ACTIONS:
                 ALPHA = 0.9
@@ -690,7 +699,9 @@ class BimanualEnv(DirectRLEnv):
                 )
                 arm_position_targets = self.filtered_arm_position_targets
 
-            position_targets = torch.cat([arm_position_targets, hand_position_targets], dim=-1)
+            position_targets = torch.cat(
+                [arm_position_targets, hand_position_targets], dim=-1
+            )
 
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
@@ -728,7 +739,9 @@ class BimanualEnv(DirectRLEnv):
                 self.left_goal_position - self.scene.env_origins
             )
         if FILTER_ARM_ACTIONS:
-            obs_dict["filtered_arm_position_targets"] = self.filtered_arm_position_targets
+            obs_dict["filtered_arm_position_targets"] = (
+                self.filtered_arm_position_targets
+            )
 
         if USE_FABRIC:
             obs_dict["fabric_q"] = self.fabric_q
@@ -766,7 +779,12 @@ class BimanualEnv(DirectRLEnv):
             self.individual_reward_bufs = {
                 "right_index_fingertip_to_object_dist": -(self.right_index_fingertip_position - self.object_position).norm(dim=-1, p=2),
                 "left_index_fingertip_to_object_dist": -(self.left_index_fingertip_position - self.object_position).norm(dim=-1, p=2),
-                # "object_to_goal_dist": -(self.object_position - self.goal_object_position).norm(dim=-1, p=2),
+                "object_lifted": torch.logical_and(self.object_is_lifted, ~self.object_has_been_lifted_this_episode),
+                "object_to_goal_dist": torch.where(
+                    self.object_is_lifted,
+                    (2.0 - (self.object_position - self.goal_object_position).norm(dim=-1, p=2)).clip(min=0.0),
+                    torch.zeros_like(self.object_position[:, 2]),
+                ),
             }
         # fmt: on
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
@@ -783,7 +801,8 @@ class BimanualEnv(DirectRLEnv):
                 self.individual_reward_weights = {
                     "right_index_fingertip_to_object_dist": 1.0,
                     "left_index_fingertip_to_object_dist": 1.0,
-                    # "object_to_goal_dist": 3.0,
+                    "object_lifted": 50.0,
+                    "object_to_goal_dist": 10.0,
                 }
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
@@ -821,6 +840,12 @@ class BimanualEnv(DirectRLEnv):
 
     #### END OF STEP START  ####
     def _end_of_step(self):
+        self.object_has_been_lifted_this_episode = torch.where(
+            self.object_has_been_lifted_this_episode,
+            self.object_has_been_lifted_this_episode,
+            self.object_is_lifted,
+        )
+
         # Update aggregated rewards
         self.aggregated_reward_buf += self.reward_buf
         for reward_name in REWARD_NAMES:
@@ -975,11 +1000,17 @@ class BimanualEnv(DirectRLEnv):
                 for reward_name in REWARD_NAMES
             }
 
-            self.filtered_arm_position_targets = torch.zeros_like(self.robot.data.joint_pos[:, :14])
+            self.filtered_arm_position_targets = torch.zeros_like(
+                self.robot.data.joint_pos[:, :14]
+            )
 
             if FINGER_GOALS:
                 self.right_goal_position = self._sample_right_goal_position(env_ids)
                 self.left_goal_position = self._sample_left_goal_position(env_ids)
+
+            self.object_has_been_lifted_this_episode = torch.zeros_like(
+                self.object_is_lifted
+            )
 
             if USE_FABRIC:
                 self.fabric_q = isaaclab_to_fabric_joint_order_torch(
@@ -1002,7 +1033,9 @@ class BimanualEnv(DirectRLEnv):
                     env_ids
                 ] = 0
 
-            self.filtered_arm_position_targets[env_ids] = self.robot.data.joint_pos[env_ids, :14]
+            self.filtered_arm_position_targets[env_ids] = self.robot.data.joint_pos[
+                env_ids, :14
+            ]
 
             if FINGER_GOALS:
                 self.right_goal_position[env_ids] = self._sample_right_goal_position(
@@ -1011,6 +1044,10 @@ class BimanualEnv(DirectRLEnv):
                 self.left_goal_position[env_ids] = self._sample_left_goal_position(
                     env_ids
                 )
+
+            self.object_has_been_lifted_this_episode[env_ids] = torch.zeros_like(
+                self.object_is_lifted[env_ids]
+            )
 
             if USE_FABRIC:
                 self.fabric_q[env_ids] = isaaclab_to_fabric_joint_order_torch(
@@ -1388,5 +1425,9 @@ class BimanualEnv(DirectRLEnv):
     @property
     def left_thumb_fingertip_position(self) -> torch.Tensor:
         return self.left_fingertip_positions[:, THUMB_FINGERTIP_IDX]
+
+    @property
+    def object_is_lifted(self) -> torch.Tensor:
+        return self.object_position[:, 2] > self.table_position[:, 2] + OBJECT_LENGTH_Z
 
     #### TENSOR SLICE PROPERTIES END ####
