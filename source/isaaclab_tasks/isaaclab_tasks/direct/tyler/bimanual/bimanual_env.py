@@ -236,6 +236,15 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     """The configuration for the pose visualization marker. Defaults to FRAME_MARKER_CFG."""
     pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
 
+    object_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/object_pose"
+    )
+    object_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+    goal_object_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/goal_object_pose"
+    )
+    goal_object_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+
     right_fingertip_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
         prim_path="/Visuals/Command/right_fingertip"
     )
@@ -271,7 +280,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
 REWARD_NAMES = [
     "right_index_fingertip_to_object_dist",
     "left_index_fingertip_to_object_dist",
-    "object_to_goal_dist",
+    # "object_to_goal_dist",
 ]
 
 
@@ -673,7 +682,7 @@ class BimanualEnv(DirectRLEnv):
         self.individual_reward_bufs = {
             "right_index_fingertip_to_object_dist": -(self.right_index_fingertip_position - self.object_position).norm(dim=-1, p=2),
             "left_index_fingertip_to_object_dist": -(self.left_index_fingertip_position - self.object_position).norm(dim=-1, p=2),
-            "object_to_goal_dist": -(self.object_position - self.goal_object_position).norm(dim=-1, p=2),
+            # "object_to_goal_dist": -(self.object_position - self.goal_object_position).norm(dim=-1, p=2),
         }
         # fmt: on
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
@@ -684,7 +693,7 @@ class BimanualEnv(DirectRLEnv):
             self.individual_reward_weights = {
                 "right_index_fingertip_to_object_dist": 1.0,
                 "left_index_fingertip_to_object_dist": 1.0,
-                "object_to_goal_dist": 3.0,
+                # "object_to_goal_dist": 3.0,
             }
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
@@ -927,6 +936,10 @@ class BimanualEnv(DirectRLEnv):
         if debug_vis:
             if not hasattr(self, "pose_visualizer"):
                 self.pose_visualizer = VisualizationMarkers(self.cfg.pose_visualizer)
+            if not hasattr(self, "object_pose_visualizer"):
+                self.object_pose_visualizer = VisualizationMarkers(self.cfg.object_pose_visualizer)
+            if not hasattr(self, "goal_object_pose_visualizer"):
+                self.goal_object_pose_visualizer = VisualizationMarkers(self.cfg.goal_object_pose_visualizer)
             if not hasattr(self, "right_fingertip_visualizer"):
                 self.right_fingertip_visualizer = VisualizationMarkers(
                     self.cfg.right_fingertip_visualizer
@@ -951,6 +964,8 @@ class BimanualEnv(DirectRLEnv):
 
             # set their visibility to true
             self.pose_visualizer.set_visibility(True)
+            self.object_pose_visualizer.set_visibility(True)
+            self.goal_object_pose_visualizer.set_visibility(True)
             self.right_fingertip_visualizer.set_visibility(True)
             self.left_fingertip_visualizer.set_visibility(True)
             self.progress_visualizer.set_visibility(True)
@@ -960,6 +975,10 @@ class BimanualEnv(DirectRLEnv):
         else:
             if hasattr(self, "pose_visualizer"):
                 self.pose_visualizer.set_visibility(False)
+            if hasattr(self, "object_pose_visualizer"):
+                self.object_pose_visualizer.set_visibility(False)
+            if hasattr(self, "goal_object_pose_visualizer"):
+                self.goal_object_pose_visualizer.set_visibility(False)
             if hasattr(self, "right_fingertip_visualizer"):
                 self.right_fingertip_visualizer.set_visibility(False)
             if hasattr(self, "left_fingertip_visualizer"):
@@ -981,6 +1000,20 @@ class BimanualEnv(DirectRLEnv):
         self.pose_visualizer.visualize(
             translations=base_pos_w,
             orientations=self.robot.data.root_quat_w,
+            scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+            .unsqueeze(dim=0)
+            .repeat_interleave(self.num_envs, dim=0),
+        )
+        self.object_pose_visualizer.visualize(
+            translations=self.object_position,
+            orientations=self.object_orientation,
+            scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+            .unsqueeze(dim=0)
+            .repeat_interleave(self.num_envs, dim=0),
+        )
+        self.goal_object_pose_visualizer.visualize(
+            translations=self.goal_object_position,
+            orientations=self.goal_object_orientation,
             scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
