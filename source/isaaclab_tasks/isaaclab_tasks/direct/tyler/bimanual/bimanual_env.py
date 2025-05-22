@@ -100,7 +100,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     episode_length_s = 6.0
     decimation = 4
     arm_action_scale = 0.1
-    hand_action_scale = 0.5
+    hand_action_scale = 2.0
     action_space = 46
     observation_space = 136 + (
         6 if FINGER_GOALS else 0
