@@ -19,6 +19,7 @@ from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.markers.config import (
     SPHERE_MARKER_CFG,
     FRAME_MARKER_CFG,
+    CYLINDER_MARKER_CFG,
 )
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensor, ContactSensorCfg
@@ -209,36 +210,49 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         texture_file=f"{ISAAC_NUCLEUS_DIR}/Materials/Textures/Skies/PolyHaven/kloofendal_43d_clear_puresky_4k.hdr",
     )
 
-    pose_visualizer_cfg: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+    pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
         prim_path="/Visuals/Command/pose"
     )
     """The configuration for the pose visualization marker. Defaults to FRAME_MARKER_CFG."""
-    pose_visualizer_cfg.markers["frame"].scale = (1.0, 1.0, 1.0)
+    pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
 
-    right_fingertip_visualizer_cfg: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+    right_fingertip_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
         prim_path="/Visuals/Command/right_fingertip"
     )
-    right_fingertip_visualizer_cfg.markers[
+    right_fingertip_visualizer.markers[
         "sphere"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=RED_RGB)
-    left_fingertip_visualizer_cfg: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+    left_fingertip_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
         prim_path="/Visuals/Command/left_fingertip"
     )
-    left_fingertip_visualizer_cfg.markers[
+    left_fingertip_visualizer.markers[
         "sphere"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=RED_RGB)
 
-    right_goal_visualizer_cfg: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+    right_goal_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
         prim_path="/Visuals/Command/right_goal"
     )
-    right_goal_visualizer_cfg.markers[
+    right_goal_visualizer.markers[
         "sphere"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
-    left_goal_visualizer_cfg: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+    left_goal_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
         prim_path="/Visuals/Command/left_goal"
     )
-    left_goal_visualizer_cfg.markers[
+    left_goal_visualizer.markers[
         "sphere"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
+
+    progress_visualizer: VisualizationMarkersCfg = CYLINDER_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/progress"
+    )
+    progress_visualizer.markers[
+        "cylinder"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=BLUE_RGB)
+    progress_visualizer_full: VisualizationMarkersCfg = CYLINDER_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/progress_full"
+    )
+    progress_visualizer_full.markers[
+        "cylinder"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
 
 
@@ -661,7 +675,9 @@ class BimanualEnv(DirectRLEnv):
                     env_ids
                 ] = 0
 
-            self.right_goal_position[env_ids] = self._sample_right_goal_position(env_ids)
+            self.right_goal_position[env_ids] = self._sample_right_goal_position(
+                env_ids
+            )
             self.left_goal_position[env_ids] = self._sample_left_goal_position(env_ids)
 
     def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
@@ -685,24 +701,30 @@ class BimanualEnv(DirectRLEnv):
         # create markers if necessary for the first tome
         if debug_vis:
             if not hasattr(self, "pose_visualizer"):
-                self.pose_visualizer = VisualizationMarkers(
-                    self.cfg.pose_visualizer_cfg
-                )
+                self.pose_visualizer = VisualizationMarkers(self.cfg.pose_visualizer)
             if not hasattr(self, "right_fingertip_visualizer"):
                 self.right_fingertip_visualizer = VisualizationMarkers(
-                    self.cfg.right_fingertip_visualizer_cfg
+                    self.cfg.right_fingertip_visualizer
                 )
             if not hasattr(self, "left_fingertip_visualizer"):
                 self.left_fingertip_visualizer = VisualizationMarkers(
-                    self.cfg.left_fingertip_visualizer_cfg
+                    self.cfg.left_fingertip_visualizer
                 )
             if not hasattr(self, "right_goal_visualizer"):
                 self.right_goal_visualizer = VisualizationMarkers(
-                    self.cfg.right_goal_visualizer_cfg
+                    self.cfg.right_goal_visualizer
                 )
             if not hasattr(self, "left_goal_visualizer"):
                 self.left_goal_visualizer = VisualizationMarkers(
-                    self.cfg.left_goal_visualizer_cfg
+                    self.cfg.left_goal_visualizer
+                )
+            if not hasattr(self, "progress_visualizer"):
+                self.progress_visualizer = VisualizationMarkers(
+                    self.cfg.progress_visualizer
+                )
+            if not hasattr(self, "progress_visualizer_full"):
+                self.progress_visualizer_full = VisualizationMarkers(
+                    self.cfg.progress_visualizer_full
                 )
 
             # set their visibility to true
@@ -711,6 +733,8 @@ class BimanualEnv(DirectRLEnv):
             self.left_fingertip_visualizer.set_visibility(True)
             self.right_goal_visualizer.set_visibility(True)
             self.left_goal_visualizer.set_visibility(True)
+            self.progress_visualizer.set_visibility(True)
+            self.progress_visualizer_full.set_visibility(True)
         else:
             if hasattr(self, "pose_visualizer"):
                 self.pose_visualizer.set_visibility(False)
@@ -722,6 +746,10 @@ class BimanualEnv(DirectRLEnv):
                 self.right_goal_visualizer.set_visibility(False)
             if hasattr(self, "left_goal_visualizer"):
                 self.left_goal_visualizer.set_visibility(False)
+            if hasattr(self, "progress_visualizer"):
+                self.progress_visualizer.set_visibility(False)
+            if hasattr(self, "progress_visualizer_full"):
+                self.progress_visualizer_full.set_visibility(False)
 
     def _debug_vis_callback(self, event):
         # Make sure the robot is initialized
@@ -733,34 +761,56 @@ class BimanualEnv(DirectRLEnv):
             translations=base_pos_w,
             orientations=self.robot.data.root_quat_w,
             scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
-            .unsqueeze(0)
+            .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
 
         self.right_fingertip_visualizer.visualize(
             translations=self.right_index_fingertip_position,
             scales=torch.tensor([2.0, 2.0, 2.0], device=self.device)
-            .unsqueeze(0)
+            .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         self.left_fingertip_visualizer.visualize(
             translations=self.left_index_fingertip_position,
             scales=torch.tensor([2.0, 2.0, 2.0], device=self.device)
-            .unsqueeze(0)
+            .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
 
         self.right_goal_visualizer.visualize(
             translations=self.right_goal_position,
             scales=torch.tensor([2.0, 2.0, 2.0], device=self.device)
-            .unsqueeze(0)
+            .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         self.left_goal_visualizer.visualize(
             translations=self.left_goal_position,
             scales=torch.tensor([2.0, 2.0, 2.0], device=self.device)
-            .unsqueeze(0)
+            .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
+        )
+
+        # Growing bar to show progress
+        # Full bar to show max progress
+        # Make growing bar thicker
+        progress_frac = self.episode_length_buf / self.max_episode_length
+        progress_full = torch.ones_like(progress_frac)
+        progress_pos = self.robot_position + torch.tensor(
+            [0.0, 0.0, 1.1], device=self.device
+        ).unsqueeze(dim=0)
+        MAX_SCALE = 50
+        progress_scale = torch.ones_like(progress_pos) * 0.4
+        progress_scale[:, 1] = progress_frac * MAX_SCALE
+        self.progress_visualizer.visualize(
+            translations=progress_pos,
+            scales=progress_scale,
+        )
+        progress_scale_full = torch.ones_like(progress_pos) * 0.2
+        progress_scale_full[:, 1] = progress_full * MAX_SCALE
+        self.progress_visualizer_full.visualize(
+            translations=progress_pos,
+            scales=progress_scale_full,
         )
 
     #### DEBUG END ####
@@ -809,6 +859,10 @@ class BimanualEnv(DirectRLEnv):
             f"Table position shape: {self.table.data.body_pos_w.shape}"
         )
         return self.table.data.body_pos_w[:, 0]
+
+    @property
+    def robot_position(self) -> torch.Tensor:
+        return self.robot.data.body_pos_w[:, 0]
 
     @property
     def right_fingertip_positions(self) -> torch.Tensor:

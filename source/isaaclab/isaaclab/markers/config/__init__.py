@@ -140,3 +140,14 @@ SPHERE_MARKER_CFG = VisualizationMarkersCfg(
     }
 )
 """Configuration for the sphere marker."""
+
+CYLINDER_MARKER_CFG = VisualizationMarkersCfg(
+    markers={
+        "cylinder": sim_utils.CylinderCfg(
+            radius=0.01,
+            height=0.02,
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),
+        ),
+    }
+)
+"""Configuration for the cylinder marker."""
