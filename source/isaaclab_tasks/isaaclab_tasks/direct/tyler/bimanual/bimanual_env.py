@@ -621,21 +621,32 @@ class BimanualEnv(DirectRLEnv):
         )
 
     def _apply_action(self):
+        import time
+
         # Step fabric
+        start_step_fabric_time = time.time()
         self.fabric_cuda_graph.replay()
         self.fabric_q.copy_(self.fabric_q_new)
         self.fabric_qd.copy_(self.fabric_qd_new)
         self.fabric_qdd.copy_(self.fabric_qdd_new)
+        end_step_fabric_time = time.time()
+        print(f"Time taken for step_fabric: {end_step_fabric_time - start_step_fabric_time}")
 
+        start_convert_fabric_to_isaaclab_time = time.time()
         position_targets = fabric_to_isaaclab_joint_order_torch(self.fabric_q.clone())
+        end_convert_fabric_to_isaaclab_time = time.time()
+        print(f"Time taken for convert_fabric_to_isaaclab: {end_convert_fabric_to_isaaclab_time - start_convert_fabric_to_isaaclab_time}")
 
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
             position_targets[:] = 0.0
 
+        start_set_joint_position_target_time = time.time()
         self.robot.set_joint_position_target(
-            position_targets, joint_ids=self._joint_dof_idxs
+            position_targets
         )
+        end_set_joint_position_target_time = time.time()
+        print(f"Time taken for set_joint_position_target: {end_set_joint_position_target_time - start_set_joint_position_target_time}")
 
     def _compute_intermediate_values(self):
         pass
@@ -843,7 +854,7 @@ class BimanualEnv(DirectRLEnv):
         self.robot.write_root_velocity_to_sim(default_velocity, env_ids=env_ids)
         self.robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
         self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
-        self.robot.set_joint_position_target(joint_pos, joint_ids=self._joint_dof_idxs, env_ids=env_ids)
+        self.robot.set_joint_position_target(joint_pos, env_ids=env_ids)
 
         self.object.write_root_pose_to_sim(
             self._sample_initial_object_pose(env_ids), env_ids=env_ids

@@ -326,27 +326,47 @@ class DirectRLEnv(gym.Env):
         Returns:
             A tuple containing the observations, rewards, resets (terminated and truncated) and extras.
         """
+        import time
+        if not hasattr(self, "last_start_step_time"):
+            self.last_start_step_time = time.time()
+        start_step_time = time.time()
+        print(f"Time taken for step: {start_step_time - self.last_start_step_time}")
+        self.last_start_step_time = start_step_time
+
         action = action.to(self.device)
         # add action noise
         if self.cfg.action_noise_model:
             action = self._action_noise_model.apply(action)
 
         # process actions
+        start_pre_physics_step_time = time.time()
         self._pre_physics_step(action)
+        end_pre_physics_step_time = time.time()
+        print(f"Time taken for pre_physics_step: {end_pre_physics_step_time - start_pre_physics_step_time}")
 
         # check if we need to do rendering within the physics loop
         # note: checked here once to avoid multiple checks within the loop
         is_rendering = self.sim.has_gui() or self.sim.has_rtx_sensors()
 
         # perform physics stepping
+        start_sim_step_loop_time = time.time()
         for _ in range(self.cfg.decimation):
             self._sim_step_counter += 1
             # set actions into buffers
+            start_apply_action_time = time.time()
             self._apply_action()
+            end_apply_action_time = time.time()
+            print(f"Time taken for apply_action: {end_apply_action_time - start_apply_action_time}")
             # set actions into simulator
+            start_write_data_to_sim_time = time.time()
             self.scene.write_data_to_sim()
+            end_write_data_to_sim_time = time.time()
+            print(f"Time taken for write_data_to_sim: {end_write_data_to_sim_time - start_write_data_to_sim_time}")
             # simulate
+            start_sim_step_time = time.time()
             self.sim.step(render=False)
+            end_sim_step_time = time.time()
+            print(f"Time taken for sim_step: {end_sim_step_time - start_sim_step_time}")
             # render between steps only if the GUI or an RTX sensor needs it
             # note: we assume the render interval to be the shortest accepted rendering interval.
             #    If a camera needs rendering at a faster frequency, this will lead to unexpected behavior.
@@ -354,17 +374,27 @@ class DirectRLEnv(gym.Env):
                 self.sim.render()
             # update buffers at sim dt
             self.scene.update(dt=self.physics_dt)
+        end_sim_step_loop_time = time.time()
+        print(f"Time taken for sim_step loop: {end_sim_step_loop_time - start_sim_step_loop_time}")
 
         # post-step:
         # -- update env counters (used for curriculum generation)
         self.episode_length_buf += 1  # step in current episode (per env)
         self.common_step_counter += 1  # total step (common for all envs)
 
+        start_get_dones_time = time.time()
         self.reset_terminated[:], self.reset_time_outs[:] = self._get_dones()
+        end_get_dones_time = time.time()
+        print(f"Time taken for get_dones: {end_get_dones_time - start_get_dones_time}")
+
         self.reset_buf = self.reset_terminated | self.reset_time_outs
+        start_get_rewards_time = time.time()
         self.reward_buf = self._get_rewards()
+        end_get_rewards_time = time.time()
+        print(f"Time taken for get_rewards: {end_get_rewards_time - start_get_rewards_time}")
 
         # -- reset envs that terminated/timed-out and log the episode information
+        start_reset_idx_time = time.time()
         reset_env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(reset_env_ids) > 0:
             self._reset_idx(reset_env_ids)
@@ -374,21 +404,35 @@ class DirectRLEnv(gym.Env):
             # if sensors are added to the scene, make sure we render to reflect changes in reset
             if self.sim.has_rtx_sensors() and self.cfg.rerender_on_reset:
                 self.sim.render()
+        end_reset_idx_time = time.time()
+        print(f"Time taken for reset_idx: {end_reset_idx_time - start_reset_idx_time}")
 
+        start_interval_event_time = time.time()
         # post-step: step interval event
         if self.cfg.events:
             if "interval" in self.event_manager.available_modes:
                 self.event_manager.apply(mode="interval", dt=self.step_dt)
+        end_interval_event_time = time.time()
+        print(f"Time taken for interval_event: {end_interval_event_time - start_interval_event_time}")
 
+        start_get_observations_time = time.time()
         # update observations
         self.obs_buf = self._get_observations()
+        end_get_observations_time = time.time()
+        print(f"Time taken for get_observations: {end_get_observations_time - start_get_observations_time}")
 
+        start_add_observation_noise_time = time.time()
         # add observation noise
         # note: we apply no noise to the state space (since it is used for critic networks)
         if self.cfg.observation_noise_model:
             self.obs_buf["policy"] = self._observation_noise_model.apply(self.obs_buf["policy"])
+        end_add_observation_noise_time = time.time()
+        print(f"Time taken for add_observation_noise: {end_add_observation_noise_time - start_add_observation_noise_time}")
 
         # return observations, rewards, resets and extras
+        end_step_time = time.time()
+        print(f"Time taken for step: {end_step_time - start_step_time}")
+        print()
         return self.obs_buf, self.reward_buf, self.reset_terminated, self.reset_time_outs, self.extras
 
     @staticmethod
