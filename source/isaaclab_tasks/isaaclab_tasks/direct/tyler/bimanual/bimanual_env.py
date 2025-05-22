@@ -632,11 +632,11 @@ class BimanualEnv(DirectRLEnv):
 
         # Step fabric
         # start_step_fabric_time = time.time()
-        # with torch.no_grad():
-        #     self.fabric_cuda_graph.replay()
-        #     self.fabric_q.copy_(self.fabric_q_new)
-        #     self.fabric_qd.copy_(self.fabric_qd_new)
-        #     self.fabric_qdd.copy_(self.fabric_qdd_new)
+        with torch.no_grad():
+            self.fabric_cuda_graph.replay()
+            self.fabric_q.copy_(self.fabric_q_new)
+            self.fabric_qd.copy_(self.fabric_qd_new)
+            self.fabric_qdd.copy_(self.fabric_qdd_new)
         # end_step_fabric_time = time.time()
         # # print(f"Time taken for step_fabric: {end_step_fabric_time - start_step_fabric_time}")
 
