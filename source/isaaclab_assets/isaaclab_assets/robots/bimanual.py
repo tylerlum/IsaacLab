@@ -57,10 +57,6 @@ BIMANUAL_CFG = ArticulationCfg(
             solver_velocity_iteration_count=4,
             fix_root_link=True,  # TODO: This isn't actually needed if the USD already has a fixed base
         ),
-        visual_material=sim_utils.PreviewSurfaceCfg(
-            diffuse_color=GREEN_RGB,  # TODO: This actually doesn't work, so just change the USD: https://github.com/isaac-sim/IsaacLab/issues/622
-            roughness=0.0,
-        ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 0.0),
