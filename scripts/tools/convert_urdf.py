@@ -36,7 +36,9 @@ import argparse
 from isaaclab.app import AppLauncher
 
 # add argparse arguments
-parser = argparse.ArgumentParser(description="Utility to convert a URDF into USD format.")
+parser = argparse.ArgumentParser(
+    description="Utility to convert a URDF into USD format."
+)
 parser.add_argument("input", type=str, help="The path to the input URDF file.")
 parser.add_argument("output", type=str, help="The path to store the USD file.")
 parser.add_argument(
@@ -45,7 +47,27 @@ parser.add_argument(
     default=False,
     help="Consolidate links that are connected by fixed joints.",
 )
-parser.add_argument("--fix-base", action="store_true", default=False, help="Fix the base to where it is imported.")
+parser.add_argument(
+    "--fix-base",
+    action="store_true",
+    default=False,
+    help="Fix the base to where it is imported.",
+)
+parser.add_argument(
+    "--root-link-name", type=str, default=None, help="The name of the root link."
+)
+parser.add_argument(
+    "--make-instanceable",
+    action="store_true",
+    default=False,
+    help="Make the asset instanceable.",
+)
+parser.add_argument(
+    "--collision-from-visuals",
+    action="store_true",
+    default=False,
+    help="Create collision geometry from visuals.",
+)
 parser.add_argument(
     "--joint-stiffness",
     type=float,
@@ -53,10 +75,7 @@ parser.add_argument(
     help="The stiffness of the joint drive.",
 )
 parser.add_argument(
-    "--joint-damping",
-    type=float,
-    default=1.0,
-    help="The damping of the joint drive.",
+    "--joint-damping", type=float, default=1.0, help="The damping of the joint drive."
 )
 parser.add_argument(
     "--joint-target-type",
@@ -64,6 +83,19 @@ parser.add_argument(
     default="position",
     choices=["position", "velocity", "none"],
     help="The type of control to use for the joint drive.",
+)
+parser.add_argument(
+    "--collision-type",
+    type=str,
+    default="convex_hull",
+    choices=["convex_hull", "convex_decomposition"],
+    help="The type of collision geometry to create.",
+)
+parser.add_argument(
+    "--self-collision",
+    action="store_true",
+    default=False,
+    help="Enable self collision.",
 )
 
 # append AppLauncher cli args
@@ -107,8 +139,10 @@ def main():
         usd_dir=os.path.dirname(dest_path),
         usd_file_name=os.path.basename(dest_path),
         fix_base=args_cli.fix_base,
+        root_link_name=args_cli.root_link_name,
         merge_fixed_joints=args_cli.merge_joints,
         force_usd_conversion=True,
+        make_instanceable=args_cli.make_instanceable,
         joint_drive=UrdfConverterCfg.JointDriveCfg(
             gains=UrdfConverterCfg.JointDriveCfg.PDGainsCfg(
                 stiffness=args_cli.joint_stiffness,
@@ -116,6 +150,9 @@ def main():
             ),
             target_type=args_cli.joint_target_type,
         ),
+        collision_from_visuals=args_cli.collision_from_visuals,
+        collider_type=args_cli.collision_type,
+        self_collision=args_cli.self_collision,
     )
 
     # Print info

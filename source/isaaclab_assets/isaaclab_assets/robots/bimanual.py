@@ -41,10 +41,11 @@ DEFAULT_ALLEGRO_DOF_POS = [
     0.6,
 ]
 
+GREEN_RGB = (0.0, 1.0, 0.0)
 
 BIMANUAL_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/bimanual_kuka_allegro_v4/usd/bimanual_kuka_allegro.usd",
+        usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/bimanual_kuka_allegro_v9/usd/bimanual_kuka_allegro.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=True,
@@ -54,7 +55,11 @@ BIMANUAL_CFG = ArticulationCfg(
             enabled_self_collisions=False,
             solver_position_iteration_count=8,
             solver_velocity_iteration_count=4,
-            fix_root_link=True,
+            fix_root_link=True,  # TODO: This isn't actually needed if the USD already has a fixed base
+        ),
+        visual_material=sim_utils.PreviewSurfaceCfg(
+            diffuse_color=GREEN_RGB,  # TODO: This actually doesn't work, so just change the USD: https://github.com/isaac-sim/IsaacLab/issues/622
+            roughness=0.0,
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
@@ -214,5 +219,7 @@ BIMANUAL_CFG = ArticulationCfg(
     },
 )
 
+# BLUE_BIMANUAL_CFG = BIMANUAL_CFG.copy()
+# BLUE_BIMANUAL_CFG.spawn.usd_path = f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/bimanual_kuka_allegro_v4/usd/bimanual_kuka_allegro_blue.usd"
 
 """Configuration for the Bimanual robot consisting of Kuka arms and Allegro hands."""

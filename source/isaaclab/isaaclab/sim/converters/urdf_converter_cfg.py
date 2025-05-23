@@ -111,7 +111,7 @@ class UrdfConverterCfg(AssetConverterBaseCfg):
     The parameter can be set to ``None`` for URDFs without joints.
     """
 
-    collision_from_visuals = False
+    collision_from_visuals: bool = False
     """Whether to create collision geometry from visual geometry. Defaults to False."""
 
     collider_type: Literal["convex_hull", "convex_decomposition"] = "convex_hull"

@@ -69,11 +69,54 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
 )
 import wandb
 
+from isaaclab.terrains.terrain_importer import TerrainImporter
+
+class AdjustedTerrainImporter(TerrainImporter):
+    def import_ground_plane(self, name: str, size: tuple[float, float] = (2.0e6, 2.0e6)):
+        """Add a plane to the terrain importer.
+
+        Args:
+            name: The name of the imported terrain. This name is used to create the USD prim
+                corresponding to the terrain.
+            size: The size of the plane. Defaults to (2.0e6, 2.0e6).
+
+        Raises:
+            ValueError: If a terrain with the same name already exists.
+        """
+        # create prim path for the terrain
+        prim_path = self.cfg.prim_path + f"/{name}"
+        # check if key exists
+        if prim_path in self.terrain_prim_paths:
+            raise ValueError(
+                f"A terrain with the name '{name}' already exists. Existing terrains: {', '.join(self.terrain_names)}."
+            )
+        # store the mesh name
+        self.terrain_prim_paths.append(prim_path)
+
+        # obtain ground plane color from the configured visual material
+        color = (0.0, 0.0, 0.0)
+        if self.cfg.visual_material is not None:
+            material = self.cfg.visual_material.to_dict()
+            # defaults to the `GroundPlaneCfg` color if diffuse color attribute is not found
+            if "diffuse_color" in material:
+                color = material["diffuse_color"]
+            else:
+                pass
+                # omni.log.warn(
+                #     "Visual material specified for ground plane but no diffuse color found."
+                #     " Using default color: (0.0, 0.0, 0.0)"
+                # )
+
+        # get the mesh
+        ground_plane_cfg = sim_utils.GroundPlaneCfg(physics_material=self.cfg.physics_material, size=size, color=color)
+        ground_plane_cfg.func(prim_path, ground_plane_cfg, translation=(0.0, 0.0, -1.0))
+
+
 FINGER_GOALS = False
 FILTER_ARM_ACTIONS = False
 
 USE_FABRIC = True
-USE_FABRIC_CUDA_GRAPH = False
+USE_FABRIC_CUDA_GRAPH = True
 
 VISUALIZE_FABRIC_SPHERES = False
 if VISUALIZE_FABRIC_SPHERES:
@@ -138,6 +181,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             texture_scale=(0.25, 0.25),
         ),
         debug_vis=False,
+        class_type=AdjustedTerrainImporter,
     )
 
     # scene
@@ -197,7 +241,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
                 collision_enabled=False,
             ),
             visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=GREEN_RGB,
+                diffuse_color=GREEN_RGB,  # TODO: This actually doesn't work, so just change the USD: https://github.com/isaac-sim/IsaacLab/issues/622
                 roughness=0.0,
             ),
         ),
@@ -356,6 +400,7 @@ class AverageMeter(nn.Module):
 
     def get_mean(self) -> np.ndarray:
         return self.mean.squeeze(0).cpu().numpy()
+
 
 
 class BimanualEnv(DirectRLEnv):
@@ -714,9 +759,23 @@ class BimanualEnv(DirectRLEnv):
                 print(f"fabric_qd: {self.fabric_qd}")
                 print("*" * 100)
 
-            position_targets = fabric_to_isaaclab_joint_order_torch(
-                self.fabric_q.detach().clone()
+            # TODO: HACK
+            position_targets = self.robot.data.default_joint_pos.clone() + sample_uniform_tensor(
+                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.02,
+                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.02,
+                N=self.num_envs,
             )
+            # position_targets = fabric_to_isaaclab_joint_order_torch(
+            #     self.fabric_q.detach().clone()
+            # )
+
+            # TODO: HACK
+            position_targets = self.robot.data.default_joint_pos.clone() + sample_uniform_tensor(
+                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.02,
+                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.02,
+                N=self.num_envs,
+            )
+
             # TODO: Remove
             print("~" * 100)
             print(f"position_targets: {position_targets}")
@@ -758,6 +817,13 @@ class BimanualEnv(DirectRLEnv):
 
             position_targets = torch.cat(
                 [arm_position_targets, hand_position_targets], dim=-1
+            )
+
+            # TODO: HACK
+            position_targets = self.robot.data.default_joint_pos.clone() + sample_uniform_tensor(
+                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.02,
+                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.02,
+                N=self.num_envs,
             )
 
         # TODO: Remove
@@ -1027,10 +1093,10 @@ class BimanualEnv(DirectRLEnv):
         joint_vel_limits = self.robot.data.soft_joint_vel_limits[env_ids].clone()
         joint_vel = joint_vel.clamp_(-joint_vel_limits, joint_vel_limits)
 
-        self.robot.write_root_pose_to_sim(
-            torch.cat([default_position, default_orientation], dim=-1), env_ids=env_ids
-        )
-        self.robot.write_root_velocity_to_sim(default_velocity, env_ids=env_ids)
+        # self.robot.write_root_pose_to_sim(
+        #     torch.cat([default_position, default_orientation], dim=-1), env_ids=env_ids
+        # )
+        # self.robot.write_root_velocity_to_sim(default_velocity, env_ids=env_ids)
         self.robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
         self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
         self.robot.set_joint_position_target(
