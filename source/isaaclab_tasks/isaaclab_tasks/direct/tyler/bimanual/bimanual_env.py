@@ -755,6 +755,14 @@ class BimanualEnv(DirectRLEnv):
                 [arm_position_targets, hand_position_targets], dim=-1
             )
 
+        if (self.robot.data.joint_pos[:14] - position_targets[:14]).abs().max() > 0.1:
+            print("*" * 100)
+            print(f"position_targets[:14]: {position_targets[:14]}")
+            print(f"self.robot.data.joint_pos[:14]: {self.robot.data.joint_pos[:14]}")
+            print(f"diff: {self.robot.data.joint_pos[:14] - position_targets[:14]}")
+            print(f"diff > 0.1: {(self.robot.data.joint_pos[:14] - position_targets[:14]).abs() > 0.1}")
+            print("*" * 100)
+
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
             position_targets[:] = 0.0
