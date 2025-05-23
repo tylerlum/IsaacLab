@@ -770,13 +770,6 @@ class BimanualEnv(DirectRLEnv):
             #     self.fabric_q.detach().clone()
             # )
 
-            # TODO: HACK
-            position_targets = self.robot.data.default_joint_pos.clone() + sample_uniform_tensor(
-                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.02,
-                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.02,
-                N=self.num_envs,
-            )
-
             # TODO: Remove
             # print("~" * 100)
             # print(f"position_targets: {position_targets}")
@@ -853,6 +846,9 @@ class BimanualEnv(DirectRLEnv):
         if DISABLE_ACTIONS:
             position_targets[:] = 0.0
 
+        print(f"self.robot.data.joint_pos: {self.robot.data.joint_pos}")
+        print(f"position_targets: {position_targets}")
+        print()
         self.robot.set_joint_position_target(
             position_targets, joint_ids=self._joint_idxs
         )
