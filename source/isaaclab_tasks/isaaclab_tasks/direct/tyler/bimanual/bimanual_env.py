@@ -381,10 +381,10 @@ class BimanualEnv(DirectRLEnv):
 
     def _setup_robot_idxs(self):
         # Robot joint idxs
-        self._joint_dof_idxs, self._joint_dof_names = self.robot.find_joints(".*")
+        self._joint_idxs, self._joint_names = self.robot.find_joints(".*")
         print("!" * 100)
-        print(f"len(self._joint_dof_idxs): {len(self._joint_dof_idxs)}")
-        print(f"self._joint_dof_names: {self._joint_dof_names}")
+        print(f"len(self._joint_idxs): {len(self._joint_idxs)}")
+        print(f"self._joint_names: {self._joint_names}")
         print("!" * 100)
 
         # Robot link idxs
@@ -658,11 +658,22 @@ class BimanualEnv(DirectRLEnv):
                 )
             )
             self.fabric_steps_counter = 0
+            # TODO: Remove
+            print("!" * 100)
+            print(f"fabric_palm_target: {self.fabric_palm_target}")
+            print(f"fabric_hand_target: {self.fabric_hand_target}")
+            print("!" * 100)
 
     def _apply_action(self):
         if USE_FABRIC:
             if self.fabric_steps_counter < NUM_FABRIC_DECIMATION:
                 self.fabric_steps_counter += 1
+                # TODO: Remove
+                print("*" * 100)
+                print(f"fabric_steps_counter: {self.fabric_steps_counter}")
+                print("BEFORE")
+                print(f"fabric_q: {self.fabric_q}")
+                print(f"fabric_qd: {self.fabric_qd}")
 
                 # Step fabric
                 if USE_FABRIC_CUDA_GRAPH:
@@ -692,19 +703,28 @@ class BimanualEnv(DirectRLEnv):
                             FABRIC_DT,
                         )
                     )
+                # TODO: Remove
+                print("AFTER")
+                print(f"fabric_q: {self.fabric_q}")
+                print(f"fabric_qd: {self.fabric_qd}")
+                print("*" * 100)
 
             position_targets = fabric_to_isaaclab_joint_order_torch(
                 self.fabric_q.clone()
             )
+            # TODO: Remove
+            print("~" * 100)
+            print(f"position_targets: {position_targets}")
+            print("~" * 100)
         else:
             # Arm
             ABSOLUTE_ARM_CONTROL = False
             if ABSOLUTE_ARM_CONTROL:
                 arm_action_offset = self.robot.data.default_joint_pos[
-                    :, self._joint_dof_idxs
+                    :, self._joint_idxs
                 ][:, :14]
             else:
-                arm_action_offset = self.robot.data.joint_pos[:, self._joint_dof_idxs][
+                arm_action_offset = self.robot.data.joint_pos[:, self._joint_idxs][
                     :, :14
                 ]
             assert arm_action_offset.shape == (self.num_envs, 14), (
@@ -716,7 +736,7 @@ class BimanualEnv(DirectRLEnv):
 
             # Hand
             hand_action_offset = self.robot.data.default_joint_pos[
-                :, self._joint_dof_idxs
+                :, self._joint_idxs
             ][:, 14:]
             hand_position_targets = (
                 self.cfg.hand_action_scale * self.raw_actions[:, 14:]
@@ -740,7 +760,7 @@ class BimanualEnv(DirectRLEnv):
             position_targets[:] = 0.0
 
         self.robot.set_joint_position_target(
-            position_targets, joint_ids=self._joint_dof_idxs
+            position_targets, joint_ids=self._joint_idxs
         )
 
     def _compute_intermediate_values(self):
@@ -987,7 +1007,7 @@ class BimanualEnv(DirectRLEnv):
         self.robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
         self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
         self.robot.set_joint_position_target(
-            joint_pos, joint_ids=self._joint_dof_idxs, env_ids=env_ids
+            joint_pos, joint_ids=self._joint_idxs, env_ids=env_ids
         )
 
         self.object.write_root_pose_to_sim(
