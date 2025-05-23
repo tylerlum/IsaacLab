@@ -102,7 +102,7 @@ ENV_REGEX_NS = "/World/envs/env_.*"
 @configclass
 class BimanualEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 1.0
+    episode_length_s = 1.0  # TODO: Should be 6
     decimation = 2
     arm_action_scale = 0.1
     hand_action_scale = 2.0
