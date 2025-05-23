@@ -32,7 +32,7 @@ from isaaclab.sim.spawners.lights import DomeLightCfg, LightCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
-from isaaclab_assets.robots.bimanual import BIMANUAL_CFG
+from isaaclab_assets.robots.bimanual import BIMANUAL_CFG, BLUE_BIMANUAL_CFG
 from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
     sample_uniform_tensor,
     rescale,
@@ -191,6 +191,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
 
     # robot
     robot: ArticulationCfg = BIMANUAL_CFG.replace(prim_path=f"{ENV_REGEX_NS}/Robot")
+
+    blue_robot: ArticulationCfg = BLUE_BIMANUAL_CFG.replace(prim_path=f"{ENV_REGEX_NS}/Blue_Robot")
 
     # object
     object: RigidObjectCfg = RigidObjectCfg(
@@ -638,6 +640,8 @@ class BimanualEnv(DirectRLEnv):
         # add articulation to scene
         self.robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self.robot
+        self.blue_robot = Articulation(self.cfg.blue_robot)
+        self.scene.articulations["blue_robot"] = self.blue_robot
 
         # add object to scene
         self.object = RigidObject(self.cfg.object)
@@ -850,7 +854,10 @@ class BimanualEnv(DirectRLEnv):
         print(f"position_targets: {position_targets}")
         print()
         self.robot.set_joint_position_target(
-            position_targets, joint_ids=self._joint_idxs
+            position_targets
+        )
+        self.blue_robot.write_joint_position_to_sim(
+            position_targets
         )
 
         end_time = time.time()
@@ -1107,8 +1114,13 @@ class BimanualEnv(DirectRLEnv):
         # self.robot.write_root_velocity_to_sim(default_velocity, env_ids=env_ids)
         self.robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
         self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
+        self.blue_robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
+        self.blue_robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
         self.robot.set_joint_position_target(
-            joint_pos, joint_ids=self._joint_idxs, env_ids=env_ids
+            joint_pos, env_ids=env_ids
+        )
+        self.blue_robot.set_joint_position_target(
+            joint_pos, env_ids=env_ids
         )
 
         self.object.write_root_pose_to_sim(
