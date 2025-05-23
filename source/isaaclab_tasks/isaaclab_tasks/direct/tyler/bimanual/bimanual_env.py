@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 from typing import List
+from live_plotter import FastLivePlotter
 
 import yaml
 from pathlib import Path
@@ -74,7 +75,7 @@ FILTER_ARM_ACTIONS = False
 USE_FABRIC = True
 USE_FABRIC_CUDA_GRAPH = True
 
-VISUALIZE_FABRIC_SPHERES = True
+VISUALIZE_FABRIC_SPHERES = False
 if VISUALIZE_FABRIC_SPHERES:
     NUM_FABRIC_SPHERES = 80
 else:
@@ -105,7 +106,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     decimation = 2
     arm_action_scale = 0.1
     hand_action_scale = 2.0
-    action_space = (11 * 2 if USE_FABRIC else 23 * 2)
+    action_space = 11 * 2 if USE_FABRIC else 23 * 2
     observation_space = (
         136
         + (6 if FINGER_GOALS else 0)
@@ -362,9 +363,13 @@ class BimanualEnv(DirectRLEnv):
 
     def __init__(self, cfg: BimanualEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
-
         self._setup_keyboard()
         self._setup_robot_idxs()
+        self.live_plotter_data = {
+            "actual": [],
+            "cmd": [],
+            "episode_length_counter": [],
+        }
 
         # State
         self._reset_state(env_ids=None)
@@ -710,7 +715,7 @@ class BimanualEnv(DirectRLEnv):
                 print("*" * 100)
 
             position_targets = fabric_to_isaaclab_joint_order_torch(
-                self.fabric_q.clone()
+                self.fabric_q.detach().clone()
             )
             # TODO: Remove
             print("~" * 100)
@@ -735,9 +740,9 @@ class BimanualEnv(DirectRLEnv):
             )
 
             # Hand
-            hand_action_offset = self.robot.data.default_joint_pos[
-                :, self._joint_idxs
-            ][:, 14:]
+            hand_action_offset = self.robot.data.default_joint_pos[:, self._joint_idxs][
+                :, 14:
+            ]
             hand_position_targets = (
                 self.cfg.hand_action_scale * self.raw_actions[:, 14:]
                 + hand_action_offset
@@ -755,14 +760,28 @@ class BimanualEnv(DirectRLEnv):
                 [arm_position_targets, hand_position_targets], dim=-1
             )
 
-        if (self.robot.data.joint_pos[:14] - position_targets[:14]).abs().max() > 0.1:
+        # TODO: Remove
+        if (
+            self.robot.data.joint_pos[0, :14] - position_targets[0, :14]
+        ).abs().max() > 0.1:
             print("*" * 100)
-            print(f"position_targets[:14]: {position_targets[:14]}")
-            print(f"self.robot.data.joint_pos[:14]: {self.robot.data.joint_pos[:14]}")
-            print(f"diff: {self.robot.data.joint_pos[:14] - position_targets[:14]}")
-            print(f"diff > 0.1: {(self.robot.data.joint_pos[:14] - position_targets[:14]).abs() > 0.1}")
+            print(f"position_targets[0, :14]: {position_targets[0, :14]}")
+            print(
+                f"self.robot.data.joint_pos[0, :14]: {self.robot.data.joint_pos[0, :14]}"
+            )
+            print(
+                f"diff: {self.robot.data.joint_pos[0, :14] - position_targets[0, :14]}"
+            )
+            print(
+                f"diff > 0.1: {(self.robot.data.joint_pos[0, :14] - position_targets[0, :14]).abs() > 0.1}"
+            )
             print("*" * 100)
 
+        self.live_plotter_data["actual"].append(
+            self.robot.data.joint_pos[0, :14].cpu().numpy()
+        )
+        self.live_plotter_data["cmd"].append(position_targets[0, :14].cpu().numpy())
+        self.live_plotter_data["episode_length_counter"].append(self.episode_length_buf[0].cpu().numpy())
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
             position_targets[:] = 0.0
@@ -1377,6 +1396,11 @@ class BimanualEnv(DirectRLEnv):
                         func=self._breakpoint_kbc,
                         args=[],
                     ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.S,
+                        func=self._save_kbc,
+                        args=[],
+                    ),
                 ]
             )
         except AttributeError as e:
@@ -1393,6 +1417,24 @@ class BimanualEnv(DirectRLEnv):
     def _breakpoint_kbc(self):
         print("In breakpoint_kbc")
         breakpoint()
+
+    def _save_kbc(self):
+        print("In save_kbc")
+        actual_data = np.stack(self.live_plotter_data["actual"], axis=0)
+        cmd_data = np.stack(self.live_plotter_data["cmd"], axis=0)
+        episode_length_counter = np.array(self.live_plotter_data["episode_length_counter"])
+        N_TIMESTEPS = len(self.live_plotter_data["actual"])
+        assert actual_data.shape == (N_TIMESTEPS, 14)
+        assert cmd_data.shape == (N_TIMESTEPS, 14)
+        assert episode_length_counter.shape == (N_TIMESTEPS,)
+        episode_frac = episode_length_counter / self.max_episode_length
+        assert episode_frac.shape == (N_TIMESTEPS,)
+        plot_data = np.stack([actual_data, cmd_data], axis=0)
+        assert plot_data.shape == (2, N_TIMESTEPS, 14)
+        import datetime
+        output_filename = f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.npz"
+        np.savez(output_filename, plot_data=plot_data, joint_names=self.robot.data.joint_names, episode_frac=episode_frac)
+        print(f"Saved data to {output_filename}")
 
     #### KEYBOARD END ####
 
