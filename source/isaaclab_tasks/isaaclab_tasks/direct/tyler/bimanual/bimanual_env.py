@@ -73,7 +73,7 @@ FINGER_GOALS = False
 FILTER_ARM_ACTIONS = False
 
 USE_FABRIC = True
-USE_FABRIC_CUDA_GRAPH = True
+USE_FABRIC_CUDA_GRAPH = False
 
 VISUALIZE_FABRIC_SPHERES = False
 if VISUALIZE_FABRIC_SPHERES:
@@ -102,7 +102,7 @@ ENV_REGEX_NS = "/World/envs/env_.*"
 @configclass
 class BimanualEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 6.0
+    episode_length_s = 1.0
     decimation = 2
     arm_action_scale = 0.1
     hand_action_scale = 2.0
