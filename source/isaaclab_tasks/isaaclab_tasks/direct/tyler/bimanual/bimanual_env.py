@@ -766,8 +766,8 @@ class BimanualEnv(DirectRLEnv):
 
             # TODO: HACK
             position_targets = self.robot.data.default_joint_pos.clone() + sample_uniform_tensor(
-                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.02,
-                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.02,
+                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.1,
+                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.1,
                 N=self.num_envs,
             )
             # position_targets = fabric_to_isaaclab_joint_order_torch(
@@ -819,8 +819,8 @@ class BimanualEnv(DirectRLEnv):
 
             # TODO: HACK
             position_targets = self.robot.data.default_joint_pos.clone() + sample_uniform_tensor(
-                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.02,
-                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.02,
+                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.1,
+                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.1,
                 N=self.num_envs,
             )
 
