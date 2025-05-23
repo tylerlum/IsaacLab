@@ -116,7 +116,7 @@ FINGER_GOALS = False
 FILTER_ARM_ACTIONS = False
 
 USE_FABRIC = True
-USE_FABRIC_CUDA_GRAPH = True
+USE_FABRIC_CUDA_GRAPH = False
 
 VISUALIZE_FABRIC_SPHERES = False
 if VISUALIZE_FABRIC_SPHERES:
@@ -666,6 +666,8 @@ class BimanualEnv(DirectRLEnv):
         self.cfg.light.func("/World/Light", self.cfg.light)
 
     def _pre_physics_step(self, actions: torch.Tensor):
+        import time
+        start_time = time.time()
         self.prev_raw_actions = self.raw_actions.clone()
         self.raw_actions = actions.clone()
         assert self.raw_actions.shape == self.prev_raw_actions.shape, (
@@ -709,21 +711,20 @@ class BimanualEnv(DirectRLEnv):
             )
             self.fabric_steps_counter = 0
             # TODO: Remove
-            print("!" * 100)
-            print(f"fabric_palm_target: {self.fabric_palm_target}")
-            print(f"fabric_hand_target: {self.fabric_hand_target}")
-            print("!" * 100)
+            # print("!" * 100)
+            # print(f"fabric_palm_target: {self.fabric_palm_target}")
+            # print(f"fabric_hand_target: {self.fabric_hand_target}")
+            # print("!" * 100)
 
-    def _apply_action(self):
         if USE_FABRIC:
             if self.fabric_steps_counter < NUM_FABRIC_DECIMATION:
                 self.fabric_steps_counter += 1
                 # TODO: Remove
-                print("*" * 100)
-                print(f"fabric_steps_counter: {self.fabric_steps_counter}")
-                print("BEFORE")
-                print(f"fabric_q: {self.fabric_q}")
-                print(f"fabric_qd: {self.fabric_qd}")
+                # print("*" * 100)
+                # print(f"fabric_steps_counter: {self.fabric_steps_counter}")
+                # print("BEFORE")
+                # print(f"fabric_q: {self.fabric_q}")
+                # print(f"fabric_qd: {self.fabric_qd}")
 
                 # Step fabric
                 if USE_FABRIC_CUDA_GRAPH:
@@ -754,10 +755,10 @@ class BimanualEnv(DirectRLEnv):
                         )
                     )
                 # TODO: Remove
-                print("AFTER")
-                print(f"fabric_q: {self.fabric_q}")
-                print(f"fabric_qd: {self.fabric_qd}")
-                print("*" * 100)
+                # print("AFTER")
+                # print(f"fabric_q: {self.fabric_q}")
+                # print(f"fabric_qd: {self.fabric_qd}")
+                # print("*" * 100)
 
             # TODO: HACK
             position_targets = self.robot.data.default_joint_pos.clone() + sample_uniform_tensor(
@@ -777,9 +778,9 @@ class BimanualEnv(DirectRLEnv):
             )
 
             # TODO: Remove
-            print("~" * 100)
-            print(f"position_targets: {position_targets}")
-            print("~" * 100)
+            # print("~" * 100)
+            # print(f"position_targets: {position_targets}")
+            # print("~" * 100)
         else:
             # Arm
             ABSOLUTE_ARM_CONTROL = False
@@ -827,21 +828,21 @@ class BimanualEnv(DirectRLEnv):
             )
 
         # TODO: Remove
-        if (
-            self.robot.data.joint_pos[0, :14] - position_targets[0, :14]
-        ).abs().max() > 0.1:
-            print("*" * 100)
-            print(f"position_targets[0, :14]: {position_targets[0, :14]}")
-            print(
-                f"self.robot.data.joint_pos[0, :14]: {self.robot.data.joint_pos[0, :14]}"
-            )
-            print(
-                f"diff: {self.robot.data.joint_pos[0, :14] - position_targets[0, :14]}"
-            )
-            print(
-                f"diff > 0.1: {(self.robot.data.joint_pos[0, :14] - position_targets[0, :14]).abs() > 0.1}"
-            )
-            print("*" * 100)
+        # if (
+        #     self.robot.data.joint_pos[0, :14] - position_targets[0, :14]
+        # ).abs().max() > 0.1:
+        #     print("*" * 100)
+        #     print(f"position_targets[0, :14]: {position_targets[0, :14]}")
+        #     print(
+        #         f"self.robot.data.joint_pos[0, :14]: {self.robot.data.joint_pos[0, :14]}"
+        #     )
+        #     print(
+        #         f"diff: {self.robot.data.joint_pos[0, :14] - position_targets[0, :14]}"
+        #     )
+        #     print(
+        #         f"diff > 0.1: {(self.robot.data.joint_pos[0, :14] - position_targets[0, :14]).abs() > 0.1}"
+        #     )
+        #     print("*" * 100)
 
         self.live_plotter_data["actual"].append(
             self.robot.data.joint_pos[0, :14].cpu().numpy()
@@ -855,6 +856,17 @@ class BimanualEnv(DirectRLEnv):
         self.robot.set_joint_position_target(
             position_targets, joint_ids=self._joint_idxs
         )
+
+        end_time = time.time()
+        print()
+        print("%" * 100)
+        print(f"pre_physics_step time: {end_time - start_time}")
+        print("%" * 100)
+        print()
+
+
+    def _apply_action(self):
+        pass
 
     def _compute_intermediate_values(self):
         pass
