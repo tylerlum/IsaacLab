@@ -765,11 +765,7 @@ class BimanualEnv(DirectRLEnv):
                 # print("*" * 100)
 
             # TODO: HACK
-            position_targets = self.robot.data.default_joint_pos.clone() + sample_uniform_tensor(
-                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.1,
-                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.1,
-                N=self.num_envs,
-            )
+            position_targets = self.sampled_position_targets
             # position_targets = fabric_to_isaaclab_joint_order_torch(
             #     self.fabric_q.detach().clone()
             # )
@@ -818,11 +814,7 @@ class BimanualEnv(DirectRLEnv):
             )
 
             # TODO: HACK
-            position_targets = self.robot.data.default_joint_pos.clone() + sample_uniform_tensor(
-                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.1,
-                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.1,
-                N=self.num_envs,
-            )
+            position_targets = self.sampled_position_targets
 
         # TODO: Remove
         # if (
@@ -1169,6 +1161,12 @@ class BimanualEnv(DirectRLEnv):
                 self.robot.data.joint_pos[:, :14]
             )
 
+            self.sampled_position_targets = self.robot.data.default_joint_pos + sample_uniform_tensor(
+                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.1,
+                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.1,
+                N=self.num_envs,
+            )
+
             if FINGER_GOALS:
                 self.right_goal_position = self._sample_right_goal_position(env_ids)
                 self.left_goal_position = self._sample_left_goal_position(env_ids)
@@ -1201,6 +1199,12 @@ class BimanualEnv(DirectRLEnv):
             self.filtered_arm_position_targets[env_ids] = self.robot.data.joint_pos[
                 env_ids, :14
             ]
+
+            self.sampled_position_targets[env_ids] = self.robot.data.default_joint_pos[env_ids] + sample_uniform_tensor(
+                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.1,
+                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.1,
+                N=len(env_ids),
+            )
 
             if FINGER_GOALS:
                 self.right_goal_position[env_ids] = self._sample_right_goal_position(
