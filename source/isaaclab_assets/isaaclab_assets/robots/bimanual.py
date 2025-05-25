@@ -45,7 +45,7 @@ GREEN_RGB = (0.0, 1.0, 0.0)
 
 BIMANUAL_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/bimanual_kuka_allegro_v14/usd/bimanual_kuka_allegro.usd",
+        usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/bimanual_kuka_allegro_v18/usd/bimanual_kuka_allegro.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=True,
@@ -120,8 +120,8 @@ BIMANUAL_CFG = ArticulationCfg(
             joint_names_expr=[
                 "right_iiwa14_joint_[1-7]",
             ],
-            # effort_limit=300,
-            effort_limit={
+            # effort_limit_sim=300,
+            effort_limit_sim={
                 "right_iiwa14_joint_1": 176,
                 "right_iiwa14_joint_2": 176,
                 "right_iiwa14_joint_3": 110,
@@ -130,7 +130,7 @@ BIMANUAL_CFG = ArticulationCfg(
                 "right_iiwa14_joint_6": 40,
                 "right_iiwa14_joint_7": 40,
             },
-            velocity_limit=10,
+            velocity_limit_sim=10,
             stiffness={
                 "right_iiwa14_joint_1": 600,
                 "right_iiwa14_joint_2": 600,
@@ -158,8 +158,8 @@ BIMANUAL_CFG = ArticulationCfg(
                 "right_ring_joint_[0-3]",
                 "right_thumb_joint_[0-3]",
             ],
-            effort_limit=0.5,
-            velocity_limit=7,
+            effort_limit_sim=0.5,
+            velocity_limit_sim=7,
             stiffness=0.5,
             damping=0.1,
             armature=0,
@@ -168,8 +168,8 @@ BIMANUAL_CFG = ArticulationCfg(
             joint_names_expr=[
                 "left_iiwa14_joint_[1-7]",
             ],
-            # effort_limit=300,
-            effort_limit={
+            # effort_limit_sim=300,
+            effort_limit_sim={
                 "left_iiwa14_joint_1": 176,
                 "left_iiwa14_joint_2": 176,
                 "left_iiwa14_joint_3": 110,
@@ -178,7 +178,7 @@ BIMANUAL_CFG = ArticulationCfg(
                 "left_iiwa14_joint_6": 40,
                 "left_iiwa14_joint_7": 40,
             },
-            velocity_limit=10,
+            velocity_limit_sim=10,
             stiffness={
                 "left_iiwa14_joint_1": 600,
                 "left_iiwa14_joint_2": 600,
@@ -206,8 +206,8 @@ BIMANUAL_CFG = ArticulationCfg(
                 "left_ring_joint_[0-3]",
                 "left_thumb_joint_[0-3]",
             ],
-            effort_limit=0.5,
-            velocity_limit=7,
+            effort_limit_sim=0.5,
+            velocity_limit_sim=7,
             stiffness=0.5,
             damping=0.1,
             armature=0,
