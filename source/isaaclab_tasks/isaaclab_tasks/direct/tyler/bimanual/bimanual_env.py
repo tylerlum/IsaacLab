@@ -842,9 +842,9 @@ class BimanualEnv(DirectRLEnv):
         if DISABLE_ACTIONS:
             position_targets[:] = 0.0
 
-        print(f"self.robot.data.joint_pos: {self.robot.data.joint_pos}")
-        print(f"position_targets: {position_targets}")
-        print()
+        # print(f"self.robot.data.joint_pos: {self.robot.data.joint_pos}")
+        # print(f"position_targets: {position_targets}")
+        # print()
         self.robot.set_joint_position_target(
             position_targets
         )
@@ -853,11 +853,11 @@ class BimanualEnv(DirectRLEnv):
         )
 
         end_time = time.time()
-        print()
-        print("%" * 100)
-        print(f"pre_physics_step time: {end_time - start_time}")
-        print("%" * 100)
-        print()
+        # print()
+        # print("%" * 100)
+        # print(f"pre_physics_step time: {end_time - start_time}")
+        # print("%" * 100)
+        # print()
 
 
     def _apply_action(self):
