@@ -33,6 +33,7 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab_assets.robots.bimanual import BIMANUAL_CFG, BLUE_BIMANUAL_CFG
+from isaaclab_tasks.direct.tyler.bimanual.utils.average_meter import AverageMeter
 from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
     sample_uniform_tensor,
     rescale,
@@ -71,8 +72,11 @@ import wandb
 
 from isaaclab.terrains.terrain_importer import TerrainImporter
 
+
 class AdjustedTerrainImporter(TerrainImporter):
-    def import_ground_plane(self, name: str, size: tuple[float, float] = (2.0e6, 2.0e6)):
+    def import_ground_plane(
+        self, name: str, size: tuple[float, float] = (2.0e6, 2.0e6)
+    ):
         """Add a plane to the terrain importer.
 
         Args:
@@ -108,7 +112,9 @@ class AdjustedTerrainImporter(TerrainImporter):
                 # )
 
         # get the mesh
-        ground_plane_cfg = sim_utils.GroundPlaneCfg(physics_material=self.cfg.physics_material, size=size, color=color)
+        ground_plane_cfg = sim_utils.GroundPlaneCfg(
+            physics_material=self.cfg.physics_material, size=size, color=color
+        )
         ground_plane_cfg.func(prim_path, ground_plane_cfg, translation=(0.0, 0.0, -1.0))
 
 
@@ -120,7 +126,7 @@ USE_FABRIC_CUDA_GRAPH = False
 
 VISUALIZE_FABRIC_SPHERES = False
 if VISUALIZE_FABRIC_SPHERES:
-    NUM_FABRIC_SPHERES = 80
+    NUM_FABRIC_SPHERES = 38
 else:
     NUM_FABRIC_SPHERES = 0
 
@@ -192,7 +198,9 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     # robot
     robot: ArticulationCfg = BIMANUAL_CFG.replace(prim_path=f"{ENV_REGEX_NS}/Robot")
 
-    blue_robot: ArticulationCfg = BLUE_BIMANUAL_CFG.replace(prim_path=f"{ENV_REGEX_NS}/Blue_Robot")
+    blue_robot: ArticulationCfg = BLUE_BIMANUAL_CFG.replace(
+        prim_path=f"{ENV_REGEX_NS}/Blue_Robot"
+    )
 
     # object
     object: RigidObjectCfg = RigidObjectCfg(
@@ -372,39 +380,6 @@ def assert_equals(a, b):
     assert a == b, f"a: {a} != b: {b}"
 
 
-class AverageMeter(nn.Module):
-    def __init__(self, in_shape: int = 1, max_size: int = 1000) -> None:
-        super().__init__()
-        self.max_size = max_size
-
-        self.current_size = 0
-        self.register_buffer("mean", torch.zeros(in_shape, dtype=torch.float32))
-
-    def update(self, values: torch.Tensor) -> None:
-        assert len(values.shape) == 1, f"values.shape: {values.shape}"
-        size = values.size()[0]
-        if size == 0:
-            return
-
-        new_mean = torch.mean(values.float(), dim=0)
-        size = np.clip(size, 0, self.max_size)
-        old_size = min(self.max_size - size, self.current_size)
-        size_sum = old_size + size
-        self.current_size = size_sum
-        self.mean = (self.mean * old_size + new_mean * size) / size_sum
-
-    def clear(self) -> None:
-        self.current_size = 0
-        self.mean.fill_(0.0)
-
-    def __len__(self) -> int:
-        return self.current_size
-
-    def get_mean(self) -> np.ndarray:
-        return self.mean.squeeze(0).cpu().numpy()
-
-
-
 class BimanualEnv(DirectRLEnv):
     cfg: BimanualEnvCfg
 
@@ -417,6 +392,7 @@ class BimanualEnv(DirectRLEnv):
             "cmd": [],
             "episode_length_counter": [],
         }
+        self._setup_sanity_checks()
 
         # State
         self._reset_state(env_ids=None)
@@ -430,6 +406,13 @@ class BimanualEnv(DirectRLEnv):
 
         # Debug
         self.set_debug_vis(self.cfg.debug_vis)
+
+    def _setup_sanity_checks(self):
+        assert np.isclose(
+            self.cfg.decimation * self.cfg.sim.dt, FABRIC_DT * NUM_FABRIC_DECIMATION
+        ), (
+            f"self.cfg.decimation * self.cfg.sim.dt: {self.cfg.decimation * self.cfg.sim.dt} != FABRIC_DT * NUM_FABRIC_DECIMATION: {FABRIC_DT * NUM_FABRIC_DECIMATION}"
+        )
 
     def _setup_robot_idxs(self):
         # Robot joint idxs
@@ -671,6 +654,7 @@ class BimanualEnv(DirectRLEnv):
 
     def _pre_physics_step(self, actions: torch.Tensor):
         import time
+
         start_time = time.time()
         self.prev_raw_actions = self.raw_actions.clone()
         self.raw_actions = actions.clone()
@@ -765,10 +749,10 @@ class BimanualEnv(DirectRLEnv):
                 # print("*" * 100)
 
             # TODO: HACK
-            position_targets = self.sampled_position_targets
-            # position_targets = fabric_to_isaaclab_joint_order_torch(
-            #     self.fabric_q.detach().clone()
-            # )
+            # position_targets = self.sampled_position_targets
+            position_targets = fabric_to_isaaclab_joint_order_torch(
+                self.fabric_q.detach().clone()
+            )
 
             # TODO: Remove
             # print("~" * 100)
@@ -814,7 +798,7 @@ class BimanualEnv(DirectRLEnv):
             )
 
             # TODO: HACK
-            position_targets = self.sampled_position_targets
+            # position_targets = self.sampled_position_targets
 
         # TODO: Remove
         # if (
@@ -837,7 +821,9 @@ class BimanualEnv(DirectRLEnv):
             self.robot.data.joint_pos[0, :14].cpu().numpy()
         )
         self.live_plotter_data["cmd"].append(position_targets[0, :14].cpu().numpy())
-        self.live_plotter_data["episode_length_counter"].append(self.episode_length_buf[0].cpu().numpy())
+        self.live_plotter_data["episode_length_counter"].append(
+            self.episode_length_buf[0].cpu().numpy()
+        )
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
             position_targets[:] = 0.0
@@ -845,12 +831,8 @@ class BimanualEnv(DirectRLEnv):
         # print(f"self.robot.data.joint_pos: {self.robot.data.joint_pos}")
         # print(f"position_targets: {position_targets}")
         # print()
-        self.robot.set_joint_position_target(
-            position_targets
-        )
-        self.blue_robot.write_joint_position_to_sim(
-            position_targets
-        )
+        self.robot.set_joint_position_target(position_targets)
+        self.blue_robot.write_joint_position_to_sim(position_targets)
 
         end_time = time.time()
         # print()
@@ -858,7 +840,6 @@ class BimanualEnv(DirectRLEnv):
         # print(f"pre_physics_step time: {end_time - start_time}")
         # print("%" * 100)
         # print()
-
 
     def _apply_action(self):
         pass
@@ -1108,12 +1089,8 @@ class BimanualEnv(DirectRLEnv):
         self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
         self.blue_robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
         self.blue_robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
-        self.robot.set_joint_position_target(
-            joint_pos, env_ids=env_ids
-        )
-        self.blue_robot.set_joint_position_target(
-            joint_pos, env_ids=env_ids
-        )
+        self.robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+        self.blue_robot.set_joint_position_target(joint_pos, env_ids=env_ids)
 
         self.object.write_root_pose_to_sim(
             self._sample_initial_object_pose(env_ids), env_ids=env_ids
@@ -1161,10 +1138,13 @@ class BimanualEnv(DirectRLEnv):
                 self.robot.data.joint_pos[:, :14]
             )
 
-            self.sampled_position_targets = self.robot.data.default_joint_pos + sample_uniform_tensor(
-                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.1,
-                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.1,
-                N=self.num_envs,
+            self.sampled_position_targets = (
+                self.robot.data.default_joint_pos
+                + sample_uniform_tensor(
+                    low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.1,
+                    high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.1,
+                    N=self.num_envs,
+                )
             )
 
             if FINGER_GOALS:
@@ -1200,7 +1180,9 @@ class BimanualEnv(DirectRLEnv):
                 env_ids, :14
             ]
 
-            self.sampled_position_targets[env_ids] = self.robot.data.default_joint_pos[env_ids] + sample_uniform_tensor(
+            self.sampled_position_targets[env_ids] = self.robot.data.default_joint_pos[
+                env_ids
+            ] + sample_uniform_tensor(
                 low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.1,
                 high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.1,
                 N=len(env_ids),
@@ -1512,7 +1494,9 @@ class BimanualEnv(DirectRLEnv):
         print("In save_kbc")
         actual_data = np.stack(self.live_plotter_data["actual"], axis=0)
         cmd_data = np.stack(self.live_plotter_data["cmd"], axis=0)
-        episode_length_counter = np.array(self.live_plotter_data["episode_length_counter"])
+        episode_length_counter = np.array(
+            self.live_plotter_data["episode_length_counter"]
+        )
         N_TIMESTEPS = len(self.live_plotter_data["actual"])
         assert actual_data.shape == (N_TIMESTEPS, 14)
         assert cmd_data.shape == (N_TIMESTEPS, 14)
@@ -1522,8 +1506,14 @@ class BimanualEnv(DirectRLEnv):
         plot_data = np.stack([actual_data, cmd_data], axis=0)
         assert plot_data.shape == (2, N_TIMESTEPS, 14)
         import datetime
+
         output_filename = f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.npz"
-        np.savez(output_filename, plot_data=plot_data, joint_names=self.robot.data.joint_names, episode_frac=episode_frac)
+        np.savez(
+            output_filename,
+            plot_data=plot_data,
+            joint_names=self.robot.data.joint_names,
+            episode_frac=episode_frac,
+        )
         print(f"Saved data to {output_filename}")
 
     #### KEYBOARD END ####
