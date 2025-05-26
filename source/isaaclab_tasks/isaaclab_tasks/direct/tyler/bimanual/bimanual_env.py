@@ -555,8 +555,8 @@ class BimanualEnv(DirectRLEnv):
 
         # Compute palm poses at default joint positions
         default_palm_target = np.array(
-            [0.7298, -0.2469, 0.5738, 2.25930292, 0.86978541, 1.86671697] +
-            [0.7298, 0.2469, 0.5738, -2.25930299, 0.86978536, -1.86671716],
+            [0.7298, -0.2469, 0.5738, 2.25930292, 0.86978541, 1.86671697]
+            + [0.7298, 0.2469, 0.5738, -2.25930299, 0.86978536, -1.86671716],
         )
         self.fabric_palm_target = (
             torch.from_numpy(default_palm_target)
@@ -705,24 +705,50 @@ class BimanualEnv(DirectRLEnv):
             # TODO: HACK REMOVE
             self.raw_actions[:] = self.sampled_raw_actions
 
-            self.fabric_palm_target.copy_(
-                rescale(
-                    values=self.raw_actions[:, : NUM_BIMANUAL * 6],
+            # Split into palm and hand actions
+            raw_fabric_palm_actions = self.raw_actions[:, : NUM_BIMANUAL * 6]
+            raw_fabric_hand_actions = self.raw_actions[:, NUM_BIMANUAL * 6 :]
+
+            ABSOLUTE_PALM_CONTROL = True
+            if ABSOLUTE_PALM_CONTROL:
+                new_fabric_palm_target = rescale(
+                    values=raw_fabric_palm_actions,
                     old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
                     old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
                     new_mins=self.fabric_palm_mins,
                     new_maxs=self.fabric_palm_maxs,
                 )
-            )
-            self.fabric_hand_target.copy_(
-                rescale(
-                    values=self.raw_actions[:, NUM_BIMANUAL * 6 :],
-                    old_mins=torch.ones_like(self.fabric_hand_mins) * -1,
-                    old_maxs=torch.ones_like(self.fabric_hand_maxs) * 1,
-                    new_mins=self.fabric_hand_mins,
-                    new_maxs=self.fabric_hand_maxs,
+            else:
+                new_fabric_palm_target = self.fabric_palm_target.clone() + rescale(
+                    values=raw_fabric_palm_actions,
+                    old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
+                    old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
+                    new_mins=torch.tensor(
+                        [
+                            -0.1,
+                            -0.1,
+                            -0.1,
+                            np.deg2rad(-45),
+                            np.deg2rad(-45),
+                            np.deg2rad(-45),
+                        ],
+                        device=self.device,
+                    ),
+                    new_maxs=torch.tensor(
+                        [0.1, 0.1, 0.1, np.deg2rad(45), np.deg2rad(45), np.deg2rad(45)],
+                        device=self.device,
+                    ),
                 )
+            self.fabric_palm_target.copy_(new_fabric_palm_target)
+
+            new_fabric_hand_target = rescale(
+                values=raw_fabric_hand_actions,
+                old_mins=torch.ones_like(self.fabric_hand_mins) * -1,
+                old_maxs=torch.ones_like(self.fabric_hand_maxs) * 1,
+                new_mins=self.fabric_hand_mins,
+                new_maxs=self.fabric_hand_maxs,
             )
+            self.fabric_hand_target.copy_(new_fabric_hand_target)
 
         if USE_FABRIC:
             # NOTE: Could do this in _apply_action with some smart rounding strategy
@@ -761,6 +787,10 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_q.detach().clone()
             )
         else:
+            # Split into arm and hand actions
+            raw_arm_actions = self.raw_actions[:, : NUM_BIMANUAL * NUM_ARM_JOINTS]
+            raw_hand_actions = self.raw_actions[:, NUM_BIMANUAL * NUM_ARM_JOINTS :]
+
             # Arm
             ABSOLUTE_ARM_CONTROL = False
             if ABSOLUTE_ARM_CONTROL:
@@ -778,9 +808,7 @@ class BimanualEnv(DirectRLEnv):
                 f"arm_action_offset.shape: {arm_action_offset.shape} != (self.num_envs, NUM_ARM_JOINTS * NUM_BIMANUAL): {(self.num_envs, NUM_ARM_JOINTS * NUM_BIMANUAL)}"
             )
             arm_position_targets = (
-                self.cfg.arm_action_scale
-                * self.raw_actions[:, : NUM_ARM_JOINTS * NUM_BIMANUAL]
-                + arm_action_offset
+                self.cfg.arm_action_scale * raw_arm_actions + arm_action_offset
             )
 
             # Hand
@@ -788,9 +816,7 @@ class BimanualEnv(DirectRLEnv):
                 :, NUM_ARM_JOINTS * NUM_BIMANUAL :
             ]
             hand_position_targets = (
-                self.cfg.hand_action_scale
-                * self.raw_actions[:, NUM_ARM_JOINTS * NUM_BIMANUAL :]
-                + hand_action_offset
+                self.cfg.hand_action_scale * raw_hand_actions + hand_action_offset
             )
 
             if FILTER_ARM_ACTIONS:
@@ -804,6 +830,12 @@ class BimanualEnv(DirectRLEnv):
             position_targets = torch.cat(
                 [arm_position_targets, hand_position_targets], dim=-1
             )
+
+        # Clamp
+        joint_pos_limits = self.robot.data.soft_joint_pos_limits.clone()
+        position_targets = position_targets.clamp_(
+            joint_pos_limits[..., 0], joint_pos_limits[..., 1]
+        )
 
         # Save plotting data
         self.plot_data["actual"].append(
@@ -844,9 +876,11 @@ class BimanualEnv(DirectRLEnv):
             ).reshape(self.num_envs, -1),
             "right_palm_position": self.right_palm_pose_w()[:, :3]
             - self.scene.env_origins,
-            "left_palm_position": self.left_palm_pose_w()[:, :3] - self.scene.env_origins,
+            "left_palm_position": self.left_palm_pose_w()[:, :3]
+            - self.scene.env_origins,
             "object_position": self.object_position_w - self.scene.env_origins,
-            "goal_object_position": self.goal_object_position_w - self.scene.env_origins,
+            "goal_object_position": self.goal_object_position_w
+            - self.scene.env_origins,
             "object_orientation": self.object_orientation,
             "goal_object_orientation": self.goal_object_orientation,
         }
@@ -1602,7 +1636,9 @@ class BimanualEnv(DirectRLEnv):
 
     @property
     def object_is_lifted(self) -> torch.Tensor:
-        return self.object_position_w[:, 2] > self.table_position[:, 2] + OBJECT_LENGTH_Z
+        return (
+            self.object_position_w[:, 2] > self.table_position[:, 2] + OBJECT_LENGTH_Z
+        )
 
     @property
     def right_fabric_palm_target_pose_w(self) -> torch.Tensor:
