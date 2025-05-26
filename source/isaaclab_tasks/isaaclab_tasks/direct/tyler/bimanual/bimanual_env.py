@@ -30,6 +30,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab_assets import ISAACLAB_ASSETS_DATA_DIR
 from isaaclab_assets.robots.bimanual import BIMANUAL_CFG, BLUE_BIMANUAL_CFG
+from scipy.spatial.transform import Rotation as R
 from termcolor import colored
 
 import wandb
@@ -78,7 +79,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
     sample_uniform_tensor,
 )
 
-FINGER_GOALS = False
+FINGER_GOALS = True
 FILTER_ARM_ACTIONS = False
 
 USE_FABRIC = True
@@ -264,11 +265,28 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         texture_file=f"{ISAAC_NUCLEUS_DIR}/Materials/Textures/Skies/PolyHaven/kloofendal_43d_clear_puresky_4k.hdr",
     )
 
-    pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+    origin_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
         prim_path="/Visuals/Command/pose"
     )
-    """The configuration for the pose visualization marker. Defaults to FRAME_MARKER_CFG."""
-    pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+    origin_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+
+    right_palm_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/right_palm_pose"
+    )
+    right_palm_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+    left_palm_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/left_palm_pose"
+    )
+    left_palm_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+
+    right_palm_target_pose_visualizer: VisualizationMarkersCfg = (
+        FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/right_palm_target_pose")
+    )
+    right_palm_target_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+    left_palm_target_pose_visualizer: VisualizationMarkersCfg = (
+        FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/left_palm_target_pose")
+    )
+    left_palm_target_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
 
     right_goal_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
         prim_path="/Visuals/Command/right_goal"
@@ -1161,8 +1179,28 @@ class BimanualEnv(DirectRLEnv):
     def _set_debug_vis_impl(self, debug_vis: bool):
         # create markers if necessary for the first tome
         if debug_vis:
-            if not hasattr(self, "pose_visualizer"):
-                self.pose_visualizer = VisualizationMarkers(self.cfg.pose_visualizer)
+            if not hasattr(self, "origin_pose_visualizer"):
+                self.origin_pose_visualizer = VisualizationMarkers(
+                    self.cfg.origin_pose_visualizer
+                )
+            if not hasattr(self, "right_palm_pose_visualizer"):
+                self.right_palm_pose_visualizer = VisualizationMarkers(
+                    self.cfg.right_palm_pose_visualizer
+                )
+            if not hasattr(self, "left_palm_pose_visualizer"):
+                self.left_palm_pose_visualizer = VisualizationMarkers(
+                    self.cfg.left_palm_pose_visualizer
+                )
+            if USE_FABRIC:
+                if not hasattr(self, "right_palm_target_pose_visualizer"):
+                    self.right_palm_target_pose_visualizer = VisualizationMarkers(
+                        self.cfg.right_palm_target_pose_visualizer
+                    )
+                if not hasattr(self, "left_palm_target_pose_visualizer"):
+                    self.left_palm_target_pose_visualizer = VisualizationMarkers(
+                        self.cfg.left_palm_target_pose_visualizer
+                    )
+
             if FINGER_GOALS:
                 if not hasattr(self, "right_goal_visualizer"):
                     self.right_goal_visualizer = VisualizationMarkers(
@@ -1204,7 +1242,12 @@ class BimanualEnv(DirectRLEnv):
                 ]
 
             # set their visibility to true
-            self.pose_visualizer.set_visibility(True)
+            self.origin_pose_visualizer.set_visibility(True)
+            self.right_palm_pose_visualizer.set_visibility(True)
+            self.left_palm_pose_visualizer.set_visibility(True)
+            if USE_FABRIC:
+                self.right_palm_target_pose_visualizer.set_visibility(True)
+                self.left_palm_target_pose_visualizer.set_visibility(True)
             if FINGER_GOALS:
                 self.right_goal_visualizer.set_visibility(True)
                 self.left_goal_visualizer.set_visibility(True)
@@ -1217,8 +1260,17 @@ class BimanualEnv(DirectRLEnv):
             for visualizer in self.collision_sphere_visualizers:
                 visualizer.set_visibility(True)
         else:
-            if hasattr(self, "pose_visualizer"):
-                self.pose_visualizer.set_visibility(False)
+            if hasattr(self, "origin_pose_visualizer"):
+                self.origin_pose_visualizer.set_visibility(False)
+            if hasattr(self, "right_palm_pose_visualizer"):
+                self.right_palm_pose_visualizer.set_visibility(False)
+            if hasattr(self, "left_palm_pose_visualizer"):
+                self.left_palm_pose_visualizer.set_visibility(False)
+            if USE_FABRIC:
+                if hasattr(self, "right_palm_target_pose_visualizer"):
+                    self.right_palm_target_pose_visualizer.set_visibility(False)
+                if hasattr(self, "left_palm_target_pose_visualizer"):
+                    self.left_palm_target_pose_visualizer.set_visibility(False)
             if FINGER_GOALS:
                 if hasattr(self, "right_goal_visualizer"):
                     self.right_goal_visualizer.set_visibility(False)
@@ -1246,13 +1298,44 @@ class BimanualEnv(DirectRLEnv):
             return
 
         base_pos_w = self.robot.data.root_pos_w.clone()
-        self.pose_visualizer.visualize(
+        self.origin_pose_visualizer.visualize(
             translations=base_pos_w,
             orientations=self.robot.data.root_quat_w,
             scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
+        self.right_palm_pose_visualizer.visualize(
+            translations=self.right_palm_position,
+            orientations=self.right_palm_orientation,
+            scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+            .unsqueeze(dim=0)
+            .repeat_interleave(self.num_envs, dim=0),
+        )
+        self.left_palm_pose_visualizer.visualize(
+            translations=self.left_palm_position,
+            orientations=self.left_palm_orientation,
+            scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+            .unsqueeze(dim=0)
+            .repeat_interleave(self.num_envs, dim=0),
+        )
+        if USE_FABRIC:
+            self.right_palm_target_pose_visualizer.visualize(
+                translations=self.right_fabric_palm_target_position
+                + self.scene.env_origins,
+                orientations=self.right_fabric_palm_target_orientation,
+                scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+                .unsqueeze(dim=0)
+                .repeat_interleave(self.num_envs, dim=0),
+            )
+            self.left_palm_target_pose_visualizer.visualize(
+                translations=self.left_fabric_palm_target_position
+                + self.scene.env_origins,
+                orientations=self.left_fabric_palm_target_orientation,
+                scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+                .unsqueeze(dim=0)
+                .repeat_interleave(self.num_envs, dim=0),
+            )
         if FINGER_GOALS:
             self.right_goal_visualizer.visualize(
                 translations=self.right_goal_position,
@@ -1468,8 +1551,16 @@ class BimanualEnv(DirectRLEnv):
         return self.robot.data.body_pos_w[:, self._right_palm_link_idxs].squeeze(dim=1)
 
     @property
+    def right_palm_orientation(self) -> torch.Tensor:
+        return self.robot.data.body_quat_w[:, self._right_palm_link_idxs].squeeze(dim=1)
+
+    @property
     def left_palm_position(self) -> torch.Tensor:
         return self.robot.data.body_pos_w[:, self._left_palm_link_idxs].squeeze(dim=1)
+
+    @property
+    def left_palm_orientation(self) -> torch.Tensor:
+        return self.robot.data.body_quat_w[:, self._left_palm_link_idxs].squeeze(dim=1)
 
     @property
     def right_fingertip_positions(self) -> torch.Tensor:
@@ -1514,6 +1605,59 @@ class BimanualEnv(DirectRLEnv):
     @property
     def object_is_lifted(self) -> torch.Tensor:
         return self.object_position[:, 2] > self.table_position[:, 2] + OBJECT_LENGTH_Z
+
+    @property
+    def right_fabric_palm_target_position(self) -> torch.Tensor:
+        # Actions are in robot frame
+        # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
+        assert self.fabric_palm_target.shape == (self.num_envs, 6 * NUM_BIMANUAL), (
+            f"Fabric palm target shape: {self.fabric_palm_target.shape}"
+        )
+        return self.fabric_palm_target[:, :3]
+
+    @property
+    def right_fabric_palm_target_orientation(self) -> torch.Tensor:
+        # Actions are in robot frame
+        # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
+        assert self.fabric_palm_target.shape == (self.num_envs, 6 * NUM_BIMANUAL), (
+            f"Fabric palm target shape: {self.fabric_palm_target.shape}"
+        )
+        euler_ZYX_np = self.fabric_palm_target[:, 3:6].detach().cpu().numpy()
+        quat_xyzw_np = R.from_euler("ZYX", euler_ZYX_np, degrees=False).as_quat()
+        quat_wxyz_np = np.concatenate(
+            [quat_xyzw_np[..., 3:], quat_xyzw_np[..., :3]], axis=-1
+        )
+        assert quat_wxyz_np.shape == (self.num_envs, 4), (
+            f"Quat shape: {quat_wxyz_np.shape}"
+        )
+
+        return torch.from_numpy(quat_wxyz_np).to(self.device).float()
+
+    @property
+    def left_fabric_palm_target_position(self) -> torch.Tensor:
+        # Actions are in robot frame
+        # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
+        assert self.fabric_palm_target.shape == (self.num_envs, 6 * NUM_BIMANUAL), (
+            f"Fabric palm target shape: {self.fabric_palm_target.shape}"
+        )
+        return self.fabric_palm_target[:, 6:9]
+
+    @property
+    def left_fabric_palm_target_orientation(self) -> torch.Tensor:
+        # Actions are in robot frame
+        # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
+        assert self.fabric_palm_target.shape == (self.num_envs, 6 * NUM_BIMANUAL), (
+            f"Fabric palm target shape: {self.fabric_palm_target.shape}"
+        )
+        euler_ZYX_np = self.fabric_palm_target[:, 9:12].detach().cpu().numpy()
+        quat_xyzw_np = R.from_euler("ZYX", euler_ZYX_np, degrees=False).as_quat()
+        quat_wxyz_np = np.concatenate(
+            [quat_xyzw_np[..., 3:], quat_xyzw_np[..., :3]], axis=-1
+        )
+        assert quat_wxyz_np.shape == (self.num_envs, 4), (
+            f"Quat shape: {quat_wxyz_np.shape}"
+        )
+        return torch.from_numpy(quat_wxyz_np).to(self.device).float()
 
     #### TENSOR SLICE PROPERTIES END ####
 
