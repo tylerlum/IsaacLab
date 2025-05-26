@@ -105,10 +105,7 @@ USE_FABRIC = True
 USE_FABRIC_CUDA_GRAPH = False  # Leave this False almost all the time, CUDA graphs don't offer any speedup (actually slows down) with large batch size
 
 VISUALIZE_FABRIC_SPHERES = False
-if VISUALIZE_FABRIC_SPHERES:
-    NUM_FABRIC_SPHERES = 38
-else:
-    NUM_FABRIC_SPHERES = 0
+NUM_FABRIC_SPHERES = 38
 
 OBJECT_LENGTH_Z = 0.22
 
@@ -355,10 +352,12 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         "cylinder"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
 
-    collision_sphere_visualizers: List[VisualizationMarkersCfg] = [
-        SPHERE_MARKER_CFG.replace(prim_path=f"/Visuals/CollisionSphere_{i}")
-        for i in range(NUM_FABRIC_SPHERES)
-    ]
+    collision_sphere_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+        prim_path=f"/Visuals/CollisionSphere"
+    )
+    collision_sphere_visualizer.markers[
+        "sphere"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=RED_RGB)
 
 
 if FINGER_GOALS:
@@ -1337,11 +1336,16 @@ class BimanualEnv(DirectRLEnv):
                 self.progress_full_visualizer = VisualizationMarkers(
                     self.cfg.progress_full_visualizer
                 )
-            if not hasattr(self, "collision_sphere_visualizers"):
-                self.collision_sphere_visualizers = [
-                    VisualizationMarkers(cfg)
-                    for cfg in self.cfg.collision_sphere_visualizers
-                ]
+            if VISUALIZE_FABRIC_SPHERES:
+                if not hasattr(self, "collision_sphere_visualizers"):
+                    self.collision_sphere_visualizers = [
+                        VisualizationMarkers(
+                            self.cfg.collision_sphere_visualizer.replace(
+                                prim_path=f"{self.cfg.collision_sphere_visualizer.prim_path}_{i}"
+                            )
+                        )
+                        for i in range(NUM_FABRIC_SPHERES)
+                    ]
 
             # set their visibility to true
             self.origin_pose_visualizer.set_visibility(True)
@@ -1359,8 +1363,9 @@ class BimanualEnv(DirectRLEnv):
             self.left_fingertip_visualizer.set_visibility(True)
             self.progress_visualizer.set_visibility(True)
             self.progress_full_visualizer.set_visibility(True)
-            for visualizer in self.collision_sphere_visualizers:
-                visualizer.set_visibility(True)
+            if VISUALIZE_FABRIC_SPHERES:
+                for visualizer in self.collision_sphere_visualizers:
+                    visualizer.set_visibility(True)
         else:
             if hasattr(self, "origin_pose_visualizer"):
                 self.origin_pose_visualizer.set_visibility(False)
@@ -1390,9 +1395,10 @@ class BimanualEnv(DirectRLEnv):
                 self.progress_visualizer.set_visibility(False)
             if hasattr(self, "progress_full_visualizer"):
                 self.progress_full_visualizer.set_visibility(False)
-            if hasattr(self, "collision_sphere_visualizers"):
-                for visualizer in self.collision_sphere_visualizers:
-                    visualizer.set_visibility(False)
+            if VISUALIZE_FABRIC_SPHERES:
+                if hasattr(self, "collision_sphere_visualizers"):
+                    for visualizer in self.collision_sphere_visualizers:
+                        visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
         # Make sure the robot is initialized
