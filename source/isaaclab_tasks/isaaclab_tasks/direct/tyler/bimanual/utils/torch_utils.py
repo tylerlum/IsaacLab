@@ -1,4 +1,6 @@
 import torch
+import torch.nn.functional as F
+
 
 def assert_equals(a, b):
     assert a == b, f"a: {a}, b: {b}"
@@ -131,8 +133,9 @@ def interpolate(t: torch.Tensor, x: torch.Tensor, new_t: torch.Tensor) -> torch.
     assert t.ndim == 1 and x.ndim == 2 and new_t.ndim == 1, (
         f"Shapes – t:{t.shape}, x:{x.shape}, new_t:{new_t.shape}"
     )
-    device, dtype = t.device, x.dtype
-    M, D = new_t.shape[0], x.shape[1]
+    N = t.shape[0]
+    _M, D = new_t.shape[0], x.shape[1]
+    assert x.shape == (N, D), f"x.shape: {x.shape}, expected: {(N, D)}"
 
     # 1) clamp to support only in‑range queries
     new_t_clamped = new_t.clamp(min=t[0], max=t[-1])

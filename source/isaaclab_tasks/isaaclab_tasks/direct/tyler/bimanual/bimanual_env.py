@@ -5,24 +5,21 @@
 
 from __future__ import annotations
 
-import math
+from pathlib import Path
 from typing import List
 
-import yaml
-from pathlib import Path
-from isaaclab_assets import ISAACLAB_ASSETS_DATA_DIR
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
 import numpy as np
 import torch
-import torch.nn as nn
-from isaaclab.assets import Articulation, ArticulationCfg, RigidObjectCfg, RigidObject
+import yaml
+from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObjectCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.markers.config import (
-    SPHERE_MARKER_CFG,
-    FRAME_MARKER_CFG,
     CYLINDER_MARKER_CFG,
+    FRAME_MARKER_CFG,
+    SPHERE_MARKER_CFG,
 )
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensor, ContactSensorCfg
@@ -31,62 +28,55 @@ from isaaclab.sim.spawners.lights import DomeLightCfg, LightCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
+from isaaclab_assets import ISAACLAB_ASSETS_DATA_DIR
 from isaaclab_assets.robots.bimanual import BIMANUAL_CFG, BLUE_BIMANUAL_CFG
-from isaaclab_tasks.direct.tyler.bimanual.utils.average_meter import AverageMeter
+from termcolor import colored
+
+import wandb
 from isaaclab_tasks.direct.tyler.bimanual.utils.adjusted_terrain_importer import (
     AdjustedTerrainImporter,
 )
-from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
-    sample_uniform_tensor,
-    rescale,
-)
-from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
-    isaaclab_to_fabric_joint_order_torch,
-    fabric_to_isaaclab_joint_order_torch,
+from isaaclab_tasks.direct.tyler.bimanual.utils.average_meter import AverageMeter
+from isaaclab_tasks.direct.tyler.bimanual.utils.color_constants import (
+    BLUE_RGB,
+    GREEN_RGB,
+    RED_RGB,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.constants import (
-    NUM_XYZ,
     NUM_QUAT,
-    POSITION_START_IDX,
-    POSITION_END_IDX,
-    QUAT_START_IDX,
-    QUAT_END_IDX,
-    LIN_VELOCITY_START_IDX,
-    LIN_VELOCITY_END_IDX,
-    ANG_VELOCITY_START_IDX,
-    ANG_VELOCITY_END_IDX,
+    NUM_XYZ,
 )
-from isaaclab_tasks.direct.tyler.bimanual.utils.color_constants import (
-    RED_RGB,
-    GREEN_RGB,
-    BLUE_RGB,
+from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
+    fabric_to_isaaclab_joint_order_torch,
+    isaaclab_to_fabric_joint_order_torch,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.robot_constants import (
     INDEX_FINGERTIP_IDX,
+    LEFT_FINGERTIP_LINK_NAMES,
+    LEFT_PALM_LINK_NAME,
     MIDDLE_FINGERTIP_IDX,
+    NUM_ARM_HAND_JOINTS,
+    NUM_ARM_JOINTS,
+    NUM_BIMANUAL,
+    RIGHT_FINGERTIP_LINK_NAMES,
+    RIGHT_PALM_LINK_NAME,
     RING_FINGERTIP_IDX,
     THUMB_FINGERTIP_IDX,
-    RIGHT_FINGERTIP_LINK_NAMES,
-    LEFT_FINGERTIP_LINK_NAMES,
-    RIGHT_PALM_LINK_NAME,
-    LEFT_PALM_LINK_NAME,
-    NUM_ARM_JOINTS,
-    NUM_HAND_JOINTS,
-    NUM_ARM_HAND_JOINTS,
-    NUM_BIMANUAL,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
-    TABLE_X,
-    TABLE_Y,
-    TABLE_Z,
+    TABLE_LENGTH_Z,
+    TABLE_QW,
     TABLE_QX,
     TABLE_QY,
     TABLE_QZ,
-    TABLE_QW,
-    TABLE_LENGTH_Z,
+    TABLE_X,
+    TABLE_Y,
+    TABLE_Z,
 )
-import wandb
-
+from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
+    rescale,
+    sample_uniform_tensor,
+)
 
 FINGER_GOALS = False
 FILTER_ARM_ACTIONS = False
@@ -392,10 +382,10 @@ class BimanualEnv(DirectRLEnv):
     def _setup_robot_idxs(self):
         # Robot joint idxs
         self._joint_idxs, self._joint_names = self.robot.find_joints(".*")
-        print("!" * 100)
-        print(f"len(self._joint_idxs): {len(self._joint_idxs)}")
-        print(f"self._joint_names: {self._joint_names}")
-        print("!" * 100)
+        print(colored("!" * 100, "green"))
+        print(colored(f"len(self._joint_idxs): {len(self._joint_idxs)}", "green"))
+        print(colored(f"self._joint_names: {self._joint_names}", "green"))
+        print(colored("!" * 100, "green"))
 
         # Robot link idxs
         self._link_idxs, self._link_names = self.robot.find_bodies(".*")
@@ -411,18 +401,22 @@ class BimanualEnv(DirectRLEnv):
         self._left_palm_link_idxs, self._left_palm_link_names = self.robot.find_bodies(
             LEFT_PALM_LINK_NAME
         )
-        print("!" * 100)
-        print(f"len(self._link_idxs): {len(self._link_idxs)}")
-        print(f"self._link_names: {self._link_names}")
-        print("!" * 100)
+        print(colored("!" * 100, "green"))
+        print(colored(f"len(self._link_idxs): {len(self._link_idxs)}", "green"))
+        print(colored(f"self._link_names: {self._link_names}", "green"))
+        print(colored("!" * 100, "green"))
 
         # Contact sensor link idxs
         self._contact_link_idxs, self._contact_link_names = (
             self.contact_sensor.find_bodies(".*")
         )
-        print("!" * 100)
-        print(f"len(self._contact_link_idxs): {len(self._contact_link_idxs)}")
-        print("!" * 100)
+        print(colored("!" * 100, "green"))
+        print(
+            colored(
+                f"len(self._contact_link_idxs): {len(self._contact_link_idxs)}", "green"
+            )
+        )
+        print(colored("!" * 100, "green"))
 
     def _update_metrics(self, env_ids: torch.Tensor | None):
         if env_ids is None or len(env_ids) == self.num_envs:
@@ -463,6 +457,7 @@ class BimanualEnv(DirectRLEnv):
         from fabrics_sim.utils.path_utils import get_params_path
         from fabrics_sim.utils.utils import capture_fabric
         from fabrics_sim.worlds.world_mesh_model import WorldMeshesModel
+
         from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_world import (
             world_dict_robot_frame,
         )
@@ -628,9 +623,6 @@ class BimanualEnv(DirectRLEnv):
         self.cfg.light.func("/World/Light", self.cfg.light)
 
     def _pre_physics_step(self, actions: torch.Tensor):
-        import time
-
-        start_time = time.time()
         self.prev_raw_actions = self.raw_actions.clone()
         self.raw_actions = actions.clone()
         assert self.raw_actions.shape == self.prev_raw_actions.shape, (
@@ -715,24 +707,30 @@ class BimanualEnv(DirectRLEnv):
             if ABSOLUTE_ARM_CONTROL:
                 arm_action_offset = self.robot.data.default_joint_pos[
                     :, self._joint_idxs
-                ][:, :(NUM_ARM_JOINTS * NUM_BIMANUAL)]
+                ][:, : (NUM_ARM_JOINTS * NUM_BIMANUAL)]
             else:
                 arm_action_offset = self.robot.data.joint_pos[:, self._joint_idxs][
-                    :, :(NUM_ARM_JOINTS * NUM_BIMANUAL)
+                    :, : (NUM_ARM_JOINTS * NUM_BIMANUAL)
                 ]
-            assert arm_action_offset.shape == (self.num_envs, NUM_ARM_JOINTS * NUM_BIMANUAL), (
+            assert arm_action_offset.shape == (
+                self.num_envs,
+                NUM_ARM_JOINTS * NUM_BIMANUAL,
+            ), (
                 f"arm_action_offset.shape: {arm_action_offset.shape} != (self.num_envs, NUM_ARM_JOINTS * NUM_BIMANUAL): {(self.num_envs, NUM_ARM_JOINTS * NUM_BIMANUAL)}"
             )
             arm_position_targets = (
-                self.cfg.arm_action_scale * self.raw_actions[:, :NUM_ARM_JOINTS * NUM_BIMANUAL] + arm_action_offset
+                self.cfg.arm_action_scale
+                * self.raw_actions[:, : NUM_ARM_JOINTS * NUM_BIMANUAL]
+                + arm_action_offset
             )
 
             # Hand
             hand_action_offset = self.robot.data.default_joint_pos[:, self._joint_idxs][
-                :, NUM_ARM_JOINTS * NUM_BIMANUAL:
+                :, NUM_ARM_JOINTS * NUM_BIMANUAL :
             ]
             hand_position_targets = (
-                self.cfg.hand_action_scale * self.raw_actions[:, NUM_ARM_JOINTS * NUM_BIMANUAL:]
+                self.cfg.hand_action_scale
+                * self.raw_actions[:, NUM_ARM_JOINTS * NUM_BIMANUAL :]
                 + hand_action_offset
             )
 
@@ -750,9 +748,11 @@ class BimanualEnv(DirectRLEnv):
 
         # Save plotting data
         self.plot_data["actual"].append(
-            self.robot.data.joint_pos[0, :NUM_ARM_JOINTS * NUM_BIMANUAL].cpu().numpy()
+            self.robot.data.joint_pos[0, : NUM_ARM_JOINTS * NUM_BIMANUAL].cpu().numpy()
         )
-        self.plot_data["cmd"].append(position_targets[0, :NUM_ARM_JOINTS * NUM_BIMANUAL].cpu().numpy())
+        self.plot_data["cmd"].append(
+            position_targets[0, : NUM_ARM_JOINTS * NUM_BIMANUAL].cpu().numpy()
+        )
         self.plot_data["episode_length_counter"].append(
             self.episode_length_buf[0].cpu().numpy()
         )
@@ -761,18 +761,8 @@ class BimanualEnv(DirectRLEnv):
         if DISABLE_ACTIONS:
             position_targets[:] = 0.0
 
-        # print(f"self.robot.data.joint_pos: {self.robot.data.joint_pos}")
-        # print(f"position_targets: {position_targets}")
-        # print()
         self.robot.set_joint_position_target(position_targets)
         self.blue_robot.write_joint_position_to_sim(position_targets)
-
-        end_time = time.time()
-        # print()
-        # print("%" * 100)
-        # print(f"pre_physics_step time: {end_time - start_time}")
-        # print("%" * 100)
-        # print()
 
     def _apply_action(self):
         pass
@@ -815,7 +805,7 @@ class BimanualEnv(DirectRLEnv):
 
         for k, v in obs_dict.items():
             if v.ndim != 2:
-                print(f"{k}: {v.shape} (WRONG)")
+                print(colored(f"{k}: {v.shape} (WRONG)", "red"))
 
         obs = torch.cat(
             [obs_dict[key] for key in obs_dict],
@@ -1058,7 +1048,7 @@ class BimanualEnv(DirectRLEnv):
             }
 
             self.filtered_arm_position_targets = torch.zeros_like(
-                self.robot.data.joint_pos[:, :NUM_ARM_JOINTS * NUM_BIMANUAL]
+                self.robot.data.joint_pos[:, : NUM_ARM_JOINTS * NUM_BIMANUAL]
             )
 
             self.sampled_position_targets = (
@@ -1100,7 +1090,7 @@ class BimanualEnv(DirectRLEnv):
                 ] = 0
 
             self.filtered_arm_position_targets[env_ids] = self.robot.data.joint_pos[
-                env_ids, :NUM_ARM_JOINTS * NUM_BIMANUAL
+                env_ids, : NUM_ARM_JOINTS * NUM_BIMANUAL
             ]
 
             self.sampled_position_targets[env_ids] = self.robot.data.default_joint_pos[
@@ -1399,27 +1389,30 @@ class BimanualEnv(DirectRLEnv):
                 ]
             )
         except AttributeError as e:
-            print("~" * 100)
-            print(f"Error importing keyboard: {e}")
-            print("Keyboard not available, likely because we are in headless mode.")
-            print("~" * 100)
+            print(colored("~" * 100, "red"))
+            print(colored(f"Error importing keyboard: {e}", "red"))
+            print(
+                colored(
+                    "Keyboard not available, likely because we are in headless mode.",
+                    "red",
+                )
+            )
+            print(colored("~" * 100, "red"))
             return
 
     def _reset_kbc(self):
-        print("In reset_kbc")
+        print(colored("In reset_kbc", "green"))
         self._reset_idx(env_ids=None)
 
     def _breakpoint_kbc(self):
-        print("In breakpoint_kbc")
+        print(colored("In breakpoint_kbc", "green"))
         breakpoint()
 
     def _save_kbc(self):
-        print("In save_kbc")
+        print(colored("In save_kbc", "green"))
         actual_data = np.stack(self.plot_data["actual"], axis=0)
         cmd_data = np.stack(self.plot_data["cmd"], axis=0)
-        episode_length_counter = np.array(
-            self.plot_data["episode_length_counter"]
-        )
+        episode_length_counter = np.array(self.plot_data["episode_length_counter"])
         N_TIMESTEPS = len(self.plot_data["actual"])
         assert actual_data.shape == (N_TIMESTEPS, NUM_ARM_JOINTS * NUM_BIMANUAL)
         assert cmd_data.shape == (N_TIMESTEPS, NUM_ARM_JOINTS * NUM_BIMANUAL)
@@ -1437,7 +1430,7 @@ class BimanualEnv(DirectRLEnv):
             joint_names=self.robot.data.joint_names,
             episode_frac=episode_frac,
         )
-        print(f"Saved data to {output_filename}")
+        print(colored(f"Saved data to {output_filename}", "green"))
 
     #### KEYBOARD END ####
 

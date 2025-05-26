@@ -1,6 +1,7 @@
+from typing import List
+
 import numpy as np
 import torch
-from typing import List
 
 # [LEFT, RIGHT, LEFT, RIGHT, ...]
 ISAACLAB_JOINT_ORDER = [
@@ -388,4 +389,3 @@ def isaaclab_to_fabric_joint_order_torch(q: torch.Tensor) -> torch.Tensor:
     return change_joint_order_torch(
         q, from_order=ISAACLAB_JOINT_ORDER, to_order=FABRIC_JOINT_ORDER
     )
-
