@@ -105,6 +105,8 @@ USE_FABRIC_CUDA_GRAPH = False  # Leave this False almost all the time, CUDA grap
 
 VISUALIZE_FABRIC_SPHERES = False
 
+SAVE_OBS_HISTORY = False
+
 OBJECT_LENGTH_Z = 0.22
 
 SIM_DT = 1 / 60
@@ -934,23 +936,25 @@ class BimanualEnv(DirectRLEnv):
                 nan_env_ids = torch.where(torch.isnan(v))[0]
                 print(colored(f"{k}: {v.shape} (NAN) at {nan_env_ids}", "red"))
         if any_nan:
-            import datetime
-            datetime_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            obs_history_filename = f"{datetime_str}_obs_history.pth"
-            torch.save(self.obs_history, obs_history_filename)
-            idx_filename = f"{datetime_str}_idx.pth"
-            torch.save(self.episode_length_buf, idx_filename)
-            print(colored(f"Saved obs_history to {obs_history_filename}", "green"))
-            print(colored(f"Saved idx to {idx_filename}", "green"))
+            if SAVE_OBS_HISTORY:
+                import datetime
+                datetime_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                obs_history_filename = f"{datetime_str}_obs_history.pth"
+                torch.save(self.obs_history, obs_history_filename)
+                idx_filename = f"{datetime_str}_idx.pth"
+                torch.save(self.episode_length_buf, idx_filename)
+                print(colored(f"Saved obs_history to {obs_history_filename}", "green"))
+                print(colored(f"Saved idx to {idx_filename}", "green"))
             breakpoint()
 
         obs = torch.cat(
             [obs_dict[key] for key in obs_dict],
             dim=-1,
         )
-        batch_idx = torch.arange(self.num_envs, device=obs.device)   # shape (B,)
-        time_idx  = self.episode_length_buf                         # shape (B,)
-        self.obs_history[batch_idx, time_idx, :] = obs.detach().clone()
+        if SAVE_OBS_HISTORY:
+            batch_idx = torch.arange(self.num_envs, device=obs.device)   # shape (B,)
+            time_idx  = self.episode_length_buf                         # shape (B,)
+            self.obs_history[batch_idx, time_idx, :] = obs.detach().clone()
 
         ZERO_OBS = False  # Set to True to debug
         if ZERO_OBS:
@@ -1215,10 +1219,11 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_qdd = torch.zeros_like(self.fabric_q)
 
                 self.fabric_palm_target = self.default_fabric_palm_target().clone()
-            self.obs_history = torch.zeros(
-                self.num_envs, self.max_episode_length, self.cfg.observation_space,
-                device=self.device,
-            )
+            if SAVE_OBS_HISTORY:
+                self.obs_history = torch.zeros(
+                    self.num_envs, self.max_episode_length, self.cfg.observation_space,
+                    device=self.device,
+                )
         else:
             self.raw_actions[env_ids] = torch.zeros(
                 len(env_ids), self.cfg.action_space, device=self.device
@@ -1264,10 +1269,11 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_palm_target[env_ids] = self.default_fabric_palm_target()[
                     env_ids
                 ].clone()
-            self.obs_history[env_ids] = torch.zeros(
-                len(env_ids), self.max_episode_length, self.cfg.observation_space,
-                device=self.device,
-            )
+            if SAVE_OBS_HISTORY:
+                self.obs_history[env_ids] = torch.zeros(
+                    len(env_ids), self.max_episode_length, self.cfg.observation_space,
+                    device=self.device,
+                )
 
     def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
