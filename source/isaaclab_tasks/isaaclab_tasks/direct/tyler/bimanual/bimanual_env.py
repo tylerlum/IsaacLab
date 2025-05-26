@@ -378,6 +378,16 @@ def assert_equals(a, b):
     assert a == b, f"a: {a} != b: {b}"
 
 
+def check_nan_and_print_if_any(x: torch.Tensor, name: str):
+    if x.isnan().any():
+        print(colored("!" * 100, "red"))
+        print(colored(f"{name} contains NaNs", "red"))
+        env_idx = torch.where(torch.isnan(x))[0]
+        print(colored(f"env_idx: {env_idx}", "red"))
+        print(colored("!" * 100, "red"))
+        breakpoint()
+
+
 class BimanualEnv(DirectRLEnv):
     cfg: BimanualEnvCfg
 
@@ -676,30 +686,103 @@ class BimanualEnv(DirectRLEnv):
             torch.ge(self.raw_actions, -1.0)
         ), f"self.raw_actions: {self.raw_actions}"
 
+        check_nan_and_print_if_any(
+            self.robot.data.joint_pos,
+            "self.robot.data.joint_pos (start of pre_physics_step)",
+        )
+        check_nan_and_print_if_any(
+            self.robot.data.joint_vel,
+            "self.robot.data.joint_vel (start of pre_physics_step)",
+        )
+        check_nan_and_print_if_any(
+            self.raw_actions, "self.raw_actions (start of pre_physics_step)"
+        )
+
         if USE_FABRIC:
+            check_nan_and_print_if_any(
+                self.fabric_palm_target,
+                "self.fabric_palm_target (start of pre_physics_step)",
+            )
+            check_nan_and_print_if_any(
+                self.fabric_hand_target,
+                "self.fabric_hand_target (start of pre_physics_step)",
+            )
+
             new_fabric_palm_target, new_fabric_hand_target = (
                 self._compute_fabric_actions(self.raw_actions)
             )
+            check_nan_and_print_if_any(
+                new_fabric_palm_target, "new_fabric_palm_target (after computing)"
+            )
+            check_nan_and_print_if_any(
+                new_fabric_hand_target, "new_fabric_hand_target (after computing)"
+            )
+
             self.fabric_palm_target.copy_(new_fabric_palm_target)
             self.fabric_hand_target.copy_(new_fabric_hand_target)
 
+            check_nan_and_print_if_any(
+                self.fabric_palm_target, "self.fabric_palm_target (after copying)"
+            )
+            check_nan_and_print_if_any(
+                self.fabric_hand_target, "self.fabric_hand_target (after copying)"
+            )
+
         if USE_FABRIC:
+            check_nan_and_print_if_any(
+                self.fabric_q, "self.fabric_q (start of pre_physics_step)"
+            )
+            check_nan_and_print_if_any(
+                self.fabric_qd, "self.fabric_qd (start of pre_physics_step)"
+            )
+            check_nan_and_print_if_any(
+                self.fabric_qdd, "self.fabric_qdd (start of pre_physics_step)"
+            )
+
             # NOTE: Could do this in _apply_action with some smart rounding strategy
             # That depends on sim_dt, fabric_dt, and decimation
-            for _ in range(NUM_FABRIC_DECIMATION):
+            for i in range(NUM_FABRIC_DECIMATION):
                 # Step fabric
+                check_nan_and_print_if_any(
+                    self.fabric_q, f"self.fabric_q (before step {i})"
+                )
+                check_nan_and_print_if_any(
+                    self.fabric_qd, f"self.fabric_qd (before step {i})"
+                )
+                check_nan_and_print_if_any(
+                    self.fabric_qdd, f"self.fabric_qdd (before step {i})"
+                )
                 self._step_fabric_state()
+                check_nan_and_print_if_any(
+                    self.fabric_q, f"self.fabric_q (after step {i})"
+                )
+                check_nan_and_print_if_any(
+                    self.fabric_qd, f"self.fabric_qd (after step {i})"
+                )
+                check_nan_and_print_if_any(
+                    self.fabric_qdd, f"self.fabric_qdd (after step {i})"
+                )
 
             position_targets = fabric_to_isaaclab_joint_order_torch(
                 self.fabric_q.detach().clone()
             )
+            check_nan_and_print_if_any(
+                position_targets,
+                "position_targets (after fabric_to_isaaclab_joint_order_torch)",
+            )
         else:
             position_targets = self._compute_actions(self.raw_actions)
+            check_nan_and_print_if_any(
+                position_targets, "position_targets (after _compute_actions)"
+            )
 
         # Clamp
         joint_pos_limits = self.robot.data.soft_joint_pos_limits.clone()
         position_targets = position_targets.clamp_(
             min=joint_pos_limits[..., 0], max=joint_pos_limits[..., 1]
+        )
+        check_nan_and_print_if_any(
+            position_targets, "position_targets (after clamping)"
         )
 
         # Save plotting data
@@ -938,6 +1021,7 @@ class BimanualEnv(DirectRLEnv):
         if any_nan:
             if SAVE_OBS_HISTORY:
                 import datetime
+
                 datetime_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 obs_history_filename = f"{datetime_str}_obs_history.pth"
                 torch.save(self.obs_history, obs_history_filename)
@@ -952,8 +1036,8 @@ class BimanualEnv(DirectRLEnv):
             dim=-1,
         )
         if SAVE_OBS_HISTORY:
-            batch_idx = torch.arange(self.num_envs, device=obs.device)   # shape (B,)
-            time_idx  = self.episode_length_buf                         # shape (B,)
+            batch_idx = torch.arange(self.num_envs, device=obs.device)  # shape (B,)
+            time_idx = self.episode_length_buf  # shape (B,)
             self.obs_history[batch_idx, time_idx, :] = obs.detach().clone()
 
         ZERO_OBS = False  # Set to True to debug
@@ -1221,7 +1305,9 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_palm_target = self.default_fabric_palm_target().clone()
             if SAVE_OBS_HISTORY:
                 self.obs_history = torch.zeros(
-                    self.num_envs, self.max_episode_length, self.cfg.observation_space,
+                    self.num_envs,
+                    self.max_episode_length,
+                    self.cfg.observation_space,
                     device=self.device,
                 )
         else:
@@ -1271,7 +1357,9 @@ class BimanualEnv(DirectRLEnv):
                 ].clone()
             if SAVE_OBS_HISTORY:
                 self.obs_history[env_ids] = torch.zeros(
-                    len(env_ids), self.max_episode_length, self.cfg.observation_space,
+                    len(env_ids),
+                    self.max_episode_length,
+                    self.cfg.observation_space,
                     device=self.device,
                 )
 

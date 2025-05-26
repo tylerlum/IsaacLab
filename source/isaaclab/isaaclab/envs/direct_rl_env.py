@@ -34,6 +34,15 @@ from .direct_rl_env_cfg import DirectRLEnvCfg
 from .ui import ViewportCameraController
 from .utils.spaces import sample_space, spec_to_gym_space
 
+from termcolor import colored
+def check_nan_and_print_if_any(x: torch.Tensor, name: str):
+    if x.isnan().any():
+        print(colored("!" * 100, "red"))
+        print(colored(f"{name} contains NaNs", "red"))
+        env_idx = torch.where(torch.isnan(x))[0]
+        print(colored(f"env_idx: {env_idx}", "red"))
+        print(colored("!" * 100, "red"))
+        breakpoint()
 
 class DirectRLEnv(gym.Env):
     """The superclass for the direct workflow to design environments.
@@ -327,26 +336,38 @@ class DirectRLEnv(gym.Env):
             A tuple containing the observations, rewards, resets (terminated and truncated) and extras.
         """
         action = action.to(self.device)
+        check_nan_and_print_if_any(action, "action (start of step)")
+
         # add action noise
         if self.cfg.action_noise_model:
             action = self._action_noise_model.apply(action)
+        check_nan_and_print_if_any(action, "action (after adding action noise)")
 
         # process actions
         self._pre_physics_step(action)
+        check_nan_and_print_if_any(action, "action (after pre_physics_step)")
+        check_nan_and_print_if_any(self.robot.data.joint_pos, "self.robot.data.joint_pos (after pre_physics_step)")
+        check_nan_and_print_if_any(self.robot.data.joint_vel, "self.robot.data.joint_vel (after pre_physics_step)")
 
         # check if we need to do rendering within the physics loop
         # note: checked here once to avoid multiple checks within the loop
         is_rendering = self.sim.has_gui() or self.sim.has_rtx_sensors()
 
         # perform physics stepping
-        for _ in range(self.cfg.decimation):
+        for i in range(self.cfg.decimation):
             self._sim_step_counter += 1
             # set actions into buffers
             self._apply_action()
+            check_nan_and_print_if_any(self.robot.data.joint_pos, f"self.robot.data.joint_pos (in step {i} before write to sim)")
+            check_nan_and_print_if_any(self.robot.data.joint_vel, f"self.robot.data.joint_vel (in step {i} before write to sim)")
             # set actions into simulator
             self.scene.write_data_to_sim()
+            check_nan_and_print_if_any(self.robot.data.joint_pos, f"self.robot.data.joint_pos (in step {i} after write to sim)")
+            check_nan_and_print_if_any(self.robot.data.joint_vel, f"self.robot.data.joint_vel (in step {i} after write to sim)")
             # simulate
             self.sim.step(render=False)
+            check_nan_and_print_if_any(self.robot.data.joint_pos, f"self.robot.data.joint_pos (in step {i} after step)")
+            check_nan_and_print_if_any(self.robot.data.joint_vel, f"self.robot.data.joint_vel (in step {i} after step)")
             # render between steps only if the GUI or an RTX sensor needs it
             # note: we assume the render interval to be the shortest accepted rendering interval.
             #    If a camera needs rendering at a faster frequency, this will lead to unexpected behavior.
@@ -354,6 +375,8 @@ class DirectRLEnv(gym.Env):
                 self.sim.render()
             # update buffers at sim dt
             self.scene.update(dt=self.physics_dt)
+            check_nan_and_print_if_any(self.robot.data.joint_pos, f"self.robot.data.joint_pos (in step {i} after update)")
+            check_nan_and_print_if_any(self.robot.data.joint_vel, f"self.robot.data.joint_vel (in step {i} after update)")
 
         # post-step:
         # -- update env counters (used for curriculum generation)
