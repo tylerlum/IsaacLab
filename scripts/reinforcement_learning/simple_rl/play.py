@@ -258,7 +258,9 @@ def main(
     # note: We simplified the logic in simple-rl player.py (:func:`BasePlayer.run()`) function in an
     #   attempt to have complete control over environment stepping.
     while simulation_app.is_running():
-        print(f"timestep: {timestep}")
+        PRINT_TIMESTEPS = False
+        if PRINT_TIMESTEPS:
+            print(f"timestep: {timestep}")
 
         start_time = time.time()
         # run everything in inference mode
