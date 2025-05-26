@@ -130,25 +130,16 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     arm_action_scale = 0.1
     hand_action_scale = 2.0
     debug_vis = False
-
-    @property
-    def action_space(self) -> int:
-        return (
-            11 * NUM_BIMANUAL if USE_FABRIC else NUM_ARM_HAND_JOINTS * NUM_BIMANUAL
-        )
-
-    @property
-    def observation_space(self) -> int:
-        return (
-            144
-            + (NUM_XYZ * NUM_BIMANUAL if FINGER_GOALS else 0)
-            + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0)
-            + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)
-        )
-
-    @property
-    def state_space(self) -> int:
-        return 0
+    action_space = (
+        11 * NUM_BIMANUAL if USE_FABRIC else NUM_ARM_HAND_JOINTS * NUM_BIMANUAL
+    )
+    observation_space = (
+        144
+        + (NUM_XYZ * NUM_BIMANUAL if FINGER_GOALS else 0)
+        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0)
+        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)
+    )
+    state_space = 0
 
     # simulation
     sim: SimulationCfg = SimulationCfg(
