@@ -69,6 +69,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_robot_constants import (
     RIGHT_RING_FINGERTIP_LINK_IDX,
     RIGHT_THUMB_FINGERTIP_LINK_IDX,
     URDF_PATH,
+    NUM_FABRIC_SPHERES,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
     fabric_to_isaaclab_joint_order_torch,
@@ -105,7 +106,6 @@ USE_FABRIC = True
 USE_FABRIC_CUDA_GRAPH = False  # Leave this False almost all the time, CUDA graphs don't offer any speedup (actually slows down) with large batch size
 
 VISUALIZE_FABRIC_SPHERES = False
-NUM_FABRIC_SPHERES = 38
 
 OBJECT_LENGTH_Z = 0.22
 
@@ -135,7 +135,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         11 * NUM_BIMANUAL if USE_FABRIC else NUM_ARM_HAND_JOINTS * NUM_BIMANUAL
     )
     observation_space = (
-        136
+        144
         + (NUM_XYZ * NUM_BIMANUAL if FINGER_GOALS else 0)
         + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0)
         + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)
@@ -691,8 +691,11 @@ class BimanualEnv(DirectRLEnv):
 
             # Update fabric targets
             # Action is in [-1, 1] => [min, max]
-            # TODO: HACK REMOVE
-            self.raw_actions[:] = self.sampled_raw_actions
+
+            # Set to True to debug
+            OVERWRITE_WITH_SAMPLED_ACTIONS = False
+            if OVERWRITE_WITH_SAMPLED_ACTIONS:
+                self.raw_actions[:] = self.sampled_raw_actions
 
             # Split into palm and hand actions
             raw_fabric_palm_actions = self.raw_actions[:, : NUM_BIMANUAL * 6]
@@ -871,6 +874,8 @@ class BimanualEnv(DirectRLEnv):
         pass
 
     def _get_observations(self) -> dict:
+        right_palm_pose_w = self.right_palm_pose_w()
+        left_palm_pose_w = self.left_palm_pose_w()
         obs_dict = {
             "q": self.robot.data.joint_pos,
             "qd": self.robot.data.joint_vel,
@@ -882,10 +887,10 @@ class BimanualEnv(DirectRLEnv):
                 self.left_fingertip_positions_w()
                 - self.scene.env_origins.unsqueeze(dim=1)
             ).reshape(self.num_envs, -1),
-            "right_palm_position": self.right_palm_pose_w()[:, :3]
-            - self.scene.env_origins,
-            "left_palm_position": self.left_palm_pose_w()[:, :3]
-            - self.scene.env_origins,
+            "right_palm_position": right_palm_pose_w[:, :3] - self.scene.env_origins,
+            "right_palm_orientation": right_palm_pose_w[:, 3:],
+            "left_palm_position": left_palm_pose_w[:, :3] - self.scene.env_origins,
+            "left_palm_orientation": left_palm_pose_w[:, 3:],
             "object_position": self.object_position_w - self.scene.env_origins,
             "goal_object_position": self.goal_object_position_w
             - self.scene.env_origins,
@@ -1228,25 +1233,25 @@ class BimanualEnv(DirectRLEnv):
 
     def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
-            low=torch.tensor([-0.5, -0.5, 0.05], device=self.device),
-            high=torch.tensor([0.5, -0.1, 0.5], device=self.device),
+            low=torch.tensor([-0.2, -0.5, 0.05], device=self.device),
+            high=torch.tensor([0.2, -0.1, 0.5], device=self.device),
             N=len(env_ids),
         )
 
     def _sample_left_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
-            low=torch.tensor([-0.5, 0.1, 0.05], device=self.device),
-            high=torch.tensor([0.5, 0.5, 0.5], device=self.device),
+            low=torch.tensor([-0.2, 0.1, 0.05], device=self.device),
+            high=torch.tensor([0.2, 0.5, 0.5], device=self.device),
             N=len(env_ids),
         )
 
     def _sample_initial_object_pose(self, env_ids: torch.Tensor) -> torch.Tensor:
         position = self.table_position[env_ids] + sample_uniform_tensor(
             low=torch.tensor(
-                [-0.4, -0.5, OBJECT_LENGTH_Z / 2 + 0.02], device=self.device
+                [-0.2, -0.5, OBJECT_LENGTH_Z / 2 + 0.02], device=self.device
             ),
             high=torch.tensor(
-                [0.4, 0.5, OBJECT_LENGTH_Z / 2 + 0.03], device=self.device
+                [0.2, 0.5, OBJECT_LENGTH_Z / 2 + 0.03], device=self.device
             ),
             N=len(env_ids),
         )
@@ -1260,10 +1265,10 @@ class BimanualEnv(DirectRLEnv):
     def _sample_final_object_pose(self, env_ids: torch.Tensor) -> torch.Tensor:
         position = self.table_position[env_ids] + sample_uniform_tensor(
             low=torch.tensor(
-                [-0.4, -0.5, OBJECT_LENGTH_Z / 2 + 0.02], device=self.device
+                [-0.2, -0.5, OBJECT_LENGTH_Z / 2 + 0.02], device=self.device
             ),
             high=torch.tensor(
-                [0.4, 0.5, OBJECT_LENGTH_Z / 2 + 0.5], device=self.device
+                [0.2, 0.5, OBJECT_LENGTH_Z / 2 + 0.5], device=self.device
             ),
             N=len(env_ids),
         )
