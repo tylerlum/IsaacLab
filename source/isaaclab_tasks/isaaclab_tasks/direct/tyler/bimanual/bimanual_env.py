@@ -1346,11 +1346,14 @@ class BimanualEnv(DirectRLEnv):
         if not self.robot.is_initialized:
             return
 
+        POSE_SCALE = [0.1, 0.1, 0.1]
+        SPHERE_SCALE = [0.03, 0.03, 0.03]
+
         base_pos_w = self.robot.data.root_pos_w.clone()
         self.origin_pose_visualizer.visualize(
             translations=base_pos_w,
             orientations=self.robot.data.root_quat_w,
-            scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+            scales=torch.tensor(POSE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
@@ -1359,14 +1362,14 @@ class BimanualEnv(DirectRLEnv):
         self.right_palm_pose_visualizer.visualize(
             translations=right_palm_pose[:, :3],
             orientations=right_palm_pose[:, 3:],
-            scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+            scales=torch.tensor(POSE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         self.left_palm_pose_visualizer.visualize(
             translations=left_palm_pose[:, :3],
             orientations=left_palm_pose[:, 3:],
-            scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+            scales=torch.tensor(POSE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
@@ -1376,27 +1379,27 @@ class BimanualEnv(DirectRLEnv):
             self.right_palm_target_pose_visualizer.visualize(
                 translations=right_palm_target_pose[:, :3],
                 orientations=right_palm_target_pose[:, 3:],
-                scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+                scales=torch.tensor(POSE_SCALE, device=self.device)
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
             self.left_palm_target_pose_visualizer.visualize(
                 translations=left_palm_target_pose[:, :3],
                 orientations=left_palm_target_pose[:, 3:],
-                scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+                scales=torch.tensor(POSE_SCALE, device=self.device)
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
         if FINGER_GOALS:
             self.right_goal_visualizer.visualize(
                 translations=self.right_goal_position,
-                scales=torch.tensor([0.03, 0.03, 0.03], device=self.device)
+                scales=torch.tensor(SPHERE_SCALE, device=self.device)
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
             self.left_goal_visualizer.visualize(
                 translations=self.left_goal_position,
-                scales=torch.tensor([0.03, 0.03, 0.03], device=self.device)
+                scales=torch.tensor(SPHERE_SCALE, device=self.device)
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
@@ -1404,27 +1407,27 @@ class BimanualEnv(DirectRLEnv):
         self.object_pose_visualizer.visualize(
             translations=self.object_position,
             orientations=self.object_orientation,
-            scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+            scales=torch.tensor(POSE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         self.goal_object_pose_visualizer.visualize(
             translations=self.goal_object_position,
             orientations=self.goal_object_orientation,
-            scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
+            scales=torch.tensor(POSE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
 
         self.right_fingertip_visualizer.visualize(
             translations=self.right_index_fingertip_position(),
-            scales=torch.tensor([0.03, 0.03, 0.03], device=self.device)
+            scales=torch.tensor(SPHERE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         self.left_fingertip_visualizer.visualize(
             translations=self.left_index_fingertip_position(),
-            scales=torch.tensor([0.03, 0.03, 0.03], device=self.device)
+            scales=torch.tensor(SPHERE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
