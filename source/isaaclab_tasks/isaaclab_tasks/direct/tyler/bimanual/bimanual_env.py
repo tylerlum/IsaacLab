@@ -81,8 +81,8 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
 FINGER_GOALS = False
 FILTER_ARM_ACTIONS = False
 
-USE_FABRIC = False
-USE_FABRIC_CUDA_GRAPH = False
+USE_FABRIC = True
+USE_FABRIC_CUDA_GRAPH = False  # Leave this False almost all the time, CUDA graphs don't offer any speedup (actually slows down) with large batch size
 
 VISUALIZE_FABRIC_SPHERES = False
 if VISUALIZE_FABRIC_SPHERES:
@@ -593,8 +593,10 @@ class BimanualEnv(DirectRLEnv):
         # add articulation to scene
         self.robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self.robot
-        self.blue_robot = Articulation(self.cfg.blue_robot)
-        self.scene.articulations["blue_robot"] = self.blue_robot
+
+        if self.include_blue_robot:
+            self.blue_robot = Articulation(self.cfg.blue_robot)
+            self.scene.articulations["blue_robot"] = self.blue_robot
 
         # add object to scene
         self.object = RigidObject(self.cfg.object)
@@ -762,7 +764,8 @@ class BimanualEnv(DirectRLEnv):
             position_targets[:] = 0.0
 
         self.robot.set_joint_position_target(position_targets)
-        self.blue_robot.write_joint_position_to_sim(position_targets)
+        if self.include_blue_robot:
+            self.blue_robot.write_joint_position_to_sim(position_targets)
 
     def _apply_action(self):
         pass
@@ -1001,10 +1004,11 @@ class BimanualEnv(DirectRLEnv):
 
         self.robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
         self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
-        self.blue_robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
-        self.blue_robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
         self.robot.set_joint_position_target(joint_pos, env_ids=env_ids)
-        self.blue_robot.set_joint_position_target(joint_pos, env_ids=env_ids)
+        if self.include_blue_robot:
+            self.blue_robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
+            self.blue_robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
+            self.blue_robot.set_joint_position_target(joint_pos, env_ids=env_ids)
 
         # Reset object
         object_pose = self._sample_initial_object_pose(env_ids)
@@ -1051,15 +1055,6 @@ class BimanualEnv(DirectRLEnv):
                 self.robot.data.joint_pos[:, : NUM_ARM_JOINTS * NUM_BIMANUAL]
             )
 
-            self.sampled_position_targets = (
-                self.robot.data.default_joint_pos
-                + sample_uniform_tensor(
-                    low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.1,
-                    high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.1,
-                    N=self.num_envs,
-                )
-            )
-
             if FINGER_GOALS:
                 self.right_goal_position = self._sample_right_goal_position(env_ids)
                 self.left_goal_position = self._sample_left_goal_position(env_ids)
@@ -1092,14 +1087,6 @@ class BimanualEnv(DirectRLEnv):
             self.filtered_arm_position_targets[env_ids] = self.robot.data.joint_pos[
                 env_ids, : NUM_ARM_JOINTS * NUM_BIMANUAL
             ]
-
-            self.sampled_position_targets[env_ids] = self.robot.data.default_joint_pos[
-                env_ids
-            ] + sample_uniform_tensor(
-                low=torch.ones_like(self.robot.data.joint_pos[0]) * -0.1,
-                high=torch.ones_like(self.robot.data.joint_pos[0]) * 0.1,
-                N=len(env_ids),
-            )
 
             if FINGER_GOALS:
                 self.right_goal_position[env_ids] = self._sample_right_goal_position(
@@ -1529,3 +1516,10 @@ class BimanualEnv(DirectRLEnv):
         return self.object_position[:, 2] > self.table_position[:, 2] + OBJECT_LENGTH_Z
 
     #### TENSOR SLICE PROPERTIES END ####
+
+    #### OTHER PROPERTIES START ####
+    @property
+    def include_blue_robot(self) -> bool:
+        return self.cfg.debug_vis and self.num_envs < 10
+
+    #### OTHER PROPERTIES END ####
