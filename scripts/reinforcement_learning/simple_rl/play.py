@@ -148,14 +148,14 @@ def main(
         log_root_path = os.path.abspath(log_root_path)
         print(f"[INFO] Looking for checkpoint in directory: {log_root_path}")
         checkpoint_path = get_checkpoint_path(
-            log_root_path, ".*", "best.pth", other_dirs=["nn"]
+            log_path=log_root_path, run_dir=".*", checkpoint="best.pth", other_dirs=["nn"]
         )
     elif args_cli.use_last_checkpoint:
         log_root_path = os.path.join("logs", "simple_rl", args_cli.task)
         log_root_path = os.path.abspath(log_root_path)
         print(f"[INFO] Looking for checkpoint in directory: {log_root_path}")
         checkpoint_path = get_checkpoint_path(
-            log_root_path, ".*", ".*", other_dirs=["nn"]
+            log_path=log_root_path, run_dir=".*", checkpoint=".*", other_dirs=["nn"]
         )
     elif args_cli.checkpoint is not None:
         checkpoint_path = retrieve_file_path(args_cli.checkpoint)
@@ -247,6 +247,8 @@ def main(
     # required: enables the flag for batched observations
     _ = player.get_batch_size(obs, 1)
 
+    aggregated_rews = torch.zeros(env.unwrapped.num_envs, device=rl_device)
+
     # initialize RNN states if used
     player.reset()
     if player.is_rnn:
@@ -266,14 +268,18 @@ def main(
             # player stepping
             actions = player.get_action(obs, is_deterministic=player.is_deterministic)
             # env stepping
-            obs, _, dones, _ = env.step(actions)
+            obs, rew, dones, _ = env.step(actions)
+
+            aggregated_rews += rew
 
             # perform operations for terminated episodes
-            if len(dones) > 0:
+            if (dones == True).any():
                 # reset rnn state for terminated episodes
                 if player.is_rnn and player.states is not None:
                     for s in player.states:
                         s[:, dones, :] = 0.0
+                print(f"aggregated_rews[dones]: {aggregated_rews[dones]}")
+                aggregated_rews[dones] = 0.0
 
         timestep += 1
         if args_cli.video:
@@ -286,10 +292,14 @@ def main(
         sleep_time = dt - actual_dt
         if args_cli.real_time:
             if sleep_time > 0:
-                print(f"[INFO] Sleeping for {sleep_time*1000:.2f} ms, dt: {dt*1000:.2f} ms, actual dt: {actual_dt*1000:.2f} ms")
+                print(
+                    f"[INFO] Sleeping for {sleep_time * 1000:.2f} ms, dt: {dt * 1000:.2f} ms, actual dt: {actual_dt * 1000:.2f} ms"
+                )
                 time.sleep(sleep_time)
             else:
-                print(f"[INFO] Real-time mode is not possible, dt: {dt*1000:.2f} ms, actual dt: {actual_dt*1000:.2f} ms")
+                print(
+                    f"[INFO] Real-time mode is not possible, dt: {dt * 1000:.2f} ms, actual dt: {actual_dt * 1000:.2f} ms"
+                )
 
     # close the simulator
     env.close()
