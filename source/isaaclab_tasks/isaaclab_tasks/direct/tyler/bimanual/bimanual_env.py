@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
@@ -90,7 +90,10 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
     TABLE_Z,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
+    euler_angles_to_matrix,
+    matrix_to_euler_angles,
     matrix_to_quat_wxyz,
+    quat_wxyz_to_matrix,
     rescale,
     sample_uniform_tensor,
 )
@@ -553,19 +556,6 @@ class BimanualEnv(DirectRLEnv):
             new_maxs=self.fabric_hand_maxs,
         )
 
-        # Compute palm poses at default joint positions
-        default_palm_target = np.array(
-            [0.7298, -0.2469, 0.5738, 2.25930292, 0.86978541, 1.86671697]
-            + [0.7298, 0.2469, 0.5738, -2.25930299, 0.86978536, -1.86671716],
-        )
-        self.fabric_palm_target = (
-            torch.from_numpy(default_palm_target)
-            .float()
-            .to(self.device)
-            .unsqueeze(dim=0)
-            .repeat_interleave(self.num_envs, dim=0)
-        )
-
         self.fabric_integrator = DisplacementIntegrator(self.fabric)
 
         if USE_FABRIC_CUDA_GRAPH:
@@ -709,7 +699,7 @@ class BimanualEnv(DirectRLEnv):
             raw_fabric_palm_actions = self.raw_actions[:, : NUM_BIMANUAL * 6]
             raw_fabric_hand_actions = self.raw_actions[:, NUM_BIMANUAL * 6 :]
 
-            ABSOLUTE_PALM_CONTROL = True
+            ABSOLUTE_PALM_CONTROL = False
             if ABSOLUTE_PALM_CONTROL:
                 new_fabric_palm_target = rescale(
                     values=raw_fabric_palm_actions,
@@ -719,7 +709,10 @@ class BimanualEnv(DirectRLEnv):
                     new_maxs=self.fabric_palm_maxs,
                 )
             else:
-                new_fabric_palm_target = self.fabric_palm_target.clone() + rescale(
+                current_fabric_palm = torch.cat(
+                    [self.right_fabric_palm, self.left_fabric_palm], dim=1
+                )
+                new_fabric_palm_target = current_fabric_palm + rescale(
                     values=raw_fabric_palm_actions,
                     old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
                     old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
@@ -731,13 +724,25 @@ class BimanualEnv(DirectRLEnv):
                             np.deg2rad(-45),
                             np.deg2rad(-45),
                             np.deg2rad(-45),
-                        ],
+                        ]
+                        * NUM_BIMANUAL,
                         device=self.device,
                     ),
                     new_maxs=torch.tensor(
-                        [0.1, 0.1, 0.1, np.deg2rad(45), np.deg2rad(45), np.deg2rad(45)],
+                        [
+                            0.1,
+                            0.1,
+                            0.1,
+                            np.deg2rad(45),
+                            np.deg2rad(45),
+                            np.deg2rad(45),
+                        ]
+                        * NUM_BIMANUAL,
                         device=self.device,
                     ),
+                )
+                new_fabric_palm_target = new_fabric_palm_target.clamp_(
+                    min=self.fabric_palm_mins, max=self.fabric_palm_maxs
                 )
             self.fabric_palm_target.copy_(new_fabric_palm_target)
 
@@ -834,7 +839,7 @@ class BimanualEnv(DirectRLEnv):
         # Clamp
         joint_pos_limits = self.robot.data.soft_joint_pos_limits.clone()
         position_targets = position_targets.clamp_(
-            joint_pos_limits[..., 0], joint_pos_limits[..., 1]
+            min=joint_pos_limits[..., 0], max=joint_pos_limits[..., 1]
         )
 
         # Save plotting data
@@ -1092,9 +1097,11 @@ class BimanualEnv(DirectRLEnv):
         )
 
         joint_pos_limits = self.robot.data.soft_joint_pos_limits[env_ids].clone()
-        joint_pos = joint_pos.clamp_(joint_pos_limits[..., 0], joint_pos_limits[..., 1])
+        joint_pos = joint_pos.clamp_(
+            min=joint_pos_limits[..., 0], max=joint_pos_limits[..., 1]
+        )
         joint_vel_limits = self.robot.data.soft_joint_vel_limits[env_ids].clone()
-        joint_vel = joint_vel.clamp_(-joint_vel_limits, joint_vel_limits)
+        joint_vel = joint_vel.clamp_(min=-joint_vel_limits, max=joint_vel_limits)
 
         self.robot.write_joint_position_to_sim(joint_pos, env_ids=env_ids)
         self.robot.write_joint_velocity_to_sim(joint_vel, env_ids=env_ids)
@@ -1168,6 +1175,8 @@ class BimanualEnv(DirectRLEnv):
                 )
                 self.fabric_qd = torch.zeros_like(self.fabric_q)
                 self.fabric_qdd = torch.zeros_like(self.fabric_q)
+
+                self.fabric_palm_target = self.default_fabric_palm_target().clone()
         else:
             self.raw_actions[env_ids] = torch.zeros(
                 len(env_ids), self.cfg.action_space, device=self.device
@@ -1210,6 +1219,9 @@ class BimanualEnv(DirectRLEnv):
                 )
                 self.fabric_qd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
                 self.fabric_qdd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
+                self.fabric_palm_target[env_ids] = self.default_fabric_palm_target()[
+                    env_ids
+                ].clone()
 
     def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
@@ -1649,17 +1661,12 @@ class BimanualEnv(DirectRLEnv):
         )
         right_pos = self.fabric_palm_target[:, :3]
 
-        right_euler_ZYX_np = self.fabric_palm_target[:, 3:6].detach().cpu().numpy()
-        right_quat_xyzw_np = R.from_euler(
-            "ZYX", right_euler_ZYX_np, degrees=False
-        ).as_quat()
-        right_quat_wxyz_np = np.concatenate(
-            [right_quat_xyzw_np[..., 3:], right_quat_xyzw_np[..., :3]], axis=-1
+        right_euler_ZYX = self.fabric_palm_target[:, 3:6]
+        right_matrix = euler_angles_to_matrix(right_euler_ZYX, "ZYX")
+        right_quat_wxyz = matrix_to_quat_wxyz(right_matrix)
+        assert right_quat_wxyz.shape == (self.num_envs, 4), (
+            f"Quat shape: {right_quat_wxyz.shape}"
         )
-        assert right_quat_wxyz_np.shape == (self.num_envs, 4), (
-            f"Quat shape: {right_quat_wxyz_np.shape}"
-        )
-        right_quat_wxyz = torch.from_numpy(right_quat_wxyz_np).to(self.device).float()
 
         # World frame
         right_pos_w = right_pos + self.scene.env_origins
@@ -1693,9 +1700,30 @@ class BimanualEnv(DirectRLEnv):
         left_pose_w = torch.cat([left_pos_w, left_quat_wxyz], dim=-1)
         return left_pose_w
 
+    @property
+    def right_fabric_palm(self) -> torch.Tensor:
+        pose_w = self.right_palm_pose_w()
+        pos = pose_w[:, :3] - self.scene.env_origins
+        quat_wxyz = pose_w[:, 3:]
+        matrix = quat_wxyz_to_matrix(quat_wxyz)
+        euler_ZYX = matrix_to_euler_angles(matrix, "ZYX")
+        return torch.cat([pos, euler_ZYX], dim=-1)
+
+    @property
+    def left_fabric_palm(self) -> torch.Tensor:
+        pose_w = self.left_palm_pose_w()
+        pos = pose_w[:, :3] - self.scene.env_origins
+        quat_wxyz = pose_w[:, 3:]
+        matrix = quat_wxyz_to_matrix(quat_wxyz)
+        euler_ZYX = matrix_to_euler_angles(matrix, "ZYX")
+        return torch.cat([pos, euler_ZYX], dim=-1)
+
     def right_taskmap_helper(
-        self, q: torch.Tensor, qd: torch.Tensor
+        self, q: torch.Tensor, qd: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if qd is None:
+            qd = torch.zeros_like(q)
+
         # BRITTLE: We assume that the input q is in isaacgym order
         # We need to convert it to curobo order
         q = isaaclab_to_fabric_joint_order_torch(q)
@@ -1723,8 +1751,11 @@ class BimanualEnv(DirectRLEnv):
         )
 
     def left_taskmap_helper(
-        self, q: torch.Tensor, qd: torch.Tensor
+        self, q: torch.Tensor, qd: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if qd is None:
+            qd = torch.zeros_like(q)
+
         # BRITTLE: We assume that the input q is in isaacgym order
         # We need to convert it to curobo order
         q = isaaclab_to_fabric_joint_order_torch(q)
@@ -1751,10 +1782,12 @@ class BimanualEnv(DirectRLEnv):
             jac.reshape(N, n_points, NUM_XYZ, NUM_BIMANUAL * NUM_ARM_HAND_JOINTS),
         )
 
-    def right_palm_pose_w(self) -> torch.Tensor:
+    def right_palm_pose_w(self, q: Optional[torch.Tensor] = None) -> torch.Tensor:
+        if q is None:
+            q = self.robot.data.joint_pos
+
         x, _, _ = self.right_taskmap_helper(
-            q=self.robot.data.joint_pos,
-            qd=self.robot.data.joint_vel,
+            q=q,
         )
         palm_pos = x[:, RIGHT_PALM_LINK_IDX]
         palm_x_pos = x[:, RIGHT_PALM_X_LINK_IDX]
@@ -1779,10 +1812,12 @@ class BimanualEnv(DirectRLEnv):
         palm_pose = torch.cat([palm_pos_w, palm_quat_wxyz], dim=-1)
         return palm_pose
 
-    def left_palm_pose_w(self) -> torch.Tensor:
+    def left_palm_pose_w(self, q: Optional[torch.Tensor] = None) -> torch.Tensor:
+        if q is None:
+            q = self.robot.data.joint_pos
+
         x, _, _ = self.left_taskmap_helper(
-            q=self.robot.data.joint_pos,
-            qd=self.robot.data.joint_vel,
+            q=q,
         )
         palm_pos = x[:, LEFT_PALM_LINK_IDX]
         palm_x_pos = x[:, LEFT_PALM_X_LINK_IDX]
@@ -1807,10 +1842,14 @@ class BimanualEnv(DirectRLEnv):
         palm_pose = torch.cat([palm_pos_w, palm_quat_wxyz], dim=-1)
         return palm_pose
 
-    def right_fingertip_positions_w(self) -> torch.Tensor:
+    def right_fingertip_positions_w(
+        self, q: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        if q is None:
+            q = self.robot.data.joint_pos
+
         x, _, _ = self.right_taskmap_helper(
-            q=self.robot.data.joint_pos,
-            qd=self.robot.data.joint_vel,
+            q=q,
         )
         right_index_pos = x[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
         right_middle_pos = x[:, RIGHT_MIDDLE_FINGERTIP_LINK_IDX]
@@ -1825,10 +1864,14 @@ class BimanualEnv(DirectRLEnv):
         positions_w = positions + self.scene.env_origins.unsqueeze(dim=1)
         return positions_w
 
-    def left_fingertip_positions_w(self) -> torch.Tensor:
+    def left_fingertip_positions_w(
+        self, q: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        if q is None:
+            q = self.robot.data.joint_pos
+
         x, _, _ = self.left_taskmap_helper(
-            q=self.robot.data.joint_pos,
-            qd=self.robot.data.joint_vel,
+            q=q,
         )
         left_index_pos = x[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
         left_middle_pos = x[:, LEFT_MIDDLE_FINGERTIP_LINK_IDX]
@@ -1842,11 +1885,29 @@ class BimanualEnv(DirectRLEnv):
         positions_w = positions + self.scene.env_origins.unsqueeze(dim=1)
         return positions_w
 
-    def right_index_fingertip_position_w(self) -> torch.Tensor:
-        return self.right_fingertip_positions_w()[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
+    def right_index_fingertip_position_w(
+        self, q: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        return self.right_fingertip_positions_w(q)[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
 
-    def left_index_fingertip_position_w(self) -> torch.Tensor:
-        return self.left_fingertip_positions_w()[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
+    def left_index_fingertip_position_w(
+        self, q: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        return self.left_fingertip_positions_w(q)[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
+
+    def default_fabric_palm_target(self) -> torch.Tensor:
+        # Compute palm poses at default joint positions
+        default_palm_target = np.array(
+            [0.7298, -0.2469, 0.5738, 2.25930292, 0.86978541, 1.86671697]
+            + [0.7298, 0.2469, 0.5738, -2.25930299, 0.86978536, -1.86671716],
+        )
+        return (
+            torch.from_numpy(default_palm_target)
+            .float()
+            .to(self.device)
+            .unsqueeze(dim=0)
+            .repeat_interleave(self.num_envs, dim=0)
+        )
 
     #### TENSOR SLICE PROPERTIES END ####
 
