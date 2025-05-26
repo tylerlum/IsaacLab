@@ -100,7 +100,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
 FINGER_GOALS = True
 FILTER_ARM_ACTIONS = False
 
-USE_FABRIC = True
+USE_FABRIC = False
 USE_FABRIC_CUDA_GRAPH = False  # Leave this False almost all the time, CUDA graphs don't offer any speedup (actually slows down) with large batch size
 
 VISUALIZE_FABRIC_SPHERES = False
@@ -125,7 +125,7 @@ ENV_REGEX_NS = "/World/envs/env_.*"
 @configclass
 class BimanualEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 5.0
+    episode_length_s = 10.0
     decimation = 1
     arm_action_scale = 0.1
     hand_action_scale = 2.0
@@ -1244,14 +1244,14 @@ class BimanualEnv(DirectRLEnv):
     def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
             low=torch.tensor([-0.2, -0.5, 0.05], device=self.device),
-            high=torch.tensor([0.2, -0.1, 0.5], device=self.device),
+            high=torch.tensor([0.5, -0.1, 0.5], device=self.device),
             N=len(env_ids),
         )
 
     def _sample_left_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
             low=torch.tensor([-0.2, 0.1, 0.05], device=self.device),
-            high=torch.tensor([0.2, 0.5, 0.5], device=self.device),
+            high=torch.tensor([0.5, 0.5, 0.5], device=self.device),
             N=len(env_ids),
         )
 
