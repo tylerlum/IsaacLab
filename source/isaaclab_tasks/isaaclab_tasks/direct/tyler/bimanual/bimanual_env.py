@@ -100,7 +100,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
 FINGER_GOALS = True
 FILTER_ARM_ACTIONS = False
 
-USE_FABRIC = False
+USE_FABRIC = True
 USE_FABRIC_CUDA_GRAPH = False  # Leave this False almost all the time, CUDA graphs don't offer any speedup (actually slows down) with large batch size
 
 VISUALIZE_FABRIC_SPHERES = False
@@ -129,17 +129,26 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     decimation = 1
     arm_action_scale = 0.1
     hand_action_scale = 2.0
-    action_space = (
-        11 * NUM_BIMANUAL if USE_FABRIC else NUM_ARM_HAND_JOINTS * NUM_BIMANUAL
-    )
-    observation_space = (
-        144
-        + (NUM_XYZ * NUM_BIMANUAL if FINGER_GOALS else 0)
-        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0)
-        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)
-    )
-    state_space = 0
     debug_vis = False
+
+    @property
+    def action_space(self) -> int:
+        return (
+            11 * NUM_BIMANUAL if USE_FABRIC else NUM_ARM_HAND_JOINTS * NUM_BIMANUAL
+        )
+
+    @property
+    def observation_space(self) -> int:
+        return (
+            144
+            + (NUM_XYZ * NUM_BIMANUAL if FINGER_GOALS else 0)
+            + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0)
+            + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)
+        )
+
+    @property
+    def state_space(self) -> int:
+        return 0
 
     # simulation
     sim: SimulationCfg = SimulationCfg(
@@ -745,7 +754,7 @@ class BimanualEnv(DirectRLEnv):
         raw_fabric_palm_actions = self.raw_actions[:, : NUM_BIMANUAL * 6]
         raw_fabric_hand_actions = self.raw_actions[:, NUM_BIMANUAL * 6 :]
 
-        ABSOLUTE_PALM_CONTROL = False
+        ABSOLUTE_PALM_CONTROL = True
         if ABSOLUTE_PALM_CONTROL:
             new_fabric_palm_target = rescale(
                 values=raw_fabric_palm_actions,
