@@ -702,6 +702,7 @@ class BimanualEnv(DirectRLEnv):
 
             # Update fabric targets
             # Action is in [-1, 1] => [min, max]
+            # TODO: HACK REMOVE
             self.raw_actions[:] = self.sampled_raw_actions
 
             self.fabric_palm_target.copy_(
