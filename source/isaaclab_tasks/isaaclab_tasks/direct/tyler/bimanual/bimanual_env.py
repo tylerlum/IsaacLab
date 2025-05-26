@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
@@ -47,22 +47,37 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.constants import (
     NUM_QUAT,
     NUM_XYZ,
 )
+from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_robot_constants import (
+    LEFT_ALLEGRO_FINGERTIP_LINK_NAMES,
+    LEFT_INDEX_FINGERTIP_LINK_IDX,
+    LEFT_MIDDLE_FINGERTIP_LINK_IDX,
+    LEFT_PALM_LINK_IDX,
+    LEFT_PALM_LINK_NAMES,
+    LEFT_PALM_X_LINK_IDX,
+    LEFT_PALM_Y_LINK_IDX,
+    LEFT_PALM_Z_LINK_IDX,
+    LEFT_RING_FINGERTIP_LINK_IDX,
+    LEFT_THUMB_FINGERTIP_LINK_IDX,
+    RIGHT_ALLEGRO_FINGERTIP_LINK_NAMES,
+    RIGHT_INDEX_FINGERTIP_LINK_IDX,
+    RIGHT_MIDDLE_FINGERTIP_LINK_IDX,
+    RIGHT_PALM_LINK_IDX,
+    RIGHT_PALM_LINK_NAMES,
+    RIGHT_PALM_X_LINK_IDX,
+    RIGHT_PALM_Y_LINK_IDX,
+    RIGHT_PALM_Z_LINK_IDX,
+    RIGHT_RING_FINGERTIP_LINK_IDX,
+    RIGHT_THUMB_FINGERTIP_LINK_IDX,
+    URDF_PATH,
+)
 from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
     fabric_to_isaaclab_joint_order_torch,
     isaaclab_to_fabric_joint_order_torch,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.robot_constants import (
-    INDEX_FINGERTIP_IDX,
-    LEFT_FINGERTIP_LINK_NAMES,
-    LEFT_PALM_LINK_NAME,
-    MIDDLE_FINGERTIP_IDX,
     NUM_ARM_HAND_JOINTS,
     NUM_ARM_JOINTS,
     NUM_BIMANUAL,
-    RIGHT_FINGERTIP_LINK_NAMES,
-    RIGHT_PALM_LINK_NAME,
-    RING_FINGERTIP_IDX,
-    THUMB_FINGERTIP_IDX,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
     TABLE_LENGTH_Z,
@@ -75,6 +90,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
     TABLE_Z,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
+    matrix_to_quat_wxyz,
     rescale,
     sample_uniform_tensor,
 )
@@ -381,6 +397,7 @@ class BimanualEnv(DirectRLEnv):
         self._reset_state(env_ids=None)
         if USE_FABRIC:
             self._setup_fabric_action_space()
+            self._setup_fabric_taskmap()
 
         # Logging
         self.wandb_dict = {}
@@ -407,18 +424,6 @@ class BimanualEnv(DirectRLEnv):
 
         # Robot link idxs
         self._link_idxs, self._link_names = self.robot.find_bodies(".*")
-        self._right_fingertip_link_idxs, self._right_fingertip_link_names = (
-            self.robot.find_bodies(RIGHT_FINGERTIP_LINK_NAMES)
-        )
-        self._left_fingertip_link_idxs, self._left_fingertip_link_names = (
-            self.robot.find_bodies(LEFT_FINGERTIP_LINK_NAMES)
-        )
-        self._right_palm_link_idxs, self._right_palm_link_names = (
-            self.robot.find_bodies(RIGHT_PALM_LINK_NAME)
-        )
-        self._left_palm_link_idxs, self._left_palm_link_names = self.robot.find_bodies(
-            LEFT_PALM_LINK_NAME
-        )
         print(colored("!" * 100, "green"))
         print(colored(f"len(self._link_idxs): {len(self._link_idxs)}", "green"))
         print(colored(f"self._link_names: {self._link_names}", "green"))
@@ -587,6 +592,32 @@ class BimanualEnv(DirectRLEnv):
                 device=self.device,
             )
 
+    def _setup_fabric_taskmap(self) -> None:
+        from fabrics_sim.taskmaps.robot_frame_origins_taskmap import (
+            RobotFrameOriginsTaskMap,
+        )
+
+        # Create task map that consists of the origins of the following frames stacked together.
+        # Create separate left and right taskmaps to avoid gaps in indexing
+        self.right_taskmap_link_names = (
+            RIGHT_PALM_LINK_NAMES + RIGHT_ALLEGRO_FINGERTIP_LINK_NAMES
+        )
+        self.left_taskmap_link_names = (
+            LEFT_PALM_LINK_NAMES + LEFT_ALLEGRO_FINGERTIP_LINK_NAMES
+        )
+        self.right_taskmap = RobotFrameOriginsTaskMap(
+            urdf_path=str(URDF_PATH),
+            link_names=self.right_taskmap_link_names,
+            batch_size=self.num_envs,
+            device=self.device,
+        )
+        self.left_taskmap = RobotFrameOriginsTaskMap(
+            urdf_path=str(URDF_PATH),
+            link_names=self.left_taskmap_link_names,
+            batch_size=self.num_envs,
+            device=self.device,
+        )
+
     def fabric_robot_collision_spheres(self) -> torch.Tensor:
         USE_ISAACLAB_STATE = False
         if USE_ISAACLAB_STATE:
@@ -666,6 +697,8 @@ class BimanualEnv(DirectRLEnv):
 
             # Update fabric targets
             # Action is in [-1, 1] => [min, max]
+            self.raw_actions[:] = self.sampled_raw_actions
+
             self.fabric_palm_target.copy_(
                 rescale(
                     values=self.raw_actions[:, : NUM_BIMANUAL * 6],
@@ -795,14 +828,14 @@ class BimanualEnv(DirectRLEnv):
         obs_dict = {
             "q": self.robot.data.joint_pos,
             "qd": self.robot.data.joint_vel,
-            "right_fingertip_positions": (
-                self.right_fingertip_positions - self.scene.env_origins.unsqueeze(dim=1)
-            ).reshape(self.num_envs, -1),
-            "left_fingertip_positions": (
-                self.left_fingertip_positions - self.scene.env_origins.unsqueeze(dim=1)
-            ).reshape(self.num_envs, -1),
-            "right_palm_position": self.right_palm_position - self.scene.env_origins,
-            "left_palm_position": self.left_palm_position - self.scene.env_origins,
+            "right_fingertip_positions": (self.right_fingertip_positions()).reshape(
+                self.num_envs, -1
+            ),
+            "left_fingertip_positions": (self.left_fingertip_positions()).reshape(
+                self.num_envs, -1
+            ),
+            "right_palm_position": self.right_palm_pose()[:, :3],
+            "left_palm_position": self.left_palm_pose()[:, :3],
             "object_position": self.object_position - self.scene.env_origins,
             "goal_object_position": self.goal_object_position - self.scene.env_origins,
             "object_orientation": self.object_orientation,
@@ -849,13 +882,13 @@ class BimanualEnv(DirectRLEnv):
         # fmt: off
         if FINGER_GOALS:
             self.individual_reward_bufs = {
-                "right_index_fingertip_to_goal_dist": -(self.right_index_fingertip_position - self.right_goal_position).norm(dim=-1, p=2),
-                "left_index_fingertip_to_goal_dist": -(self.left_index_fingertip_position - self.left_goal_position).norm(dim=-1, p=2),
+                "right_index_fingertip_to_goal_dist": -(self.right_index_fingertip_position() + self.scene.env_origins - self.right_goal_position).norm(dim=-1, p=2),
+                "left_index_fingertip_to_goal_dist": -(self.left_index_fingertip_position() + self.scene.env_origins - self.left_goal_position).norm(dim=-1, p=2),
             }
         else:
             self.individual_reward_bufs = {
-                "right_index_fingertip_to_object_dist": -(self.right_index_fingertip_position - self.object_position).norm(dim=-1, p=2),
-                "left_index_fingertip_to_object_dist": -(self.left_index_fingertip_position - self.object_position).norm(dim=-1, p=2),
+                "right_index_fingertip_to_object_dist": -(self.right_index_fingertip_position() + self.scene.env_origins - self.object_position).norm(dim=-1, p=2),
+                "left_index_fingertip_to_object_dist": -(self.left_index_fingertip_position() + self.scene.env_origins - self.object_position).norm(dim=-1, p=2),
                 "object_lifted": torch.logical_and(self.object_is_lifted, ~self.object_has_been_lifted_this_episode),
                 "object_to_goal_dist": torch.where(
                     self.object_is_lifted,
@@ -1072,6 +1105,11 @@ class BimanualEnv(DirectRLEnv):
             self.filtered_arm_position_targets = torch.zeros_like(
                 self.robot.data.joint_pos[:, : NUM_ARM_JOINTS * NUM_BIMANUAL]
             )
+            self.sampled_raw_actions = sample_uniform_tensor(
+                low=torch.tensor([-1.0] * self.cfg.action_space, device=self.device),
+                high=torch.tensor([1.0] * self.cfg.action_space, device=self.device),
+                N=self.num_envs,
+            )
 
             if FINGER_GOALS:
                 self.right_goal_position = self._sample_right_goal_position(env_ids)
@@ -1105,6 +1143,11 @@ class BimanualEnv(DirectRLEnv):
             self.filtered_arm_position_targets[env_ids] = self.robot.data.joint_pos[
                 env_ids, : NUM_ARM_JOINTS * NUM_BIMANUAL
             ]
+            self.sampled_raw_actions[env_ids] = sample_uniform_tensor(
+                low=torch.tensor([-1.0] * self.cfg.action_space, device=self.device),
+                high=torch.tensor([1.0] * self.cfg.action_space, device=self.device),
+                N=len(env_ids),
+            )
 
             if FINGER_GOALS:
                 self.right_goal_position[env_ids] = self._sample_right_goal_position(
@@ -1305,33 +1348,35 @@ class BimanualEnv(DirectRLEnv):
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
+        right_palm_pose = self.right_palm_pose()
+        left_palm_pose = self.left_palm_pose()
         self.right_palm_pose_visualizer.visualize(
-            translations=self.right_palm_position,
-            orientations=self.right_palm_orientation,
+            translations=right_palm_pose[:, :3] + self.scene.env_origins,
+            orientations=right_palm_pose[:, 3:],
             scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         self.left_palm_pose_visualizer.visualize(
-            translations=self.left_palm_position,
-            orientations=self.left_palm_orientation,
+            translations=left_palm_pose[:, :3] + self.scene.env_origins,
+            orientations=left_palm_pose[:, 3:],
             scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         if USE_FABRIC:
+            right_palm_target_pose = self.right_fabric_palm_target_pose
+            left_palm_target_pose = self.left_fabric_palm_target_pose
             self.right_palm_target_pose_visualizer.visualize(
-                translations=self.right_fabric_palm_target_position
-                + self.scene.env_origins,
-                orientations=self.right_fabric_palm_target_orientation,
+                translations=right_palm_target_pose[:, :3] + self.scene.env_origins,
+                orientations=right_palm_target_pose[:, 3:],
                 scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
             self.left_palm_target_pose_visualizer.visualize(
-                translations=self.left_fabric_palm_target_position
-                + self.scene.env_origins,
-                orientations=self.left_fabric_palm_target_orientation,
+                translations=left_palm_target_pose[:, :3] + self.scene.env_origins,
+                orientations=left_palm_target_pose[:, 3:],
                 scales=torch.tensor([0.2, 0.2, 0.2], device=self.device)
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
@@ -1366,13 +1411,13 @@ class BimanualEnv(DirectRLEnv):
         )
 
         self.right_fingertip_visualizer.visualize(
-            translations=self.right_index_fingertip_position,
+            translations=self.right_index_fingertip_position() + self.scene.env_origins,
             scales=torch.tensor([0.03, 0.03, 0.03], device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         self.left_fingertip_visualizer.visualize(
-            translations=self.left_index_fingertip_position,
+            translations=self.left_index_fingertip_position() + self.scene.env_origins,
             scales=torch.tensor([0.03, 0.03, 0.03], device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
@@ -1547,117 +1592,198 @@ class BimanualEnv(DirectRLEnv):
         return self.robot.data.body_pos_w[:, 0]
 
     @property
-    def right_palm_position(self) -> torch.Tensor:
-        return self.robot.data.body_pos_w[:, self._right_palm_link_idxs].squeeze(dim=1)
-
-    @property
-    def right_palm_orientation(self) -> torch.Tensor:
-        return self.robot.data.body_quat_w[:, self._right_palm_link_idxs].squeeze(dim=1)
-
-    @property
-    def left_palm_position(self) -> torch.Tensor:
-        return self.robot.data.body_pos_w[:, self._left_palm_link_idxs].squeeze(dim=1)
-
-    @property
-    def left_palm_orientation(self) -> torch.Tensor:
-        return self.robot.data.body_quat_w[:, self._left_palm_link_idxs].squeeze(dim=1)
-
-    @property
-    def right_fingertip_positions(self) -> torch.Tensor:
-        return self.robot.data.body_pos_w[:, self._right_fingertip_link_idxs]
-
-    @property
-    def left_fingertip_positions(self) -> torch.Tensor:
-        return self.robot.data.body_pos_w[:, self._left_fingertip_link_idxs]
-
-    @property
-    def right_index_fingertip_position(self) -> torch.Tensor:
-        return self.right_fingertip_positions[:, INDEX_FINGERTIP_IDX]
-
-    @property
-    def right_middle_fingertip_position(self) -> torch.Tensor:
-        return self.right_fingertip_positions[:, MIDDLE_FINGERTIP_IDX]
-
-    @property
-    def right_ring_fingertip_position(self) -> torch.Tensor:
-        return self.right_fingertip_positions[:, RING_FINGERTIP_IDX]
-
-    @property
-    def right_thumb_fingertip_position(self) -> torch.Tensor:
-        return self.right_fingertip_positions[:, THUMB_FINGERTIP_IDX]
-
-    @property
-    def left_index_fingertip_position(self) -> torch.Tensor:
-        return self.left_fingertip_positions[:, INDEX_FINGERTIP_IDX]
-
-    @property
-    def left_middle_fingertip_position(self) -> torch.Tensor:
-        return self.left_fingertip_positions[:, MIDDLE_FINGERTIP_IDX]
-
-    @property
-    def left_ring_fingertip_position(self) -> torch.Tensor:
-        return self.left_fingertip_positions[:, RING_FINGERTIP_IDX]
-
-    @property
-    def left_thumb_fingertip_position(self) -> torch.Tensor:
-        return self.left_fingertip_positions[:, THUMB_FINGERTIP_IDX]
-
-    @property
     def object_is_lifted(self) -> torch.Tensor:
         return self.object_position[:, 2] > self.table_position[:, 2] + OBJECT_LENGTH_Z
 
     @property
-    def right_fabric_palm_target_position(self) -> torch.Tensor:
+    def right_fabric_palm_target_pose(self) -> torch.Tensor:
         # Actions are in robot frame
         # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
         assert self.fabric_palm_target.shape == (self.num_envs, 6 * NUM_BIMANUAL), (
             f"Fabric palm target shape: {self.fabric_palm_target.shape}"
         )
-        return self.fabric_palm_target[:, :3]
+        right_pos = self.fabric_palm_target[:, :3]
+
+        right_euler_ZYX_np = self.fabric_palm_target[:, 3:6].detach().cpu().numpy()
+        right_quat_xyzw_np = R.from_euler(
+            "ZYX", right_euler_ZYX_np, degrees=False
+        ).as_quat()
+        right_quat_wxyz_np = np.concatenate(
+            [right_quat_xyzw_np[..., 3:], right_quat_xyzw_np[..., :3]], axis=-1
+        )
+        assert right_quat_wxyz_np.shape == (self.num_envs, 4), (
+            f"Quat shape: {right_quat_wxyz_np.shape}"
+        )
+        right_quat_wxyz = torch.from_numpy(right_quat_wxyz_np).to(self.device).float()
+        right_pose = torch.cat([right_pos, right_quat_wxyz], dim=-1)
+
+        return right_pose
 
     @property
-    def right_fabric_palm_target_orientation(self) -> torch.Tensor:
+    def left_fabric_palm_target_pose(self) -> torch.Tensor:
         # Actions are in robot frame
         # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
         assert self.fabric_palm_target.shape == (self.num_envs, 6 * NUM_BIMANUAL), (
             f"Fabric palm target shape: {self.fabric_palm_target.shape}"
         )
-        euler_ZYX_np = self.fabric_palm_target[:, 3:6].detach().cpu().numpy()
-        quat_xyzw_np = R.from_euler("ZYX", euler_ZYX_np, degrees=False).as_quat()
-        quat_wxyz_np = np.concatenate(
-            [quat_xyzw_np[..., 3:], quat_xyzw_np[..., :3]], axis=-1
+        left_pos = self.fabric_palm_target[:, 6:9]
+
+        left_euler_ZYX_np = self.fabric_palm_target[:, 9:12].detach().cpu().numpy()
+        left_quat_xyzw_np = R.from_euler(
+            "ZYX", left_euler_ZYX_np, degrees=False
+        ).as_quat()
+        left_quat_wxyz_np = np.concatenate(
+            [left_quat_xyzw_np[..., 3:], left_quat_xyzw_np[..., :3]], axis=-1
         )
-        assert quat_wxyz_np.shape == (self.num_envs, 4), (
-            f"Quat shape: {quat_wxyz_np.shape}"
+        assert left_quat_wxyz_np.shape == (self.num_envs, 4), (
+            f"Quat shape: {left_quat_wxyz_np.shape}"
+        )
+        left_quat_wxyz = torch.from_numpy(left_quat_wxyz_np).to(self.device).float()
+        left_pose = torch.cat([left_pos, left_quat_wxyz], dim=-1)
+        return left_pose
+
+    def right_taskmap_helper(
+        self, q: torch.Tensor, qd: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # BRITTLE: We assume that the input q is in isaacgym order
+        # We need to convert it to curobo order
+        q = isaaclab_to_fabric_joint_order_torch(q)
+        qd = isaaclab_to_fabric_joint_order_torch(qd)
+
+        N = q.shape[0]
+        assert_equals(q.shape, (N, NUM_BIMANUAL * NUM_ARM_HAND_JOINTS))
+        assert_equals(qd.shape, (N, NUM_BIMANUAL * NUM_ARM_HAND_JOINTS))
+
+        x, jac = self.right_taskmap(q, None)
+        n_points = len(self.right_taskmap_link_names)
+        assert_equals(x.shape, (N, NUM_XYZ * n_points))
+        assert_equals(
+            jac.shape, (N, NUM_XYZ * n_points, NUM_BIMANUAL * NUM_ARM_HAND_JOINTS)
         )
 
-        return torch.from_numpy(quat_wxyz_np).to(self.device).float()
+        # Calculate the velocity in the task space
+        xd = torch.bmm(jac, qd.unsqueeze(2)).squeeze(2)
+        assert_equals(xd.shape, (N, NUM_XYZ * n_points))
 
-    @property
-    def left_fabric_palm_target_position(self) -> torch.Tensor:
-        # Actions are in robot frame
-        # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
-        assert self.fabric_palm_target.shape == (self.num_envs, 6 * NUM_BIMANUAL), (
-            f"Fabric palm target shape: {self.fabric_palm_target.shape}"
+        return (
+            x.reshape(N, n_points, NUM_XYZ),
+            xd.reshape(N, n_points, NUM_XYZ),
+            jac.reshape(N, n_points, NUM_XYZ, NUM_BIMANUAL * NUM_ARM_HAND_JOINTS),
         )
-        return self.fabric_palm_target[:, 6:9]
 
-    @property
-    def left_fabric_palm_target_orientation(self) -> torch.Tensor:
-        # Actions are in robot frame
-        # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
-        assert self.fabric_palm_target.shape == (self.num_envs, 6 * NUM_BIMANUAL), (
-            f"Fabric palm target shape: {self.fabric_palm_target.shape}"
+    def left_taskmap_helper(
+        self, q: torch.Tensor, qd: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # BRITTLE: We assume that the input q is in isaacgym order
+        # We need to convert it to curobo order
+        q = isaaclab_to_fabric_joint_order_torch(q)
+        qd = isaaclab_to_fabric_joint_order_torch(qd)
+
+        N = q.shape[0]
+        assert_equals(q.shape, (N, NUM_BIMANUAL * NUM_ARM_HAND_JOINTS))
+        assert_equals(qd.shape, (N, NUM_BIMANUAL * NUM_ARM_HAND_JOINTS))
+
+        x, jac = self.left_taskmap(q, None)
+        n_points = len(self.left_taskmap_link_names)
+        assert_equals(x.shape, (N, NUM_XYZ * n_points))
+        assert_equals(
+            jac.shape, (N, NUM_XYZ * n_points, NUM_BIMANUAL * NUM_ARM_HAND_JOINTS)
         )
-        euler_ZYX_np = self.fabric_palm_target[:, 9:12].detach().cpu().numpy()
-        quat_xyzw_np = R.from_euler("ZYX", euler_ZYX_np, degrees=False).as_quat()
-        quat_wxyz_np = np.concatenate(
-            [quat_xyzw_np[..., 3:], quat_xyzw_np[..., :3]], axis=-1
+
+        # Calculate the velocity in the task space
+        xd = torch.bmm(jac, qd.unsqueeze(2)).squeeze(2)
+        assert_equals(xd.shape, (N, NUM_XYZ * n_points))
+
+        return (
+            x.reshape(N, n_points, NUM_XYZ),
+            xd.reshape(N, n_points, NUM_XYZ),
+            jac.reshape(N, n_points, NUM_XYZ, NUM_BIMANUAL * NUM_ARM_HAND_JOINTS),
         )
-        assert quat_wxyz_np.shape == (self.num_envs, 4), (
-            f"Quat shape: {quat_wxyz_np.shape}"
+
+    def right_palm_pose(self) -> torch.Tensor:
+        x, _, _ = self.right_taskmap_helper(
+            q=self.robot.data.joint_pos,
+            qd=self.robot.data.joint_vel,
         )
-        return torch.from_numpy(quat_wxyz_np).to(self.device).float()
+        palm_pos = x[:, RIGHT_PALM_LINK_IDX]
+        palm_x_pos = x[:, RIGHT_PALM_X_LINK_IDX]
+        palm_y_pos = x[:, RIGHT_PALM_Y_LINK_IDX]
+        palm_z_pos = x[:, RIGHT_PALM_Z_LINK_IDX]
+
+        x_dir = torch.nn.functional.normalize(palm_x_pos - palm_pos, p=2, dim=-1)
+        y_dir = torch.nn.functional.normalize(palm_y_pos - palm_pos, p=2, dim=-1)
+        z_dir = torch.nn.functional.normalize(palm_z_pos - palm_pos, p=2, dim=-1)
+
+        # Assemble the rotation matrix with columns [x̂  ŷ  ẑ]
+        # Resulting shape: (B, 3, 3)
+        palm_rot_matrix = torch.stack([x_dir, y_dir, z_dir], dim=-1)
+        assert palm_rot_matrix.shape == (self.num_envs, 3, 3), (
+            f"Palm rot matrix shape: {palm_rot_matrix.shape}"
+        )
+
+        palm_quat_wxyz = matrix_to_quat_wxyz(palm_rot_matrix)
+        palm_pose = torch.cat([palm_pos, palm_quat_wxyz], dim=-1)
+        return palm_pose
+
+    def left_palm_pose(self) -> torch.Tensor:
+        x, _, _ = self.left_taskmap_helper(
+            q=self.robot.data.joint_pos,
+            qd=self.robot.data.joint_vel,
+        )
+        palm_pos = x[:, LEFT_PALM_LINK_IDX]
+        palm_x_pos = x[:, LEFT_PALM_X_LINK_IDX]
+        palm_y_pos = x[:, LEFT_PALM_Y_LINK_IDX]
+        palm_z_pos = x[:, LEFT_PALM_Z_LINK_IDX]
+
+        x_dir = torch.nn.functional.normalize(palm_x_pos - palm_pos, p=2, dim=-1)
+        y_dir = torch.nn.functional.normalize(palm_y_pos - palm_pos, p=2, dim=-1)
+        z_dir = torch.nn.functional.normalize(palm_z_pos - palm_pos, p=2, dim=-1)
+
+        # Assemble the rotation matrix with columns [x̂  ŷ  ẑ]
+        # Resulting shape: (B, 3, 3)
+        palm_rot_matrix = torch.stack([x_dir, y_dir, z_dir], dim=-1)
+        assert palm_rot_matrix.shape == (self.num_envs, 3, 3), (
+            f"Palm rot matrix shape: {palm_rot_matrix.shape}"
+        )
+
+        palm_quat_wxyz = matrix_to_quat_wxyz(palm_rot_matrix)
+        palm_pose = torch.cat([palm_pos, palm_quat_wxyz], dim=-1)
+        return palm_pose
+
+    def right_fingertip_positions(self) -> torch.Tensor:
+        x, _, _ = self.right_taskmap_helper(
+            q=self.robot.data.joint_pos,
+            qd=self.robot.data.joint_vel,
+        )
+        right_index_pos = x[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
+        right_middle_pos = x[:, RIGHT_MIDDLE_FINGERTIP_LINK_IDX]
+        right_ring_pos = x[:, RIGHT_RING_FINGERTIP_LINK_IDX]
+        right_thumb_pos = x[:, RIGHT_THUMB_FINGERTIP_LINK_IDX]
+
+        return torch.stack(
+            [right_index_pos, right_middle_pos, right_ring_pos, right_thumb_pos],
+            dim=1,
+        )
+
+    def left_fingertip_positions(self) -> torch.Tensor:
+        x, _, _ = self.left_taskmap_helper(
+            q=self.robot.data.joint_pos,
+            qd=self.robot.data.joint_vel,
+        )
+        left_index_pos = x[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
+        left_middle_pos = x[:, LEFT_MIDDLE_FINGERTIP_LINK_IDX]
+        left_ring_pos = x[:, LEFT_RING_FINGERTIP_LINK_IDX]
+        left_thumb_pos = x[:, LEFT_THUMB_FINGERTIP_LINK_IDX]
+
+        return torch.stack(
+            [left_index_pos, left_middle_pos, left_ring_pos, left_thumb_pos], dim=1
+        )
+
+    def right_index_fingertip_position(self) -> torch.Tensor:
+        return self.right_fingertip_positions()[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
+
+    def left_index_fingertip_position(self) -> torch.Tensor:
+        return self.left_fingertip_positions()[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
 
     #### TENSOR SLICE PROPERTIES END ####
 
