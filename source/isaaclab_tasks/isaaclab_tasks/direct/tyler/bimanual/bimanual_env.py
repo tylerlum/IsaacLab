@@ -112,7 +112,7 @@ else:
 
 OBJECT_LENGTH_Z = 0.22
 
-SIM_DT = 1 / 120
+SIM_DT = 1 / 60
 
 FABRIC_DT = 1 / 60
 NUM_FABRIC_DECIMATION = 1
@@ -131,7 +131,7 @@ ENV_REGEX_NS = "/World/envs/env_.*"
 class BimanualEnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 5.0
-    decimation = 2
+    decimation = 1
     arm_action_scale = 0.1
     hand_action_scale = 2.0
     action_space = (
@@ -1112,7 +1112,7 @@ class BimanualEnv(DirectRLEnv):
         self.robot.set_joint_position_target(joint_pos, env_ids=env_ids)
         if self.include_blue_robot:
             self.blue_robot.write_joint_position_to_sim(joint_pos, env_ids=env_ids)
-            self.blue_robot.write_joint_velocity_to_sim(joint_vel, env_ids=env_ids)
+            # self.blue_robot.write_joint_velocity_to_sim(joint_vel, env_ids=env_ids)
             self.blue_robot.set_joint_position_target(joint_pos, env_ids=env_ids)
 
         # Reset object
@@ -1123,9 +1123,9 @@ class BimanualEnv(DirectRLEnv):
             torch.zeros(self.num_envs, 6, device=self.device), env_ids=env_ids
         )
         self.goal_object.write_root_pose_to_sim(final_object_pose, env_ids=env_ids)
-        self.goal_object.write_root_velocity_to_sim(
-            torch.zeros(self.num_envs, 6, device=self.device), env_ids=env_ids
-        )
+        # self.goal_object.write_root_velocity_to_sim(
+        #     torch.zeros(self.num_envs, 6, device=self.device), env_ids=env_ids
+        # )
 
         self._update_metrics(env_ids)
         self._reset_state(env_ids)
