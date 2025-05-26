@@ -938,14 +938,19 @@ class BimanualEnv(DirectRLEnv):
             datetime_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             obs_history_filename = f"{datetime_str}_obs_history.pth"
             torch.save(self.obs_history, obs_history_filename)
+            idx_filename = f"{datetime_str}_idx.pth"
+            torch.save(self.episode_length_buf, idx_filename)
             print(colored(f"Saved obs_history to {obs_history_filename}", "green"))
+            print(colored(f"Saved idx to {idx_filename}", "green"))
             breakpoint()
 
         obs = torch.cat(
             [obs_dict[key] for key in obs_dict],
             dim=-1,
         )
-        self.obs_history[:, self.episode_length_buf, :] = obs.detach().clone()
+        batch_idx = torch.arange(self.num_envs, device=obs.device)   # shape (B,)
+        time_idx  = self.episode_length_buf                         # shape (B,)
+        self.obs_history[batch_idx, time_idx, :] = obs.detach().clone()
 
         ZERO_OBS = False  # Set to True to debug
         if ZERO_OBS:
