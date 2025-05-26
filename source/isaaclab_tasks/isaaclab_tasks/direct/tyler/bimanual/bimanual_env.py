@@ -745,7 +745,7 @@ class BimanualEnv(DirectRLEnv):
         raw_fabric_palm_actions = self.raw_actions[:, : NUM_BIMANUAL * 6]
         raw_fabric_hand_actions = self.raw_actions[:, NUM_BIMANUAL * 6 :]
 
-        ABSOLUTE_PALM_CONTROL = True
+        ABSOLUTE_PALM_CONTROL = False
         if ABSOLUTE_PALM_CONTROL:
             new_fabric_palm_target = rescale(
                 values=raw_fabric_palm_actions,
