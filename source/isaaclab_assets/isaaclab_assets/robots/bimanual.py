@@ -41,8 +41,6 @@ DEFAULT_ALLEGRO_DOF_POS = [
     0.6,
 ]
 
-GREEN_RGB = (0.0, 1.0, 0.0)
-
 BIMANUAL_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/bimanual_kuka_allegro_v18/usd/bimanual_kuka_allegro.usd",
@@ -52,10 +50,10 @@ BIMANUAL_CFG = ArticulationCfg(
             max_depenetration_velocity=5.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=False,
+            enabled_self_collisions=False,  # NOTE: Save on compute, fabrics handle this
             solver_position_iteration_count=8,
             solver_velocity_iteration_count=4,
-            fix_root_link=True,  # TODO: This isn't actually needed if the USD already has a fixed base
+            fix_root_link=True,  # NOTE: This isn't actually needed if the USD already has a fixed base
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(

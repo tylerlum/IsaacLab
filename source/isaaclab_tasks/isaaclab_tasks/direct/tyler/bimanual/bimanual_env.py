@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import math
 from typing import List
-from live_plotter import FastLivePlotter
 
 import yaml
 from pathlib import Path
@@ -34,6 +33,9 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab_assets.robots.bimanual import BIMANUAL_CFG, BLUE_BIMANUAL_CFG
 from isaaclab_tasks.direct.tyler.bimanual.utils.average_meter import AverageMeter
+from isaaclab_tasks.direct.tyler.bimanual.utils.adjusted_terrain_importer import (
+    AdjustedTerrainImporter,
+)
 from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
     sample_uniform_tensor,
     rescale,
@@ -42,7 +44,18 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
     isaaclab_to_fabric_joint_order_torch,
     fabric_to_isaaclab_joint_order_torch,
 )
-from isaaclab_tasks.direct.tyler.bimanual.utils.constants import NUM_XYZ, NUM_QUAT
+from isaaclab_tasks.direct.tyler.bimanual.utils.constants import (
+    NUM_XYZ,
+    NUM_QUAT,
+    POSITION_START_IDX,
+    POSITION_END_IDX,
+    QUAT_START_IDX,
+    QUAT_END_IDX,
+    LIN_VELOCITY_START_IDX,
+    LIN_VELOCITY_END_IDX,
+    ANG_VELOCITY_START_IDX,
+    ANG_VELOCITY_END_IDX,
+)
 from isaaclab_tasks.direct.tyler.bimanual.utils.color_constants import (
     RED_RGB,
     GREEN_RGB,
@@ -57,6 +70,10 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.robot_constants import (
     LEFT_FINGERTIP_LINK_NAMES,
     RIGHT_PALM_LINK_NAME,
     LEFT_PALM_LINK_NAME,
+    NUM_ARM_JOINTS,
+    NUM_HAND_JOINTS,
+    NUM_ARM_HAND_JOINTS,
+    NUM_BIMANUAL,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
     TABLE_X,
@@ -70,58 +87,11 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
 )
 import wandb
 
-from isaaclab.terrains.terrain_importer import TerrainImporter
-
-
-class AdjustedTerrainImporter(TerrainImporter):
-    def import_ground_plane(
-        self, name: str, size: tuple[float, float] = (2.0e6, 2.0e6)
-    ):
-        """Add a plane to the terrain importer.
-
-        Args:
-            name: The name of the imported terrain. This name is used to create the USD prim
-                corresponding to the terrain.
-            size: The size of the plane. Defaults to (2.0e6, 2.0e6).
-
-        Raises:
-            ValueError: If a terrain with the same name already exists.
-        """
-        # create prim path for the terrain
-        prim_path = self.cfg.prim_path + f"/{name}"
-        # check if key exists
-        if prim_path in self.terrain_prim_paths:
-            raise ValueError(
-                f"A terrain with the name '{name}' already exists. Existing terrains: {', '.join(self.terrain_names)}."
-            )
-        # store the mesh name
-        self.terrain_prim_paths.append(prim_path)
-
-        # obtain ground plane color from the configured visual material
-        color = (0.0, 0.0, 0.0)
-        if self.cfg.visual_material is not None:
-            material = self.cfg.visual_material.to_dict()
-            # defaults to the `GroundPlaneCfg` color if diffuse color attribute is not found
-            if "diffuse_color" in material:
-                color = material["diffuse_color"]
-            else:
-                pass
-                # omni.log.warn(
-                #     "Visual material specified for ground plane but no diffuse color found."
-                #     " Using default color: (0.0, 0.0, 0.0)"
-                # )
-
-        # get the mesh
-        ground_plane_cfg = sim_utils.GroundPlaneCfg(
-            physics_material=self.cfg.physics_material, size=size, color=color
-        )
-        ground_plane_cfg.func(prim_path, ground_plane_cfg, translation=(0.0, 0.0, -1.0))
-
 
 FINGER_GOALS = False
 FILTER_ARM_ACTIONS = False
 
-USE_FABRIC = True
+USE_FABRIC = False
 USE_FABRIC_CUDA_GRAPH = False
 
 VISUALIZE_FABRIC_SPHERES = False
@@ -132,7 +102,6 @@ else:
 
 OBJECT_LENGTH_Z = 0.22
 
-NUM_BIMANUAL = 2
 SIM_DT = 1 / 120
 
 FABRIC_DT = 1 / 60
@@ -151,16 +120,18 @@ ENV_REGEX_NS = "/World/envs/env_.*"
 @configclass
 class BimanualEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 1.0  # TODO: Should be 6
+    episode_length_s = 5.0
     decimation = 2
     arm_action_scale = 0.1
     hand_action_scale = 2.0
-    action_space = 11 * 2 if USE_FABRIC else 23 * 2
+    action_space = (
+        11 * NUM_BIMANUAL if USE_FABRIC else NUM_ARM_HAND_JOINTS * NUM_BIMANUAL
+    )
     observation_space = (
         136
-        + (6 if FINGER_GOALS else 0)
-        + (7 * 2 if FILTER_ARM_ACTIONS else 0)
-        + (23 * 2 * 2 if USE_FABRIC else 0)
+        + (NUM_XYZ * NUM_BIMANUAL if FINGER_GOALS else 0)
+        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0)
+        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)
     )
     state_space = 0
     debug_vis = True
@@ -250,10 +221,11 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             collision_props=sim_utils.CollisionPropertiesCfg(
                 collision_enabled=False,
             ),
-            visual_material=sim_utils.PreviewSurfaceCfg(
-                diffuse_color=GREEN_RGB,  # TODO: This actually doesn't work, so just change the USD: https://github.com/isaac-sim/IsaacLab/issues/622
-                roughness=0.0,
-            ),
+            # TODO: This actually doesn't work, so just change the USD: https://github.com/isaac-sim/IsaacLab/issues/622
+            # visual_material=sim_utils.PreviewSurfaceCfg(
+            #     diffuse_color=GREEN_RGB,
+            #     roughness=0.0,
+            # ),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(
@@ -385,13 +357,16 @@ class BimanualEnv(DirectRLEnv):
 
     def __init__(self, cfg: BimanualEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
-        self._setup_keyboard()
-        self._setup_robot_idxs()
-        self.live_plotter_data = {
+
+        # Plotting data
+        self.plot_data = {
             "actual": [],
             "cmd": [],
             "episode_length_counter": [],
         }
+
+        self._setup_keyboard()
+        self._setup_robot_idxs()
         self._setup_sanity_checks()
 
         # State
@@ -607,7 +582,7 @@ class BimanualEnv(DirectRLEnv):
             q = self.fabric_q
 
         N = q.shape[0]
-        assert_equals(q.shape, (N, NUM_BIMANUAL * 23))
+        assert_equals(q.shape, (N, NUM_BIMANUAL * NUM_ARM_HAND_JOINTS))
         sphere_positions, _ = self.fabric.get_taskmap("body_points")(q.detach(), None)
         sphere_positions = sphere_positions.reshape(N, -1, NUM_XYZ)
         return sphere_positions
@@ -697,23 +672,11 @@ class BimanualEnv(DirectRLEnv):
                     new_maxs=self.fabric_hand_maxs,
                 )
             )
-            self.fabric_steps_counter = 0
-            # TODO: Remove
-            # print("!" * 100)
-            # print(f"fabric_palm_target: {self.fabric_palm_target}")
-            # print(f"fabric_hand_target: {self.fabric_hand_target}")
-            # print("!" * 100)
 
         if USE_FABRIC:
-            if self.fabric_steps_counter < NUM_FABRIC_DECIMATION:
-                self.fabric_steps_counter += 1
-                # TODO: Remove
-                # print("*" * 100)
-                # print(f"fabric_steps_counter: {self.fabric_steps_counter}")
-                # print("BEFORE")
-                # print(f"fabric_q: {self.fabric_q}")
-                # print(f"fabric_qd: {self.fabric_qd}")
-
+            # NOTE: Could do this in _apply_action with some smart rounding strategy
+            # That depends on sim_dt, fabric_dt, and decimation
+            for _ in range(NUM_FABRIC_DECIMATION):
                 # Step fabric
                 if USE_FABRIC_CUDA_GRAPH:
                     self.fabric_cuda_graph.replay()
@@ -742,46 +705,34 @@ class BimanualEnv(DirectRLEnv):
                             FABRIC_DT,
                         )
                     )
-                # TODO: Remove
-                # print("AFTER")
-                # print(f"fabric_q: {self.fabric_q}")
-                # print(f"fabric_qd: {self.fabric_qd}")
-                # print("*" * 100)
 
-            # TODO: HACK
-            # position_targets = self.sampled_position_targets
             position_targets = fabric_to_isaaclab_joint_order_torch(
                 self.fabric_q.detach().clone()
             )
-
-            # TODO: Remove
-            # print("~" * 100)
-            # print(f"position_targets: {position_targets}")
-            # print("~" * 100)
         else:
             # Arm
             ABSOLUTE_ARM_CONTROL = False
             if ABSOLUTE_ARM_CONTROL:
                 arm_action_offset = self.robot.data.default_joint_pos[
                     :, self._joint_idxs
-                ][:, :14]
+                ][:, :(NUM_ARM_JOINTS * NUM_BIMANUAL)]
             else:
                 arm_action_offset = self.robot.data.joint_pos[:, self._joint_idxs][
-                    :, :14
+                    :, :(NUM_ARM_JOINTS * NUM_BIMANUAL)
                 ]
-            assert arm_action_offset.shape == (self.num_envs, 14), (
-                f"arm_action_offset.shape: {arm_action_offset.shape} != (self.num_envs, 14): {(self.num_envs, 14)}"
+            assert arm_action_offset.shape == (self.num_envs, NUM_ARM_JOINTS * NUM_BIMANUAL), (
+                f"arm_action_offset.shape: {arm_action_offset.shape} != (self.num_envs, NUM_ARM_JOINTS * NUM_BIMANUAL): {(self.num_envs, NUM_ARM_JOINTS * NUM_BIMANUAL)}"
             )
             arm_position_targets = (
-                self.cfg.arm_action_scale * self.raw_actions[:, :14] + arm_action_offset
+                self.cfg.arm_action_scale * self.raw_actions[:, :NUM_ARM_JOINTS * NUM_BIMANUAL] + arm_action_offset
             )
 
             # Hand
             hand_action_offset = self.robot.data.default_joint_pos[:, self._joint_idxs][
-                :, 14:
+                :, NUM_ARM_JOINTS * NUM_BIMANUAL:
             ]
             hand_position_targets = (
-                self.cfg.hand_action_scale * self.raw_actions[:, 14:]
+                self.cfg.hand_action_scale * self.raw_actions[:, NUM_ARM_JOINTS * NUM_BIMANUAL:]
                 + hand_action_offset
             )
 
@@ -797,33 +748,15 @@ class BimanualEnv(DirectRLEnv):
                 [arm_position_targets, hand_position_targets], dim=-1
             )
 
-            # TODO: HACK
-            # position_targets = self.sampled_position_targets
-
-        # TODO: Remove
-        # if (
-        #     self.robot.data.joint_pos[0, :14] - position_targets[0, :14]
-        # ).abs().max() > 0.1:
-        #     print("*" * 100)
-        #     print(f"position_targets[0, :14]: {position_targets[0, :14]}")
-        #     print(
-        #         f"self.robot.data.joint_pos[0, :14]: {self.robot.data.joint_pos[0, :14]}"
-        #     )
-        #     print(
-        #         f"diff: {self.robot.data.joint_pos[0, :14] - position_targets[0, :14]}"
-        #     )
-        #     print(
-        #         f"diff > 0.1: {(self.robot.data.joint_pos[0, :14] - position_targets[0, :14]).abs() > 0.1}"
-        #     )
-        #     print("*" * 100)
-
-        self.live_plotter_data["actual"].append(
-            self.robot.data.joint_pos[0, :14].cpu().numpy()
+        # Save plotting data
+        self.plot_data["actual"].append(
+            self.robot.data.joint_pos[0, :NUM_ARM_JOINTS * NUM_BIMANUAL].cpu().numpy()
         )
-        self.live_plotter_data["cmd"].append(position_targets[0, :14].cpu().numpy())
-        self.live_plotter_data["episode_length_counter"].append(
+        self.plot_data["cmd"].append(position_targets[0, :NUM_ARM_JOINTS * NUM_BIMANUAL].cpu().numpy())
+        self.plot_data["episode_length_counter"].append(
             self.episode_length_buf[0].cpu().numpy()
         )
+
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
             position_targets[:] = 0.0
@@ -1062,11 +995,6 @@ class BimanualEnv(DirectRLEnv):
         super()._reset_idx(env_ids)
 
         # Reset robot
-        root_state = self.robot.data.default_root_state[env_ids].clone()
-        default_position = root_state[:, :3] + self.scene.env_origins[env_ids]
-        default_orientation = root_state[:, 3:7]
-        default_velocity = root_state[:, 7:13]
-
         joint_pos = self.robot.data.default_joint_pos[env_ids].clone()
         joint_pos *= math_utils.sample_uniform(
             *(0.8, 1.2), joint_pos.shape, joint_pos.device
@@ -1081,10 +1009,6 @@ class BimanualEnv(DirectRLEnv):
         joint_vel_limits = self.robot.data.soft_joint_vel_limits[env_ids].clone()
         joint_vel = joint_vel.clamp_(-joint_vel_limits, joint_vel_limits)
 
-        # self.robot.write_root_pose_to_sim(
-        #     torch.cat([default_position, default_orientation], dim=-1), env_ids=env_ids
-        # )
-        # self.robot.write_root_velocity_to_sim(default_velocity, env_ids=env_ids)
         self.robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
         self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
         self.blue_robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
@@ -1092,17 +1016,16 @@ class BimanualEnv(DirectRLEnv):
         self.robot.set_joint_position_target(joint_pos, env_ids=env_ids)
         self.blue_robot.set_joint_position_target(joint_pos, env_ids=env_ids)
 
-        self.object.write_root_pose_to_sim(
-            self._sample_initial_object_pose(env_ids), env_ids=env_ids
-        )
+        # Reset object
+        object_pose = self._sample_initial_object_pose(env_ids)
+        final_object_pose = self._sample_final_object_pose(env_ids)
+        self.object.write_root_pose_to_sim(object_pose, env_ids=env_ids)
         self.object.write_root_velocity_to_sim(
-            torch.zeros_like(default_velocity), env_ids=env_ids
+            torch.zeros(self.num_envs, 6, device=self.device), env_ids=env_ids
         )
-        self.goal_object.write_root_pose_to_sim(
-            self._sample_final_object_pose(env_ids), env_ids=env_ids
-        )
+        self.goal_object.write_root_pose_to_sim(final_object_pose, env_ids=env_ids)
         self.goal_object.write_root_velocity_to_sim(
-            torch.zeros_like(default_velocity), env_ids=env_ids
+            torch.zeros(self.num_envs, 6, device=self.device), env_ids=env_ids
         )
 
         self._update_metrics(env_ids)
@@ -1135,7 +1058,7 @@ class BimanualEnv(DirectRLEnv):
             }
 
             self.filtered_arm_position_targets = torch.zeros_like(
-                self.robot.data.joint_pos[:, :14]
+                self.robot.data.joint_pos[:, :NUM_ARM_JOINTS * NUM_BIMANUAL]
             )
 
             self.sampled_position_targets = (
@@ -1177,7 +1100,7 @@ class BimanualEnv(DirectRLEnv):
                 ] = 0
 
             self.filtered_arm_position_targets[env_ids] = self.robot.data.joint_pos[
-                env_ids, :14
+                env_ids, :NUM_ARM_JOINTS * NUM_BIMANUAL
             ]
 
             self.sampled_position_targets[env_ids] = self.robot.data.default_joint_pos[
@@ -1492,19 +1415,19 @@ class BimanualEnv(DirectRLEnv):
 
     def _save_kbc(self):
         print("In save_kbc")
-        actual_data = np.stack(self.live_plotter_data["actual"], axis=0)
-        cmd_data = np.stack(self.live_plotter_data["cmd"], axis=0)
+        actual_data = np.stack(self.plot_data["actual"], axis=0)
+        cmd_data = np.stack(self.plot_data["cmd"], axis=0)
         episode_length_counter = np.array(
-            self.live_plotter_data["episode_length_counter"]
+            self.plot_data["episode_length_counter"]
         )
-        N_TIMESTEPS = len(self.live_plotter_data["actual"])
-        assert actual_data.shape == (N_TIMESTEPS, 14)
-        assert cmd_data.shape == (N_TIMESTEPS, 14)
+        N_TIMESTEPS = len(self.plot_data["actual"])
+        assert actual_data.shape == (N_TIMESTEPS, NUM_ARM_JOINTS * NUM_BIMANUAL)
+        assert cmd_data.shape == (N_TIMESTEPS, NUM_ARM_JOINTS * NUM_BIMANUAL)
         assert episode_length_counter.shape == (N_TIMESTEPS,)
         episode_frac = episode_length_counter / self.max_episode_length
         assert episode_frac.shape == (N_TIMESTEPS,)
         plot_data = np.stack([actual_data, cmd_data], axis=0)
-        assert plot_data.shape == (2, N_TIMESTEPS, 14)
+        assert plot_data.shape == (2, N_TIMESTEPS, NUM_ARM_JOINTS * NUM_BIMANUAL)
         import datetime
 
         output_filename = f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.npz"

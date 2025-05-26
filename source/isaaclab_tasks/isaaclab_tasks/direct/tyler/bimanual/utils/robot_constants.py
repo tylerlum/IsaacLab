@@ -1,3 +1,8 @@
+NUM_ARM_JOINTS = 7
+NUM_HAND_JOINTS = 16
+NUM_ARM_HAND_JOINTS = NUM_ARM_JOINTS + NUM_HAND_JOINTS
+NUM_BIMANUAL = 2
+
 RIGHT_FINGERTIP_LINK_NAMES = [
     "right_index_link_3",
     "right_middle_link_3",
