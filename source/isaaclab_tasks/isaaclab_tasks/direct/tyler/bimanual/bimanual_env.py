@@ -553,8 +553,10 @@ class BimanualEnv(DirectRLEnv):
             new_maxs=self.fabric_hand_maxs,
         )
 
+        # Compute palm poses at default joint positions
         default_palm_target = np.array(
-            NUM_BIMANUAL * [-0.6868, 0.0320, 0.6685, -2.3873, -0.0824, 3.1301]
+            [0.7298, -0.2469, 0.5738, 2.25930292, 0.86978541, 1.86671697] +
+            [0.7298, 0.2469, 0.5738, -2.25930299, 0.86978536, -1.86671716],
         )
         self.fabric_palm_target = (
             torch.from_numpy(default_palm_target)
