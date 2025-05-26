@@ -927,10 +927,25 @@ class BimanualEnv(DirectRLEnv):
             if v.ndim != 2:
                 print(colored(f"{k}: {v.shape} (WRONG)", "red"))
 
+        any_nan = False
+        for k, v in obs_dict.items():
+            if torch.isnan(v).any():
+                any_nan = True
+                nan_env_ids = torch.where(torch.isnan(v))[0]
+                print(colored(f"{k}: {v.shape} (NAN) at {nan_env_ids}", "red"))
+        if any_nan:
+            import datetime
+            datetime_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            obs_history_filename = f"{datetime_str}_obs_history.pth"
+            torch.save(self.obs_history, obs_history_filename)
+            print(colored(f"Saved obs_history to {obs_history_filename}", "green"))
+            breakpoint()
+
         obs = torch.cat(
             [obs_dict[key] for key in obs_dict],
             dim=-1,
         )
+        self.obs_history[:, self.episode_length_buf, :] = obs.detach().clone()
 
         ZERO_OBS = False  # Set to True to debug
         if ZERO_OBS:
@@ -1195,6 +1210,10 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_qdd = torch.zeros_like(self.fabric_q)
 
                 self.fabric_palm_target = self.default_fabric_palm_target().clone()
+            self.obs_history = torch.zeros(
+                self.num_envs, self.max_episode_length, self.cfg.observation_space,
+                device=self.device,
+            )
         else:
             self.raw_actions[env_ids] = torch.zeros(
                 len(env_ids), self.cfg.action_space, device=self.device
@@ -1240,6 +1259,10 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_palm_target[env_ids] = self.default_fabric_palm_target()[
                     env_ids
                 ].clone()
+            self.obs_history[env_ids] = torch.zeros(
+                len(env_ids), self.max_episode_length, self.cfg.observation_space,
+                device=self.device,
+            )
 
     def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
