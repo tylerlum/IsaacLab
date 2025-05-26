@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
@@ -48,28 +48,26 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.constants import (
     NUM_XYZ,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_robot_constants import (
-    LEFT_ALLEGRO_FINGERTIP_LINK_NAMES,
     LEFT_INDEX_FINGERTIP_LINK_IDX,
     LEFT_MIDDLE_FINGERTIP_LINK_IDX,
     LEFT_PALM_LINK_IDX,
-    LEFT_PALM_LINK_NAMES,
     LEFT_PALM_X_LINK_IDX,
     LEFT_PALM_Y_LINK_IDX,
     LEFT_PALM_Z_LINK_IDX,
     LEFT_RING_FINGERTIP_LINK_IDX,
+    LEFT_TASKMAP_LINK_NAMES,
     LEFT_THUMB_FINGERTIP_LINK_IDX,
-    RIGHT_ALLEGRO_FINGERTIP_LINK_NAMES,
+    NUM_FABRIC_SPHERES,
     RIGHT_INDEX_FINGERTIP_LINK_IDX,
     RIGHT_MIDDLE_FINGERTIP_LINK_IDX,
     RIGHT_PALM_LINK_IDX,
-    RIGHT_PALM_LINK_NAMES,
     RIGHT_PALM_X_LINK_IDX,
     RIGHT_PALM_Y_LINK_IDX,
     RIGHT_PALM_Z_LINK_IDX,
     RIGHT_RING_FINGERTIP_LINK_IDX,
+    RIGHT_TASKMAP_LINK_NAMES,
     RIGHT_THUMB_FINGERTIP_LINK_IDX,
     URDF_PATH,
-    NUM_FABRIC_SPHERES,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
     fabric_to_isaaclab_joint_order_torch,
@@ -353,7 +351,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
 
     collision_sphere_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
-        prim_path=f"/Visuals/CollisionSphere"
+        prim_path="/Visuals/CollisionSphere"
     )
     collision_sphere_visualizer.markers[
         "sphere"
@@ -590,12 +588,8 @@ class BimanualEnv(DirectRLEnv):
 
         # Create task map that consists of the origins of the following frames stacked together.
         # Create separate left and right taskmaps to avoid gaps in indexing
-        self.right_taskmap_link_names = (
-            RIGHT_PALM_LINK_NAMES + RIGHT_ALLEGRO_FINGERTIP_LINK_NAMES
-        )
-        self.left_taskmap_link_names = (
-            LEFT_PALM_LINK_NAMES + LEFT_ALLEGRO_FINGERTIP_LINK_NAMES
-        )
+        self.right_taskmap_link_names = RIGHT_TASKMAP_LINK_NAMES
+        self.left_taskmap_link_names = LEFT_TASKMAP_LINK_NAMES
         self.right_taskmap = RobotFrameOriginsTaskMap(
             urdf_path=str(URDF_PATH),
             link_names=self.right_taskmap_link_names,
@@ -1903,12 +1897,12 @@ class BimanualEnv(DirectRLEnv):
     def right_index_fingertip_position_w(
         self, q: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        return self.right_fingertip_positions_w(q)[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
+        return self.right_fingertip_positions_w(q)[:, 0]
 
     def left_index_fingertip_position_w(
         self, q: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        return self.left_fingertip_positions_w(q)[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
+        return self.left_fingertip_positions_w(q)[:, 0]
 
     def default_fabric_palm_target(self) -> torch.Tensor:
         # Compute palm poses at default joint positions
