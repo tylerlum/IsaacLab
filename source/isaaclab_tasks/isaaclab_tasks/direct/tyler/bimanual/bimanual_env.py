@@ -835,27 +835,27 @@ class BimanualEnv(DirectRLEnv):
             "q": self.robot.data.joint_pos,
             "qd": self.robot.data.joint_vel,
             "right_fingertip_positions": (
-                self.right_fingertip_positions()
+                self.right_fingertip_positions_w()
                 - self.scene.env_origins.unsqueeze(dim=1)
             ).reshape(self.num_envs, -1),
             "left_fingertip_positions": (
-                self.left_fingertip_positions()
+                self.left_fingertip_positions_w()
                 - self.scene.env_origins.unsqueeze(dim=1)
             ).reshape(self.num_envs, -1),
-            "right_palm_position": self.right_palm_pose()[:, :3]
+            "right_palm_position": self.right_palm_pose_w()[:, :3]
             - self.scene.env_origins,
-            "left_palm_position": self.left_palm_pose()[:, :3] - self.scene.env_origins,
-            "object_position": self.object_position - self.scene.env_origins,
-            "goal_object_position": self.goal_object_position - self.scene.env_origins,
+            "left_palm_position": self.left_palm_pose_w()[:, :3] - self.scene.env_origins,
+            "object_position": self.object_position_w - self.scene.env_origins,
+            "goal_object_position": self.goal_object_position_w - self.scene.env_origins,
             "object_orientation": self.object_orientation,
             "goal_object_orientation": self.goal_object_orientation,
         }
         if FINGER_GOALS:
             obs_dict["right_goal_position"] = (
-                self.right_goal_position - self.scene.env_origins
+                self.right_goal_position_w - self.scene.env_origins
             )
             obs_dict["left_goal_position"] = (
-                self.left_goal_position - self.scene.env_origins
+                self.left_goal_position_w - self.scene.env_origins
             )
         if FILTER_ARM_ACTIONS:
             obs_dict["filtered_arm_position_targets"] = (
@@ -891,18 +891,18 @@ class BimanualEnv(DirectRLEnv):
         # fmt: off
         if FINGER_GOALS:
             self.individual_reward_bufs = {
-                "right_index_fingertip_to_goal_dist": -(self.right_index_fingertip_position() - self.right_goal_position).norm(dim=-1, p=2),
-                "left_index_fingertip_to_goal_dist": -(self.left_index_fingertip_position() - self.left_goal_position).norm(dim=-1, p=2),
+                "right_index_fingertip_to_goal_dist": -(self.right_index_fingertip_position_w() - self.right_goal_position_w).norm(dim=-1, p=2),
+                "left_index_fingertip_to_goal_dist": -(self.left_index_fingertip_position_w() - self.left_goal_position_w).norm(dim=-1, p=2),
             }
         else:
             self.individual_reward_bufs = {
-                "right_index_fingertip_to_object_dist": -(self.right_index_fingertip_position() - self.object_position).norm(dim=-1, p=2),
-                "left_index_fingertip_to_object_dist": -(self.left_index_fingertip_position() - self.object_position).norm(dim=-1, p=2),
+                "right_index_fingertip_to_object_dist": -(self.right_index_fingertip_position_w() - self.object_position_w).norm(dim=-1, p=2),
+                "left_index_fingertip_to_object_dist": -(self.left_index_fingertip_position_w() - self.object_position_w).norm(dim=-1, p=2),
                 "object_lifted": torch.logical_and(self.object_is_lifted, ~self.object_has_been_lifted_this_episode),
                 "object_to_goal_dist": torch.where(
                     self.object_is_lifted,
-                    (2.0 - (self.object_position - self.goal_object_position).norm(dim=-1, p=2)).clip(min=0.0),
-                    torch.zeros_like(self.object_position[:, 2]),
+                    (2.0 - (self.object_position_w - self.goal_object_position_w).norm(dim=-1, p=2)).clip(min=0.0),
+                    torch.zeros_like(self.object_position_w[:, 2]),
                 ),
             }
         # fmt: on
@@ -1121,8 +1121,8 @@ class BimanualEnv(DirectRLEnv):
             )
 
             if FINGER_GOALS:
-                self.right_goal_position = self._sample_right_goal_position(env_ids)
-                self.left_goal_position = self._sample_left_goal_position(env_ids)
+                self.right_goal_position_w = self._sample_right_goal_position(env_ids)
+                self.left_goal_position_w = self._sample_left_goal_position(env_ids)
 
             self.object_has_been_lifted_this_episode = torch.zeros_like(
                 self.object_is_lifted
@@ -1159,10 +1159,10 @@ class BimanualEnv(DirectRLEnv):
             )
 
             if FINGER_GOALS:
-                self.right_goal_position[env_ids] = self._sample_right_goal_position(
+                self.right_goal_position_w[env_ids] = self._sample_right_goal_position(
                     env_ids
                 )
-                self.left_goal_position[env_ids] = self._sample_left_goal_position(
+                self.left_goal_position_w[env_ids] = self._sample_left_goal_position(
                     env_ids
                 )
 
@@ -1360,8 +1360,8 @@ class BimanualEnv(DirectRLEnv):
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
-        right_palm_pose = self.right_palm_pose()
-        left_palm_pose = self.left_palm_pose()
+        right_palm_pose = self.right_palm_pose_w()
+        left_palm_pose = self.left_palm_pose_w()
         self.right_palm_pose_visualizer.visualize(
             translations=right_palm_pose[:, :3],
             orientations=right_palm_pose[:, 3:],
@@ -1377,8 +1377,8 @@ class BimanualEnv(DirectRLEnv):
             .repeat_interleave(self.num_envs, dim=0),
         )
         if USE_FABRIC:
-            right_palm_target_pose = self.right_fabric_palm_target_pose
-            left_palm_target_pose = self.left_fabric_palm_target_pose
+            right_palm_target_pose = self.right_fabric_palm_target_pose_w
+            left_palm_target_pose = self.left_fabric_palm_target_pose_w
             self.right_palm_target_pose_visualizer.visualize(
                 translations=right_palm_target_pose[:, :3],
                 orientations=right_palm_target_pose[:, 3:],
@@ -1395,27 +1395,27 @@ class BimanualEnv(DirectRLEnv):
             )
         if FINGER_GOALS:
             self.right_goal_visualizer.visualize(
-                translations=self.right_goal_position,
+                translations=self.right_goal_position_w,
                 scales=torch.tensor(SPHERE_SCALE, device=self.device)
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
             self.left_goal_visualizer.visualize(
-                translations=self.left_goal_position,
+                translations=self.left_goal_position_w,
                 scales=torch.tensor(SPHERE_SCALE, device=self.device)
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
 
         self.object_pose_visualizer.visualize(
-            translations=self.object_position,
+            translations=self.object_position_w,
             orientations=self.object_orientation,
             scales=torch.tensor(POSE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         self.goal_object_pose_visualizer.visualize(
-            translations=self.goal_object_position,
+            translations=self.goal_object_position_w,
             orientations=self.goal_object_orientation,
             scales=torch.tensor(POSE_SCALE, device=self.device)
             .unsqueeze(dim=0)
@@ -1423,13 +1423,13 @@ class BimanualEnv(DirectRLEnv):
         )
 
         self.right_fingertip_visualizer.visualize(
-            translations=self.right_index_fingertip_position(),
+            translations=self.right_index_fingertip_position_w(),
             scales=torch.tensor(SPHERE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         self.left_fingertip_visualizer.visualize(
-            translations=self.left_index_fingertip_position(),
+            translations=self.left_index_fingertip_position_w(),
             scales=torch.tensor(SPHERE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
@@ -1440,7 +1440,7 @@ class BimanualEnv(DirectRLEnv):
         # Make growing bar thicker
         progress_frac = self.episode_length_buf / self.max_episode_length
         progress_full = torch.ones_like(progress_frac)
-        progress_pos = self.robot_position + torch.tensor(
+        progress_pos = self.robot_position_w + torch.tensor(
             [0.0, 0.0, 1.1], device=self.device
         ).unsqueeze(dim=0)
         MAX_SCALE = 50
@@ -1567,7 +1567,7 @@ class BimanualEnv(DirectRLEnv):
         return self.table.data.body_pos_w[:, 0]
 
     @property
-    def object_position(self) -> torch.Tensor:
+    def object_position_w(self) -> torch.Tensor:
         assert self.object.data.body_pos_w.shape == (self.num_envs, 1, NUM_XYZ), (
             f"Object position shape: {self.object.data.body_pos_w.shape}"
         )
@@ -1581,7 +1581,7 @@ class BimanualEnv(DirectRLEnv):
         return self.object.data.body_quat_w[:, 0]
 
     @property
-    def goal_object_position(self) -> torch.Tensor:
+    def goal_object_position_w(self) -> torch.Tensor:
         assert self.goal_object.data.body_pos_w.shape == (self.num_envs, 1, NUM_XYZ), (
             f"Goal object position shape: {self.goal_object.data.body_pos_w.shape}"
         )
@@ -1597,15 +1597,15 @@ class BimanualEnv(DirectRLEnv):
         return self.goal_object.data.body_quat_w[:, 0]
 
     @property
-    def robot_position(self) -> torch.Tensor:
+    def robot_position_w(self) -> torch.Tensor:
         return self.robot.data.body_pos_w[:, 0]
 
     @property
     def object_is_lifted(self) -> torch.Tensor:
-        return self.object_position[:, 2] > self.table_position[:, 2] + OBJECT_LENGTH_Z
+        return self.object_position_w[:, 2] > self.table_position[:, 2] + OBJECT_LENGTH_Z
 
     @property
-    def right_fabric_palm_target_pose(self) -> torch.Tensor:
+    def right_fabric_palm_target_pose_w(self) -> torch.Tensor:
         # Actions are in robot frame
         # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
         assert self.fabric_palm_target.shape == (self.num_envs, 6 * NUM_BIMANUAL), (
@@ -1632,7 +1632,7 @@ class BimanualEnv(DirectRLEnv):
         return right_pose
 
     @property
-    def left_fabric_palm_target_pose(self) -> torch.Tensor:
+    def left_fabric_palm_target_pose_w(self) -> torch.Tensor:
         # Actions are in robot frame
         # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
         assert self.fabric_palm_target.shape == (self.num_envs, 6 * NUM_BIMANUAL), (
@@ -1715,7 +1715,7 @@ class BimanualEnv(DirectRLEnv):
             jac.reshape(N, n_points, NUM_XYZ, NUM_BIMANUAL * NUM_ARM_HAND_JOINTS),
         )
 
-    def right_palm_pose(self) -> torch.Tensor:
+    def right_palm_pose_w(self) -> torch.Tensor:
         x, _, _ = self.right_taskmap_helper(
             q=self.robot.data.joint_pos,
             qd=self.robot.data.joint_vel,
@@ -1743,7 +1743,7 @@ class BimanualEnv(DirectRLEnv):
         palm_pose = torch.cat([palm_pos_w, palm_quat_wxyz], dim=-1)
         return palm_pose
 
-    def left_palm_pose(self) -> torch.Tensor:
+    def left_palm_pose_w(self) -> torch.Tensor:
         x, _, _ = self.left_taskmap_helper(
             q=self.robot.data.joint_pos,
             qd=self.robot.data.joint_vel,
@@ -1771,7 +1771,7 @@ class BimanualEnv(DirectRLEnv):
         palm_pose = torch.cat([palm_pos_w, palm_quat_wxyz], dim=-1)
         return palm_pose
 
-    def right_fingertip_positions(self) -> torch.Tensor:
+    def right_fingertip_positions_w(self) -> torch.Tensor:
         x, _, _ = self.right_taskmap_helper(
             q=self.robot.data.joint_pos,
             qd=self.robot.data.joint_vel,
@@ -1789,7 +1789,7 @@ class BimanualEnv(DirectRLEnv):
         positions_w = positions + self.scene.env_origins.unsqueeze(dim=1)
         return positions_w
 
-    def left_fingertip_positions(self) -> torch.Tensor:
+    def left_fingertip_positions_w(self) -> torch.Tensor:
         x, _, _ = self.left_taskmap_helper(
             q=self.robot.data.joint_pos,
             qd=self.robot.data.joint_vel,
@@ -1806,11 +1806,11 @@ class BimanualEnv(DirectRLEnv):
         positions_w = positions + self.scene.env_origins.unsqueeze(dim=1)
         return positions_w
 
-    def right_index_fingertip_position(self) -> torch.Tensor:
-        return self.right_fingertip_positions()[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
+    def right_index_fingertip_position_w(self) -> torch.Tensor:
+        return self.right_fingertip_positions_w()[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
 
-    def left_index_fingertip_position(self) -> torch.Tensor:
-        return self.left_fingertip_positions()[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
+    def left_index_fingertip_position_w(self) -> torch.Tensor:
+        return self.left_fingertip_positions_w()[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
 
     #### TENSOR SLICE PROPERTIES END ####
 
