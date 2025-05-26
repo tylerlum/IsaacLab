@@ -144,7 +144,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)
     )
     state_space = 0
-    debug_vis = True
+    debug_vis = False
 
     # simulation
     sim: SimulationCfg = SimulationCfg(
@@ -398,9 +398,9 @@ class BimanualEnv(DirectRLEnv):
 
         # State
         self._reset_state(env_ids=None)
+        self._setup_fabric_taskmap()  # Still needed for FK
         if USE_FABRIC:
             self._setup_fabric_action_space()
-            self._setup_fabric_taskmap()
 
         # Logging
         self.wandb_dict = {}
