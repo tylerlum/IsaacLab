@@ -137,7 +137,7 @@ def parse_env_cfg(
 
 
 def get_checkpoint_path(
-    log_path: str, run_dir: str = ".*", checkpoint: str = ".*", other_dirs: list[str] = None, sort_alpha: bool = True
+    log_path: str, run_dir: str = ".*", checkpoint: str = ".*", other_dirs: list[str] = None, sort_alpha: bool = False
 ) -> str:
     """Get path to the model checkpoint in input directory.
 
@@ -155,7 +155,7 @@ def get_checkpoint_path(
             None, which implies that checkpoint file is directly under the run directory.
         checkpoint: The regex expression for the model checkpoint file. Defaults to the most recent
             torch-model saved in the :attr:`run_dir` directory.
-        sort_alpha: Whether to sort the runs by alphabetical order. Defaults to True.
+        sort_alpha: Whether to sort the runs by alphabetical order. Defaults to False.
             If False, the folders in :attr:`run_dir` are sorted by the last modified time.
 
     Returns:
