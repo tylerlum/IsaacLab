@@ -52,6 +52,9 @@ parser.add_argument(
 parser.add_argument(
     "--max_iterations", type=int, default=None, help="RL Policy training iterations."
 )
+parser.add_argument(
+    "--experiment_name", type=str, default=None, help="Name of the experiment."
+)
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -145,7 +148,8 @@ def main(
     log_root_path = os.path.join("logs", "simple_rl", args_cli.task)
     log_root_path = os.path.abspath(log_root_path)
     datetime_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    experiment_dir = os.path.join(log_root_path, datetime_str)
+    experiment_name = datetime_str if args_cli.experiment_name is None else f"{args_cli.experiment_name}_{datetime_str}"
+    experiment_dir = os.path.join(log_root_path, experiment_name)
     print(f"[INFO] Logging experiment in directory: {experiment_dir}")
 
     # dump the configuration into log-directory
@@ -191,7 +195,7 @@ def main(
 
     USE_WANDB = True
     if USE_WANDB:
-        wandb_name = f"{args_cli.task}_{datetime_str}"
+        wandb_name = f"{args_cli.task}_{experiment_name}"
         wandb_config = {
             "agent": agent_cfg,
             "env": load_yaml(
