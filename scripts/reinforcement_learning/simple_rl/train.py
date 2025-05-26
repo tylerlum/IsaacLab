@@ -195,7 +195,7 @@ def main(
 
     USE_WANDB = True
     if USE_WANDB:
-        wandb_name = f"{args_cli.task}_{experiment_name}"
+        wandb_name = f"{experiment_name}"
         wandb_config = {
             "agent": agent_cfg,
             "env": load_yaml(
@@ -203,7 +203,7 @@ def main(
             ),
         }
         wandb.init(
-            project="isaaclab",
+            project=f"isaaclab_{args_cli.task}",
             entity="tylerlum",
             name=wandb_name,
             group=None,
