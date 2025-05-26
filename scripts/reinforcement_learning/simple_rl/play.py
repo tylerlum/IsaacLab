@@ -117,6 +117,7 @@ from isaaclab_rl.simple_rl.utils.network import NetworkConfig
 from isaaclab_rl.simple_rl_helpers import SimpleRlVecEnvWrapper, add_omegaconf_resolvers
 from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
+from termcolor import colored
 
 # PLACEHOLDER: Extension template (do not remove this comment)
 
@@ -140,31 +141,45 @@ def main(
         )
         if not checkpoint_path:
             print(
-                "[INFO] Unfortunately a pre-trained checkpoint is currently unavailable for this task."
+                colored(
+                    "[INFO] Unfortunately a pre-trained checkpoint is currently unavailable for this task.",
+                    "red",
+                )
             )
             return
     elif args_cli.use_best_checkpoint:
         log_root_path = os.path.join("logs", "simple_rl", args_cli.task)
         log_root_path = os.path.abspath(log_root_path)
-        print(f"[INFO] Looking for checkpoint in directory: {log_root_path}")
+        print(
+            colored(
+                f"[INFO] Looking for checkpoint in directory: {log_root_path}", "green"
+            )
+        )
         checkpoint_path = get_checkpoint_path(
-            log_path=log_root_path, run_dir=".*", checkpoint="best.pth", other_dirs=["nn"]
+            log_path=log_root_path,
+            run_dir=".*",
+            checkpoint="best.pth",
+            other_dirs=["nn"],
         )
     elif args_cli.use_last_checkpoint:
         log_root_path = os.path.join("logs", "simple_rl", args_cli.task)
         log_root_path = os.path.abspath(log_root_path)
-        print(f"[INFO] Looking for checkpoint in directory: {log_root_path}")
+        print(
+            colored(f"[INFO] Looking for checkpoint in directory: {log_root_path}", "green")
+        )
         checkpoint_path = get_checkpoint_path(
             log_path=log_root_path, run_dir=".*", checkpoint=".*", other_dirs=["nn"]
         )
     elif args_cli.checkpoint is not None:
         checkpoint_path = retrieve_file_path(args_cli.checkpoint)
     else:
-        print("[INFO] No checkpoint provided")
+        print(colored("[INFO] No checkpoint provided", "yellow"))
         checkpoint_path = None
 
     if checkpoint_path is not None:
-        print(f"[INFO]: Loading model checkpoint from: {checkpoint_path}")
+        print(
+            colored(f"[INFO]: Loading model checkpoint from: {checkpoint_path}", "green")
+        )
 
     if args_cli.sigma is not None:
         sigma = float(args_cli.sigma)
@@ -178,7 +193,9 @@ def main(
         experiment_dir = os.path.join("logs", "simple_rl", args_cli.task + "_dummy")
         experiment_dir = os.path.abspath(experiment_dir)
 
-    print(f"[INFO]: Logging experiment in directory: {experiment_dir}")
+    print(
+        colored(f"[INFO]: Logging experiment in directory: {experiment_dir}", "green")
+    )
 
     # create isaac environment
     env = gym.make(
@@ -197,7 +214,7 @@ def main(
             "video_length": args_cli.video_length,
             "disable_logger": True,
         }
-        print("[INFO] Recording videos during playing.")
+        print(colored("[INFO] Recording videos during playing.", "green"))
         print_dict(video_kwargs, nesting=4)
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
@@ -260,7 +277,7 @@ def main(
     while simulation_app.is_running():
         PRINT_TIMESTEPS = False
         if PRINT_TIMESTEPS:
-            print(f"timestep: {timestep}")
+            print(colored(f"timestep: {timestep}", "green"))
 
         start_time = time.time()
         # run everything in inference mode
@@ -280,7 +297,7 @@ def main(
                 if player.is_rnn and player.states is not None:
                     for s in player.states:
                         s[:, dones, :] = 0.0
-                print(f"aggregated_rews[dones]: {aggregated_rews[dones]}")
+                print(colored(f"aggregated_rews[dones]: {aggregated_rews[dones]}", "green"))
                 aggregated_rews[dones] = 0.0
 
         timestep += 1
@@ -294,14 +311,24 @@ def main(
         sleep_time = dt - actual_dt
         if args_cli.real_time:
             if sleep_time > 0:
-                print(
-                    f"[INFO] Sleeping for {sleep_time * 1000:.2f} ms, dt: {dt * 1000:.2f} ms, actual dt: {actual_dt * 1000:.2f} ms"
-                )
                 time.sleep(sleep_time)
-            else:
-                print(
-                    f"[INFO] Real-time mode is not possible, dt: {dt * 1000:.2f} ms, actual dt: {actual_dt * 1000:.2f} ms"
-                )
+
+            PRINT_SLEEP_INFO = False
+            if PRINT_SLEEP_INFO:
+                if sleep_time > 0:
+                    print(
+                        colored(
+                            f"[INFO] Sleeping for {sleep_time * 1000:.2f} ms, dt: {dt * 1000:.2f} ms, actual dt: {actual_dt * 1000:.2f} ms",
+                            "green",
+                        )
+                    )
+                else:
+                    print(
+                        colored(
+                            f"[INFO] Real-time mode is not possible, dt: {dt * 1000:.2f} ms, actual dt: {actual_dt * 1000:.2f} ms",
+                            "yellow",
+                        )
+                    )
 
     # close the simulator
     env.close()
