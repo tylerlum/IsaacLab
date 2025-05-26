@@ -1002,12 +1002,12 @@ class BimanualEnv(DirectRLEnv):
         joint_vel_limits = self.robot.data.soft_joint_vel_limits[env_ids].clone()
         joint_vel = joint_vel.clamp_(-joint_vel_limits, joint_vel_limits)
 
-        self.robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
-        self.robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
+        self.robot.write_joint_position_to_sim(joint_pos, env_ids=env_ids)
+        self.robot.write_joint_velocity_to_sim(joint_vel, env_ids=env_ids)
         self.robot.set_joint_position_target(joint_pos, env_ids=env_ids)
         if self.include_blue_robot:
-            self.blue_robot.write_joint_position_to_sim(joint_pos, None, env_ids=env_ids)
-            self.blue_robot.write_joint_velocity_to_sim(joint_vel, None, env_ids=env_ids)
+            self.blue_robot.write_joint_position_to_sim(joint_pos, env_ids=env_ids)
+            self.blue_robot.write_joint_velocity_to_sim(joint_vel, env_ids=env_ids)
             self.blue_robot.set_joint_position_target(joint_pos, env_ids=env_ids)
 
         # Reset object
