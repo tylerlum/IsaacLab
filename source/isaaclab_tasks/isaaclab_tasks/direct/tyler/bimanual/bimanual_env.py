@@ -712,34 +712,38 @@ class BimanualEnv(DirectRLEnv):
                 current_fabric_palm = torch.cat(
                     [self.right_fabric_palm, self.left_fabric_palm], dim=1
                 )
+                POS_DELTA = 0.2
+                ANG_DELTA = np.deg2rad(45)
+                fabric_palm_delta_mins = torch.tensor(
+                    [
+                        -POS_DELTA,
+                        -POS_DELTA,
+                        -POS_DELTA,
+                        -ANG_DELTA,
+                        -ANG_DELTA,
+                        -ANG_DELTA,
+                    ]
+                    * NUM_BIMANUAL,
+                    device=self.device,
+                )
+                fabric_palm_delta_maxs = torch.tensor(
+                    [
+                        POS_DELTA,
+                        POS_DELTA,
+                        POS_DELTA,
+                        ANG_DELTA,
+                        ANG_DELTA,
+                        ANG_DELTA,
+                    ]
+                    * NUM_BIMANUAL,
+                    device=self.device,
+                )
                 new_fabric_palm_target = current_fabric_palm + rescale(
                     values=raw_fabric_palm_actions,
                     old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
                     old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
-                    new_mins=torch.tensor(
-                        [
-                            -0.1,
-                            -0.1,
-                            -0.1,
-                            np.deg2rad(-45),
-                            np.deg2rad(-45),
-                            np.deg2rad(-45),
-                        ]
-                        * NUM_BIMANUAL,
-                        device=self.device,
-                    ),
-                    new_maxs=torch.tensor(
-                        [
-                            0.1,
-                            0.1,
-                            0.1,
-                            np.deg2rad(45),
-                            np.deg2rad(45),
-                            np.deg2rad(45),
-                        ]
-                        * NUM_BIMANUAL,
-                        device=self.device,
-                    ),
+                    new_mins=fabric_palm_delta_mins,
+                    new_maxs=fabric_palm_delta_maxs,
                 )
                 new_fabric_palm_target = new_fabric_palm_target.clamp_(
                     min=self.fabric_palm_mins, max=self.fabric_palm_maxs
