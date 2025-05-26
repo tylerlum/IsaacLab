@@ -675,84 +675,10 @@ class BimanualEnv(DirectRLEnv):
         ), f"self.raw_actions: {self.raw_actions}"
 
         if USE_FABRIC:
-            # Actions are in robot frame
-            # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
-
-            # World: X = forward, Y = left, Z = up
-            # Palm: x = palm normal, y = palm-to_thumb, z= palm-to-finger
-            # 0 = forward, 1 = left, 2 = up
-            # 3 = euler_Z, 4 = euler_Y, 5 = euler_X
-
-            # Update fabric targets
-            # Action is in [-1, 1] => [min, max]
-
-            # Set to True to debug
-            OVERWRITE_WITH_SAMPLED_ACTIONS = False
-            if OVERWRITE_WITH_SAMPLED_ACTIONS:
-                self.raw_actions[:] = self.sampled_raw_actions
-
-            # Split into palm and hand actions
-            raw_fabric_palm_actions = self.raw_actions[:, : NUM_BIMANUAL * 6]
-            raw_fabric_hand_actions = self.raw_actions[:, NUM_BIMANUAL * 6 :]
-
-            ABSOLUTE_PALM_CONTROL = False
-            if ABSOLUTE_PALM_CONTROL:
-                new_fabric_palm_target = rescale(
-                    values=raw_fabric_palm_actions,
-                    old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
-                    old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
-                    new_mins=self.fabric_palm_mins,
-                    new_maxs=self.fabric_palm_maxs,
-                )
-            else:
-                current_fabric_palm = torch.cat(
-                    [self.right_fabric_palm, self.left_fabric_palm], dim=1
-                )
-                POS_DELTA = 0.2
-                ANG_DELTA = np.deg2rad(45)
-                fabric_palm_delta_mins = torch.tensor(
-                    [
-                        -POS_DELTA,
-                        -POS_DELTA,
-                        -POS_DELTA,
-                        -ANG_DELTA,
-                        -ANG_DELTA,
-                        -ANG_DELTA,
-                    ]
-                    * NUM_BIMANUAL,
-                    device=self.device,
-                )
-                fabric_palm_delta_maxs = torch.tensor(
-                    [
-                        POS_DELTA,
-                        POS_DELTA,
-                        POS_DELTA,
-                        ANG_DELTA,
-                        ANG_DELTA,
-                        ANG_DELTA,
-                    ]
-                    * NUM_BIMANUAL,
-                    device=self.device,
-                )
-                new_fabric_palm_target = current_fabric_palm + rescale(
-                    values=raw_fabric_palm_actions,
-                    old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
-                    old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
-                    new_mins=fabric_palm_delta_mins,
-                    new_maxs=fabric_palm_delta_maxs,
-                )
-                new_fabric_palm_target = new_fabric_palm_target.clamp_(
-                    min=self.fabric_palm_mins, max=self.fabric_palm_maxs
-                )
-            self.fabric_palm_target.copy_(new_fabric_palm_target)
-
-            new_fabric_hand_target = rescale(
-                values=raw_fabric_hand_actions,
-                old_mins=torch.ones_like(self.fabric_hand_mins) * -1,
-                old_maxs=torch.ones_like(self.fabric_hand_maxs) * 1,
-                new_mins=self.fabric_hand_mins,
-                new_maxs=self.fabric_hand_maxs,
+            new_fabric_palm_target, new_fabric_hand_target = (
+                self._compute_fabric_actions(self.raw_actions)
             )
+            self.fabric_palm_target.copy_(new_fabric_palm_target)
             self.fabric_hand_target.copy_(new_fabric_hand_target)
 
         if USE_FABRIC:
@@ -760,81 +686,13 @@ class BimanualEnv(DirectRLEnv):
             # That depends on sim_dt, fabric_dt, and decimation
             for _ in range(NUM_FABRIC_DECIMATION):
                 # Step fabric
-                if USE_FABRIC_CUDA_GRAPH:
-                    self.fabric_cuda_graph.replay()
-                    self.fabric_q.copy_(self.fabric_q_new)
-                    self.fabric_qd.copy_(self.fabric_qd_new)
-                    self.fabric_qdd.copy_(self.fabric_qdd_new)
-
-                else:
-                    # Set the targets
-                    self.fabric.set_features(
-                        self.fabric_hand_target,
-                        self.fabric_palm_target,
-                        "euler_zyx",
-                        self.fabric_q.detach(),
-                        self.fabric_qd.detach(),
-                        self.fabric_object_ids,
-                        self.fabric_object_indicator,
-                    )
-
-                    # Integrate fabrics one step producing new position and velocity.
-                    self.fabric_q, self.fabric_qd, self.fabric_qdd = (
-                        self.fabric_integrator.step(
-                            self.fabric_q.detach(),
-                            self.fabric_qd.detach(),
-                            self.fabric_qdd.detach(),
-                            FABRIC_DT,
-                        )
-                    )
+                self._step_fabric_state()
 
             position_targets = fabric_to_isaaclab_joint_order_torch(
                 self.fabric_q.detach().clone()
             )
         else:
-            # Split into arm and hand actions
-            raw_arm_actions = self.raw_actions[:, : NUM_BIMANUAL * NUM_ARM_JOINTS]
-            raw_hand_actions = self.raw_actions[:, NUM_BIMANUAL * NUM_ARM_JOINTS :]
-
-            # Arm
-            ABSOLUTE_ARM_CONTROL = False
-            if ABSOLUTE_ARM_CONTROL:
-                arm_action_offset = self.robot.data.default_joint_pos[
-                    :, self._joint_idxs
-                ][:, : (NUM_ARM_JOINTS * NUM_BIMANUAL)]
-            else:
-                arm_action_offset = self.robot.data.joint_pos[:, self._joint_idxs][
-                    :, : (NUM_ARM_JOINTS * NUM_BIMANUAL)
-                ]
-            assert arm_action_offset.shape == (
-                self.num_envs,
-                NUM_ARM_JOINTS * NUM_BIMANUAL,
-            ), (
-                f"arm_action_offset.shape: {arm_action_offset.shape} != (self.num_envs, NUM_ARM_JOINTS * NUM_BIMANUAL): {(self.num_envs, NUM_ARM_JOINTS * NUM_BIMANUAL)}"
-            )
-            arm_position_targets = (
-                self.cfg.arm_action_scale * raw_arm_actions + arm_action_offset
-            )
-
-            # Hand
-            hand_action_offset = self.robot.data.default_joint_pos[:, self._joint_idxs][
-                :, NUM_ARM_JOINTS * NUM_BIMANUAL :
-            ]
-            hand_position_targets = (
-                self.cfg.hand_action_scale * raw_hand_actions + hand_action_offset
-            )
-
-            if FILTER_ARM_ACTIONS:
-                ALPHA = 0.9
-                self.filtered_arm_position_targets = (
-                    ALPHA * self.filtered_arm_position_targets
-                    + (1 - ALPHA) * arm_position_targets
-                )
-                arm_position_targets = self.filtered_arm_position_targets
-
-            position_targets = torch.cat(
-                [arm_position_targets, hand_position_targets], dim=-1
-            )
+            position_targets = self._compute_actions(self.raw_actions)
 
         # Clamp
         joint_pos_limits = self.robot.data.soft_joint_pos_limits.clone()
@@ -863,6 +721,164 @@ class BimanualEnv(DirectRLEnv):
 
     def _apply_action(self):
         pass
+
+    def _compute_fabric_actions(
+        self, raw_actions: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Actions are in robot frame
+        # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
+
+        # World: X = forward, Y = left, Z = up
+        # Palm: x = palm normal, y = palm-to_thumb, z= palm-to-finger
+        # 0 = forward, 1 = left, 2 = up
+        # 3 = euler_Z, 4 = euler_Y, 5 = euler_X
+
+        # Update fabric targets
+        # Action is in [-1, 1] => [min, max]
+
+        # Set to True to debug
+        OVERWRITE_WITH_SAMPLED_ACTIONS = False
+        if OVERWRITE_WITH_SAMPLED_ACTIONS:
+            raw_actions[:] = self.sampled_raw_actions
+
+        # Split into palm and hand actions
+        raw_fabric_palm_actions = self.raw_actions[:, : NUM_BIMANUAL * 6]
+        raw_fabric_hand_actions = self.raw_actions[:, NUM_BIMANUAL * 6 :]
+
+        ABSOLUTE_PALM_CONTROL = False
+        if ABSOLUTE_PALM_CONTROL:
+            new_fabric_palm_target = rescale(
+                values=raw_fabric_palm_actions,
+                old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
+                old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
+                new_mins=self.fabric_palm_mins,
+                new_maxs=self.fabric_palm_maxs,
+            )
+        else:
+            current_fabric_palm = torch.cat(
+                [self.right_fabric_palm, self.left_fabric_palm], dim=1
+            )
+            POS_DELTA = 0.2
+            ANG_DELTA = np.deg2rad(45)
+            fabric_palm_delta_mins = torch.tensor(
+                [
+                    -POS_DELTA,
+                    -POS_DELTA,
+                    -POS_DELTA,
+                    -ANG_DELTA,
+                    -ANG_DELTA,
+                    -ANG_DELTA,
+                ]
+                * NUM_BIMANUAL,
+                device=self.device,
+            )
+            fabric_palm_delta_maxs = torch.tensor(
+                [
+                    POS_DELTA,
+                    POS_DELTA,
+                    POS_DELTA,
+                    ANG_DELTA,
+                    ANG_DELTA,
+                    ANG_DELTA,
+                ]
+                * NUM_BIMANUAL,
+                device=self.device,
+            )
+            new_fabric_palm_target = current_fabric_palm + rescale(
+                values=raw_fabric_palm_actions,
+                old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
+                old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
+                new_mins=fabric_palm_delta_mins,
+                new_maxs=fabric_palm_delta_maxs,
+            )
+            new_fabric_palm_target = new_fabric_palm_target.clamp_(
+                min=self.fabric_palm_mins, max=self.fabric_palm_maxs
+            )
+
+        new_fabric_hand_target = rescale(
+            values=raw_fabric_hand_actions,
+            old_mins=torch.ones_like(self.fabric_hand_mins) * -1,
+            old_maxs=torch.ones_like(self.fabric_hand_maxs) * 1,
+            new_mins=self.fabric_hand_mins,
+            new_maxs=self.fabric_hand_maxs,
+        )
+
+        return new_fabric_palm_target, new_fabric_hand_target
+
+    def _compute_actions(self, raw_actions: torch.Tensor) -> torch.Tensor:
+        # Split into arm and hand actions
+        raw_arm_actions = raw_actions[:, : NUM_BIMANUAL * NUM_ARM_JOINTS]
+        raw_hand_actions = raw_actions[:, NUM_BIMANUAL * NUM_ARM_JOINTS :]
+
+        # Arm
+        ABSOLUTE_ARM_CONTROL = False
+        if ABSOLUTE_ARM_CONTROL:
+            arm_action_offset = self.robot.data.default_joint_pos[:, self._joint_idxs][
+                :, : (NUM_ARM_JOINTS * NUM_BIMANUAL)
+            ]
+        else:
+            arm_action_offset = self.robot.data.joint_pos[:, self._joint_idxs][
+                :, : (NUM_ARM_JOINTS * NUM_BIMANUAL)
+            ]
+        assert arm_action_offset.shape == (
+            self.num_envs,
+            NUM_ARM_JOINTS * NUM_BIMANUAL,
+        ), (
+            f"arm_action_offset.shape: {arm_action_offset.shape} != (self.num_envs, NUM_ARM_JOINTS * NUM_BIMANUAL): {(self.num_envs, NUM_ARM_JOINTS * NUM_BIMANUAL)}"
+        )
+        arm_position_targets = (
+            self.cfg.arm_action_scale * raw_arm_actions + arm_action_offset
+        )
+
+        # Hand
+        hand_action_offset = self.robot.data.default_joint_pos[:, self._joint_idxs][
+            :, NUM_ARM_JOINTS * NUM_BIMANUAL :
+        ]
+        hand_position_targets = (
+            self.cfg.hand_action_scale * raw_hand_actions + hand_action_offset
+        )
+
+        if FILTER_ARM_ACTIONS:
+            ALPHA = 0.9
+            self.filtered_arm_position_targets = (
+                ALPHA * self.filtered_arm_position_targets
+                + (1 - ALPHA) * arm_position_targets
+            )
+            arm_position_targets = self.filtered_arm_position_targets
+
+        position_targets = torch.cat(
+            [arm_position_targets, hand_position_targets], dim=-1
+        )
+        return position_targets
+
+    def _step_fabric_state(self):
+        if USE_FABRIC_CUDA_GRAPH:
+            self.fabric_cuda_graph.replay()
+            self.fabric_q.copy_(self.fabric_q_new)
+            self.fabric_qd.copy_(self.fabric_qd_new)
+            self.fabric_qdd.copy_(self.fabric_qdd_new)
+
+        else:
+            # Set the targets
+            self.fabric.set_features(
+                self.fabric_hand_target,
+                self.fabric_palm_target,
+                "euler_zyx",
+                self.fabric_q.detach(),
+                self.fabric_qd.detach(),
+                self.fabric_object_ids,
+                self.fabric_object_indicator,
+            )
+
+            # Integrate fabrics one step producing new position and velocity.
+            self.fabric_q, self.fabric_qd, self.fabric_qdd = (
+                self.fabric_integrator.step(
+                    self.fabric_q.detach(),
+                    self.fabric_qd.detach(),
+                    self.fabric_qdd.detach(),
+                    FABRIC_DT,
+                )
+            )
 
     def _compute_intermediate_values(self):
         pass
