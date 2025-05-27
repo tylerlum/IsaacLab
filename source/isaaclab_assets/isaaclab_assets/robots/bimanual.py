@@ -216,7 +216,7 @@ BIMANUAL_CFG = ArticulationCfg(
 BLUE_BIMANUAL_CFG = BIMANUAL_CFG.copy()
 BLUE_BIMANUAL_CFG.spawn.usd_path = f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/bimanual_kuka_allegro_v9/usd_blue/bimanual_kuka_allegro.usd"
 BLUE_BIMANUAL_CFG.spawn.collision_props = sim_utils.CollisionPropertiesCfg(
-    # collision_enabled=False,
+    collision_enabled=False,
 )  # No collision
 
 """Configuration for the Bimanual robot consisting of Kuka arms and Allegro hands."""

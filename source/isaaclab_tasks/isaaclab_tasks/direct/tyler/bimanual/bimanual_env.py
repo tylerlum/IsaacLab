@@ -137,7 +137,7 @@ ENV_REGEX_NS = "/World/envs/env_.*"
 @configclass
 class BimanualEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 10.0
+    episode_length_s = 5.0
     decimation = 4
     arm_action_scale = 0.1
     hand_action_scale = 2.0
@@ -433,10 +433,15 @@ class BimanualEnv(DirectRLEnv):
         self._setup_sanity_checks()
         self._setup_pytorch_kinematics()
 
+        # Taskmap is needed for FK, even if not using fabric
+        # Must be done before _reset_state() because it uses the taskmap
+        self._setup_fabric_taskmap()
+
         # State
         self._reset_state(env_ids=None)
-        self._setup_fabric_taskmap()  # Still needed for FK
+
         if USE_FABRIC:
+            # Must be done after _reset_state() because it uses fabric_q from that
             self._setup_fabric_action_space()
 
         # Logging
@@ -1136,15 +1141,21 @@ class BimanualEnv(DirectRLEnv):
                 "left_index_fingertip_to_goal_dist": -(self.left_index_fingertip_position_w() - self.left_goal_position_w).norm(dim=-1, p=2),
             }
         else:
+            right_index_fingertip_to_object_dist = (
+                self.right_index_fingertip_position_w() - self.object_position_w
+            ).norm(dim=-1, p=2)
+            left_index_fingertip_to_object_dist = (
+                self.left_index_fingertip_position_w() - self.object_position_w
+            ).norm(dim=-1, p=2)
+            right_improvement = (self.smallest_this_episode_right_index_fingertip_to_object_dist - right_index_fingertip_to_object_dist).clip(min=0.0)
+            left_improvement = (self.smallest_this_episode_left_index_fingertip_to_object_dist - left_index_fingertip_to_object_dist).clip(min=0.0)
+            object_goal_dist = (self.object_position_w - self.goal_object_position_w).norm(dim=-1, p=2)
+            object_goal_improvement = (self.smallest_this_episode_object_to_goal_dist - object_goal_dist).clip(min=0.0)
             self.individual_reward_bufs = {
-                "right_index_fingertip_to_object_dist": -(self.right_index_fingertip_position_w() - self.object_position_w).norm(dim=-1, p=2),
-                "left_index_fingertip_to_object_dist": -(self.left_index_fingertip_position_w() - self.object_position_w).norm(dim=-1, p=2),
+                "right_index_fingertip_to_object_dist": right_improvement,
+                "left_index_fingertip_to_object_dist": left_improvement,
                 "object_lifted": torch.logical_and(self.object_is_lifted, ~self.object_has_been_lifted_this_episode),
-                "object_to_goal_dist": torch.where(
-                    self.object_is_lifted,
-                    (2.0 - (self.object_position_w - self.goal_object_position_w).norm(dim=-1, p=2)).clip(min=0.0),
-                    torch.zeros_like(self.object_position_w[:, 2]),
-                ),
+                "object_to_goal_dist": object_goal_improvement,
             }
         # fmt: on
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
@@ -1217,6 +1228,34 @@ class BimanualEnv(DirectRLEnv):
                 * self.individual_reward_weights[reward_name]
             )
 
+        # Update smallest fingertip to object distance
+        right_index_fingertip_to_object_dist = (
+            self.right_index_fingertip_position_w() - self.object_position_w
+        ).norm(dim=-1, p=2)
+        self.smallest_this_episode_right_index_fingertip_to_object_dist = torch.where(
+            right_index_fingertip_to_object_dist
+            < self.smallest_this_episode_right_index_fingertip_to_object_dist,
+            right_index_fingertip_to_object_dist,
+            self.smallest_this_episode_right_index_fingertip_to_object_dist,
+        )
+        left_index_fingertip_to_object_dist = (
+            self.left_index_fingertip_position_w() - self.object_position_w
+        ).norm(dim=-1, p=2)
+        self.smallest_this_episode_left_index_fingertip_to_object_dist = torch.where(
+            left_index_fingertip_to_object_dist
+            < self.smallest_this_episode_left_index_fingertip_to_object_dist,
+            left_index_fingertip_to_object_dist,
+            self.smallest_this_episode_left_index_fingertip_to_object_dist,
+        )
+        object_goal_dist = (self.object_position_w - self.goal_object_position_w).norm(
+            dim=-1, p=2
+        )
+        self.smallest_this_episode_object_to_goal_dist = torch.where(
+            object_goal_dist < self.smallest_this_episode_object_to_goal_dist,
+            object_goal_dist,
+            self.smallest_this_episode_object_to_goal_dist,
+        )
+
         self.populate_wandb_dict()
         self.log_wandb_dict()
 
@@ -1276,6 +1315,24 @@ class BimanualEnv(DirectRLEnv):
         """
         time_out = self.episode_length_buf >= self.max_episode_length - 1
         died = torch.zeros_like(time_out)
+        died = torch.where(self.object_fallen_off_table, torch.ones_like(died), died)
+        died = torch.where(
+            (self.right_index_fingertip_position_w() - self.object_position_w).norm(
+                dim=-1, p=2
+            )
+            > 0.3,
+            torch.ones_like(died),
+            died,
+        )
+        died = torch.where(
+            (self.left_index_fingertip_position_w() - self.object_position_w).norm(
+                dim=-1, p=2
+            )
+            > 0.3,
+            torch.ones_like(died),
+            died,
+        )
+
         return died, time_out
 
     #### DONES END ####
@@ -1289,6 +1346,20 @@ class BimanualEnv(DirectRLEnv):
         super()._reset_idx(env_ids)
 
         # Reset robot
+        self._reset_robot(env_ids)
+
+        # Reset object
+        self._reset_object(env_ids)
+
+        self._update_metrics(env_ids)
+
+        # Must be done after _reset_robot() and _reset_object()
+        # Since it uses the newly sampled initial robot and object and goal poses
+        self._reset_state(env_ids)
+
+        self._compute_intermediate_values()
+
+    def _reset_robot(self, env_ids: torch.Tensor):
         joint_pos = self.robot.data.default_joint_pos[env_ids].clone()
         joint_pos *= math_utils.sample_uniform(
             *(0.8, 1.2), joint_pos.shape, joint_pos.device
@@ -1313,10 +1384,11 @@ class BimanualEnv(DirectRLEnv):
             # self.blue_robot.write_joint_velocity_to_sim(joint_vel, env_ids=env_ids)
             self.blue_robot.set_joint_position_target(joint_pos, env_ids=env_ids)
 
-        # Reset object
+    def _reset_object(self, env_ids: torch.Tensor):
         object_pose = self._sample_initial_object_pose(env_ids)
         final_object_pose = self._sample_final_object_pose(env_ids)
         self.object.write_root_pose_to_sim(object_pose, env_ids=env_ids)
+
         self.object.write_root_velocity_to_sim(
             torch.zeros(len(env_ids), 6, device=self.device), env_ids=env_ids
         )
@@ -1324,11 +1396,6 @@ class BimanualEnv(DirectRLEnv):
         # self.goal_object.write_root_velocity_to_sim(
         #     torch.zeros(len(env_ids), 6, device=self.device), env_ids=env_ids
         # )
-
-        self._update_metrics(env_ids)
-        self._reset_state(env_ids)
-
-        self._compute_intermediate_values()
 
     def _reset_state(self, env_ids: torch.Tensor | None):
         if env_ids is None or len(env_ids) == self.num_envs:
@@ -1386,6 +1453,15 @@ class BimanualEnv(DirectRLEnv):
                     self.cfg.observation_space,
                     device=self.device,
                 )
+            self.smallest_this_episode_right_index_fingertip_to_object_dist = (
+                self.right_index_fingertip_position_w() - self.object_position_w
+            ).norm(dim=-1, p=2)
+            self.smallest_this_episode_left_index_fingertip_to_object_dist = (
+                self.left_index_fingertip_position_w() - self.object_position_w
+            ).norm(dim=-1, p=2)
+            self.smallest_this_episode_object_to_goal_dist = (
+                self.object_position_w - self.goal_object_position_w
+            ).norm(dim=-1, p=2)
         else:
             self.raw_actions[env_ids] = torch.zeros(
                 len(env_ids), self.cfg.action_space, device=self.device
@@ -1438,6 +1514,17 @@ class BimanualEnv(DirectRLEnv):
                     self.cfg.observation_space,
                     device=self.device,
                 )
+            self.smallest_this_episode_right_index_fingertip_to_object_dist[env_ids] = (
+                self.right_index_fingertip_position_w()[env_ids]
+                - self.object_position_w[env_ids]
+            ).norm(dim=-1, p=2)
+            self.smallest_this_episode_left_index_fingertip_to_object_dist[env_ids] = (
+                self.left_index_fingertip_position_w()[env_ids]
+                - self.object_position_w[env_ids]
+            ).norm(dim=-1, p=2)
+            self.smallest_this_episode_object_to_goal_dist[env_ids] = (
+                self.object_position_w[env_ids] - self.goal_object_position_w[env_ids]
+            ).norm(dim=-1, p=2)
 
     def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
@@ -1456,10 +1543,10 @@ class BimanualEnv(DirectRLEnv):
     def _sample_initial_object_pose(self, env_ids: torch.Tensor) -> torch.Tensor:
         position = self.table_position[env_ids] + sample_uniform_tensor(
             low=torch.tensor(
-                [-0.2, -0.5, OBJECT_LENGTH_Z / 2 + 0.02], device=self.device
+                [-0.02, -0.02, OBJECT_LENGTH_Z / 2 + 0.02], device=self.device
             ),
             high=torch.tensor(
-                [0.2, 0.5, OBJECT_LENGTH_Z / 2 + 0.03], device=self.device
+                [0.02, 0.02, OBJECT_LENGTH_Z / 2 + 0.03], device=self.device
             ),
             N=len(env_ids),
         )
@@ -1473,10 +1560,10 @@ class BimanualEnv(DirectRLEnv):
     def _sample_final_object_pose(self, env_ids: torch.Tensor) -> torch.Tensor:
         position = self.table_position[env_ids] + sample_uniform_tensor(
             low=torch.tensor(
-                [-0.2, -0.5, OBJECT_LENGTH_Z / 2 + 0.02], device=self.device
+                [-0.02, -0.02, OBJECT_LENGTH_Z / 2 + 0.3], device=self.device
             ),
             high=torch.tensor(
-                [0.2, 0.5, OBJECT_LENGTH_Z / 2 + 0.5], device=self.device
+                [0.02, 0.02, OBJECT_LENGTH_Z / 2 + 0.5], device=self.device
             ),
             N=len(env_ids),
         )
@@ -1963,6 +2050,12 @@ class BimanualEnv(DirectRLEnv):
     def object_is_lifted(self) -> torch.Tensor:
         return (
             self.object_position_w[:, 2] > self.table_position[:, 2] + OBJECT_LENGTH_Z
+        )
+
+    @property
+    def object_fallen_off_table(self) -> torch.Tensor:
+        return (
+            self.object_position_w[:, 2] < self.table_position[:, 2] - OBJECT_LENGTH_Z
         )
 
     @property
