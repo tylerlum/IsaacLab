@@ -121,9 +121,6 @@ OBJECT_LENGTH_Z = 0.22
 
 SIM_DT = 1 / 60
 
-FABRIC_DT = 1 / 60
-NUM_FABRIC_DECIMATION = 4
-
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
     restitution_combine_mode="multiply",
@@ -476,11 +473,7 @@ class BimanualEnv(DirectRLEnv):
         self.set_debug_vis(self.cfg.debug_vis)
 
     def _setup_sanity_checks(self):
-        assert np.isclose(
-            self.cfg.decimation * self.cfg.sim.dt, FABRIC_DT * NUM_FABRIC_DECIMATION
-        ), (
-            f"self.cfg.decimation * self.cfg.sim.dt: {self.cfg.decimation * self.cfg.sim.dt} != FABRIC_DT * NUM_FABRIC_DECIMATION: {FABRIC_DT * NUM_FABRIC_DECIMATION}"
-        )
+        pass
 
     def _setup_pytorch_kinematics(self):
         with open(URDF_PATH, "rb") as f:
@@ -595,7 +588,7 @@ class BimanualEnv(DirectRLEnv):
         self.fabric = BimanualKukaAllegroPoseFabricV2(
             batch_size=self.num_envs,
             device=self.device,
-            timestep=FABRIC_DT,
+            timestep=self.fabric_dt,
             graph_capturable=USE_FABRIC_CUDA_GRAPH,
             fabric_params=fabric_params,
         )
@@ -655,7 +648,7 @@ class BimanualEnv(DirectRLEnv):
                 q=self.fabric_q,
                 qd=self.fabric_qd,
                 qdd=self.fabric_qdd,
-                timestep=FABRIC_DT,
+                timestep=self.fabric_dt,
                 fabric_integrator=self.fabric_integrator,
                 inputs=fabric_inputs,
                 device=self.device,
@@ -844,7 +837,7 @@ class BimanualEnv(DirectRLEnv):
 
             # NOTE: Could do this in _apply_action with some smart rounding strategy
             # That depends on sim_dt, fabric_dt, and decimation
-            for i in range(NUM_FABRIC_DECIMATION):
+            for i in range(self.fabric_decimation):
                 # Step fabric
                 check_nan_and_print_if_any(
                     self.fabric_q, f"self.fabric_q (before step {i})"
@@ -1065,7 +1058,7 @@ class BimanualEnv(DirectRLEnv):
                     self.fabric_q.detach(),
                     self.fabric_qd.detach(),
                     self.fabric_qdd.detach(),
-                    FABRIC_DT,
+                    self.fabric_dt,
                 )
             )
 
@@ -2475,5 +2468,13 @@ class BimanualEnv(DirectRLEnv):
     @DEBUG_VIS.setter
     def DEBUG_VIS(self, value: bool):
         self._DEBUG_VIS = value
+
+    @property
+    def fabric_dt(self) -> float:
+        return self.cfg.sim.dt
+
+    @property
+    def fabric_decimation(self) -> int:
+        return self.cfg.decimation
 
     #### OTHER PROPERTIES END ####
