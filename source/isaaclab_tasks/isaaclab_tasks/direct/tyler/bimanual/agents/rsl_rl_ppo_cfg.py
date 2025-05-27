@@ -23,8 +23,8 @@ class BimanualPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     wandb_project = "isaaclab"
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
-        actor_hidden_dims=[512, 512, 512],
-        critic_hidden_dims=[512, 512, 512],
+        actor_hidden_dims=[32, 32],
+        critic_hidden_dims=[32, 32],
         activation="elu",
         noise_std_type="scalar",
     )
