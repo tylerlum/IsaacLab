@@ -254,14 +254,65 @@ VISER_JOINT_ORDER = [
     "left_thumb_joint_3",
 ]
 
+# [RIGHT_ARM, LEFT_ARM, RIGHT_HAND, LEFT_HAND]
+PYTORCH_KINEMATICS_JOINT_ORDER = [
+    "right_iiwa14_joint_1",
+    "right_iiwa14_joint_2",
+    "right_iiwa14_joint_3",
+    "right_iiwa14_joint_4",
+    "right_iiwa14_joint_5",
+    "right_iiwa14_joint_6",
+    "right_iiwa14_joint_7",
+    "left_iiwa14_joint_1",
+    "left_iiwa14_joint_2",
+    "left_iiwa14_joint_3",
+    "left_iiwa14_joint_4",
+    "left_iiwa14_joint_5",
+    "left_iiwa14_joint_6",
+    "left_iiwa14_joint_7",
+    "right_index_joint_0",
+    "right_index_joint_1",
+    "right_index_joint_2",
+    "right_index_joint_3",
+    "right_middle_joint_0",
+    "right_middle_joint_1",
+    "right_middle_joint_2",
+    "right_middle_joint_3",
+    "right_ring_joint_0",
+    "right_ring_joint_1",
+    "right_ring_joint_2",
+    "right_ring_joint_3",
+    "right_thumb_joint_0",
+    "right_thumb_joint_1",
+    "right_thumb_joint_2",
+    "right_thumb_joint_3",
+    "left_index_joint_0",
+    "left_index_joint_1",
+    "left_index_joint_2",
+    "left_index_joint_3",
+    "left_middle_joint_0",
+    "left_middle_joint_1",
+    "left_middle_joint_2",
+    "left_middle_joint_3",
+    "left_ring_joint_0",
+    "left_ring_joint_1",
+    "left_ring_joint_2",
+    "left_ring_joint_3",
+    "left_thumb_joint_0",
+    "left_thumb_joint_1",
+    "left_thumb_joint_2",
+    "left_thumb_joint_3",
+]
+
 assert (
     len(CUROBO_JOINT_ORDER)
     == len(PYBULLET_JOINT_ORDER)
     == len(ISAACLAB_JOINT_ORDER)
     == len(FABRIC_JOINT_ORDER)
     == len(VISER_JOINT_ORDER)
+    == len(PYTORCH_KINEMATICS_JOINT_ORDER)
 ), (
-    f"{len(CUROBO_JOINT_ORDER)}, {len(PYBULLET_JOINT_ORDER)}, {len(ISAACLAB_JOINT_ORDER)}, {len(FABRIC_JOINT_ORDER)}, {len(VISER_JOINT_ORDER)}"
+    f"{len(CUROBO_JOINT_ORDER)}, {len(PYBULLET_JOINT_ORDER)}, {len(ISAACLAB_JOINT_ORDER)}, {len(FABRIC_JOINT_ORDER)}, {len(VISER_JOINT_ORDER)}, {len(PYTORCH_KINEMATICS_JOINT_ORDER)}"
 )
 assert (
     set(CUROBO_JOINT_ORDER)
@@ -269,8 +320,9 @@ assert (
     == set(ISAACLAB_JOINT_ORDER)
     == set(FABRIC_JOINT_ORDER)
     == set(VISER_JOINT_ORDER)
+    == set(PYTORCH_KINEMATICS_JOINT_ORDER)
 ), (
-    f"{set(CUROBO_JOINT_ORDER)}, {set(PYBULLET_JOINT_ORDER)}, {set(ISAACLAB_JOINT_ORDER)}, {set(FABRIC_JOINT_ORDER)}, {set(VISER_JOINT_ORDER)}"
+    f"{set(CUROBO_JOINT_ORDER)}, {set(PYBULLET_JOINT_ORDER)}, {set(ISAACLAB_JOINT_ORDER)}, {set(FABRIC_JOINT_ORDER)}, {set(VISER_JOINT_ORDER)}, {set(PYTORCH_KINEMATICS_JOINT_ORDER)}"
 )
 
 

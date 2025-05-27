@@ -11,6 +11,7 @@ from typing import Optional, Tuple
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
 import numpy as np
+import pytorch_kinematics as pk
 import torch
 import yaml
 from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObjectCfg
@@ -45,6 +46,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.color_constants import (
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.constants import (
     NUM_QUAT,
+    NUM_RPY,
     NUM_XYZ,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_robot_constants import (
@@ -69,7 +71,13 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_robot_constants import (
     RIGHT_THUMB_FINGERTIP_LINK_IDX,
     URDF_PATH,
 )
+from isaaclab_tasks.direct.tyler.bimanual.utils.ik_utils import (
+    control_ik,
+)
 from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
+    ISAACLAB_JOINT_ORDER,
+    PYTORCH_KINEMATICS_JOINT_ORDER,
+    change_joint_order_torch,
     fabric_to_isaaclab_joint_order_torch,
     isaaclab_to_fabric_joint_order_torch,
 )
@@ -78,6 +86,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.robot_constants import (
     NUM_ARM_JOINTS,
     NUM_BIMANUAL,
     NUM_FINGERS,
+    NUM_HAND_JOINTS,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
     TABLE_LENGTH_Z,
@@ -410,6 +419,7 @@ class BimanualEnv(DirectRLEnv):
         self._setup_keyboard()
         self._setup_robot_idxs()
         self._setup_sanity_checks()
+        self._setup_pytorch_kinematics()
 
         # State
         self._reset_state(env_ids=None)
@@ -431,6 +441,18 @@ class BimanualEnv(DirectRLEnv):
         ), (
             f"self.cfg.decimation * self.cfg.sim.dt: {self.cfg.decimation * self.cfg.sim.dt} != FABRIC_DT * NUM_FABRIC_DECIMATION: {FABRIC_DT * NUM_FABRIC_DECIMATION}"
         )
+
+    def _setup_pytorch_kinematics(self):
+        with open(URDF_PATH, "rb") as f:
+            urdf_str = f.read()
+        self.right_arm_pk_chain = pk.build_serial_chain_from_urdf(
+            urdf_str,
+            end_link_name="right_palm_link",
+        ).to(device=self.device)
+        self.left_arm_pk_chain = pk.build_serial_chain_from_urdf(
+            urdf_str,
+            end_link_name="left_palm_link",
+        ).to(device=self.device)
 
     def _setup_robot_idxs(self):
         # Robot joint idxs
@@ -705,6 +727,64 @@ class BimanualEnv(DirectRLEnv):
         check_nan_and_print_if_any(
             self.raw_actions, "self.raw_actions (start of pre_physics_step)"
         )
+
+        pk_q = change_joint_order_torch(
+            self.robot.data.joint_pos,
+            from_order=ISAACLAB_JOINT_ORDER,
+            to_order=PYTORCH_KINEMATICS_JOINT_ORDER,
+        )
+        right_arm_pk_q = pk_q[:, :NUM_ARM_JOINTS]
+        left_arm_pk_q = pk_q[:, NUM_ARM_JOINTS : NUM_ARM_JOINTS * NUM_BIMANUAL]
+        right_jacobian = self.right_arm_pk_chain.jacobian(right_arm_pk_q)
+        left_jacobian = self.left_arm_pk_chain.jacobian(left_arm_pk_q)
+        assert isinstance(right_jacobian, torch.Tensor), (
+            f"right_jacobian: {type(right_jacobian)}"
+        )
+        assert isinstance(left_jacobian, torch.Tensor), (
+            f"left_jacobian: {type(left_jacobian)}"
+        )
+        assert right_jacobian.shape == (
+            self.num_envs,
+            NUM_XYZ + NUM_RPY,
+            NUM_ARM_JOINTS,
+        ), f"right_jacobian.shape: {right_jacobian.shape}"
+        assert left_jacobian.shape == (
+            self.num_envs,
+            NUM_XYZ + NUM_RPY,
+            NUM_ARM_JOINTS,
+        ), f"left_jacobian.shape: {left_jacobian.shape}"
+        right_dpose = torch.zeros(self.num_envs, NUM_XYZ + NUM_RPY, device=self.device)
+        # right_dpose[:, 2] = 0.05
+        right_dpose[:, 1] = 0.05
+        # right_dpose[:, 3] = np.deg2rad(10)
+        right_arm_delta_q = control_ik(
+            j_eef=right_jacobian,
+            dpose=right_dpose,
+        )
+        left_dpose = torch.zeros(self.num_envs, NUM_XYZ + NUM_RPY, device=self.device)
+        # left_dpose[:, 2] = 0.05
+        left_dpose[:, 1] = 0.05
+        # left_dpose[:, 3] = np.deg2rad(10)
+        left_arm_delta_q = control_ik(
+            j_eef=left_jacobian,
+            dpose=left_dpose,
+        )
+        new_pk_q = pk_q + torch.cat(
+            [
+                right_arm_delta_q,
+                left_arm_delta_q,
+                torch.zeros(self.num_envs, NUM_HAND_JOINTS * NUM_BIMANUAL),
+            ],
+            dim=1,
+        )
+        new_q = change_joint_order_torch(
+            new_pk_q,
+            from_order=PYTORCH_KINEMATICS_JOINT_ORDER,
+            to_order=ISAACLAB_JOINT_ORDER,
+        )
+        self.robot.set_joint_position_target(new_q)
+        self.blue_robot.write_joint_position_to_sim(new_q)
+        return
 
         if USE_FABRIC:
             check_nan_and_print_if_any(
