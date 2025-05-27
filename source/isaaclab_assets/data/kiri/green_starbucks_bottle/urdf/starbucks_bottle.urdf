@@ -17,10 +17,10 @@
             </geometry>
             
             </visual>
-            <collision>
+            <!-- <collision>
             <geometry>
                 <mesh filename="starbucks_bottle.obj" scale="1 1 1"/>
             </geometry>
-            </collision>
+            </collision> -->
         </link>
         </robot>

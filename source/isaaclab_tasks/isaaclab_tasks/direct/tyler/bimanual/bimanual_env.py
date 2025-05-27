@@ -122,7 +122,7 @@ OBJECT_LENGTH_Z = 0.22
 SIM_DT = 1 / 60
 
 FABRIC_DT = 1 / 60
-NUM_FABRIC_DECIMATION = 1
+NUM_FABRIC_DECIMATION = 4
 
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
@@ -138,7 +138,7 @@ ENV_REGEX_NS = "/World/envs/env_.*"
 class BimanualEnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 10.0
-    decimation = 1
+    decimation = 4
     arm_action_scale = 0.1
     hand_action_scale = 2.0
     debug_vis = False
@@ -147,7 +147,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     )
     observation_space = (
         (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # q
-        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # qd
+        # + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # qd
         + (NUM_XYZ * NUM_FINGERS * NUM_BIMANUAL)  # fingertip positions
         + ((NUM_XYZ + NUM_QUAT) * NUM_BIMANUAL)  # palm poses
         + (NUM_XYZ + NUM_QUAT)  # object position and orientation
@@ -156,7 +156,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         + (
             NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0
         )  # filtered arm actions
-        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)  # fabric state
+        # + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)  # fabric state
     )
     state_space = 0
 
@@ -878,6 +878,7 @@ class BimanualEnv(DirectRLEnv):
         self.robot.set_joint_position_target(position_targets)
         if self.include_blue_robot:
             self.blue_robot.write_joint_position_to_sim(position_targets)
+            self.blue_robot.set_joint_position_target(position_targets)
 
     def _apply_action(self):
         pass
@@ -1048,7 +1049,7 @@ class BimanualEnv(DirectRLEnv):
         left_palm_pose_w = self.left_palm_pose_w()
         obs_dict = {
             "q": self.robot.data.joint_pos,
-            "qd": self.robot.data.joint_vel,
+            # "qd": self.robot.data.joint_vel,
             "right_fingertip_positions": (
                 self.right_fingertip_positions_w()
                 - self.scene.env_origins.unsqueeze(dim=1)
@@ -1079,9 +1080,9 @@ class BimanualEnv(DirectRLEnv):
                 self.filtered_arm_position_targets
             )
 
-        if USE_FABRIC:
-            obs_dict["fabric_q"] = self.fabric_q
-            obs_dict["fabric_qd"] = self.fabric_qd
+        # if USE_FABRIC:
+        #     obs_dict["fabric_q"] = self.fabric_q
+        #     obs_dict["fabric_qd"] = self.fabric_qd
 
         for k, v in obs_dict.items():
             if v.ndim != 2:
