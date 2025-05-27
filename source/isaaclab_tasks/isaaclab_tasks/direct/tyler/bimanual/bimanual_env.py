@@ -1248,11 +1248,11 @@ class BimanualEnv(DirectRLEnv):
         final_object_pose = self._sample_final_object_pose(env_ids)
         self.object.write_root_pose_to_sim(object_pose, env_ids=env_ids)
         self.object.write_root_velocity_to_sim(
-            torch.zeros(self.num_envs, 6, device=self.device), env_ids=env_ids
+            torch.zeros(len(env_ids), 6, device=self.device), env_ids=env_ids
         )
         self.goal_object.write_root_pose_to_sim(final_object_pose, env_ids=env_ids)
         # self.goal_object.write_root_velocity_to_sim(
-        #     torch.zeros(self.num_envs, 6, device=self.device), env_ids=env_ids
+        #     torch.zeros(len(env_ids), 6, device=self.device), env_ids=env_ids
         # )
 
         self._update_metrics(env_ids)
