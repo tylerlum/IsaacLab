@@ -120,6 +120,7 @@ SAVE_OBS_HISTORY = False
 OBJECT_LENGTH_Z = 0.22
 
 SIM_DT = 1 / 60
+CONTACT_SENSOR_HISTORY_LENGTH = 3
 
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
@@ -160,6 +161,7 @@ def compute_num_states():
         + 1  # episode_length_buf
         + 1  # object_is_lifted
         + 1  # object_has_been_lifted_this_episode
+        + (CONTACT_SENSOR_HISTORY_LENGTH * (NUM_FINGERS * 4 + 1) * NUM_BIMANUAL * NUM_XYZ)  # contact_sensor
     )
 
 
@@ -308,7 +310,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     # contact sensor
     contact_sensor = ContactSensorCfg(
         prim_path=f"{ENV_REGEX_NS}/Robot/.*",
-        history_length=3,
+        history_length=CONTACT_SENSOR_HISTORY_LENGTH,
         update_period=SIM_DT,
     )
 
@@ -506,10 +508,100 @@ class BimanualEnv(DirectRLEnv):
         self._contact_link_idxs, self._contact_link_names = (
             self.contact_sensor.find_bodies(".*")
         )
+        self._right_index_contact_link_idxs, self._right_index_contact_link_names = (
+            self.contact_sensor.find_bodies("right_index_.*")
+        )
+        self._left_index_contact_link_idxs, self._left_index_contact_link_names = (
+            self.contact_sensor.find_bodies("left_index_.*")
+        )
+        self._right_middle_contact_link_idxs, self._right_middle_contact_link_names = (
+            self.contact_sensor.find_bodies("right_middle_.*")
+        )
+        self._left_middle_contact_link_idxs, self._left_middle_contact_link_names = (
+            self.contact_sensor.find_bodies("left_middle_.*")
+        )
+        self._right_ring_contact_link_idxs, self._right_ring_contact_link_names = (
+            self.contact_sensor.find_bodies("right_ring_.*")
+        )
+        self._left_ring_contact_link_idxs, self._left_ring_contact_link_names = (
+            self.contact_sensor.find_bodies("left_ring_.*")
+        )
+        self._right_thumb_contact_link_idxs, self._right_thumb_contact_link_names = (
+            self.contact_sensor.find_bodies("right_thumb_.*")
+        )
+        self._left_thumb_contact_link_idxs, self._left_thumb_contact_link_names = (
+            self.contact_sensor.find_bodies("left_thumb_.*")
+        )
+        self._right_palm_contact_link_idxs, self._right_palm_contact_link_names = (
+            self.contact_sensor.find_bodies("right_iiwa14_link_7")
+        )
+        self._left_palm_contact_link_idxs, self._left_palm_contact_link_names = (
+            self.contact_sensor.find_bodies("left_iiwa14_link_7")
+        )
         print(colored("!" * 100, "green"))
         print(
             colored(
                 f"len(self._contact_link_idxs): {len(self._contact_link_idxs)}", "green"
+            )
+        )
+        print(
+            colored(
+                f"self._right_index_contact_link_idxs: {self._right_index_contact_link_idxs}",
+                "green",
+            )
+        )
+        print(
+            colored(
+                f"self._left_index_contact_link_idxs: {self._left_index_contact_link_idxs}",
+                "green",
+            )
+        )
+        print(
+            colored(
+                f"self._right_middle_contact_link_idxs: {self._right_middle_contact_link_idxs}",
+                "green",
+            )
+        )
+        print(
+            colored(
+                f"self._left_middle_contact_link_idxs: {self._left_middle_contact_link_idxs}",
+                "green",
+            )
+        )
+        print(
+            colored(
+                f"self._right_ring_contact_link_idxs: {self._right_ring_contact_link_idxs}",
+                "green",
+            )
+        )
+        print(
+            colored(
+                f"self._left_ring_contact_link_idxs: {self._left_ring_contact_link_idxs}",
+                "green",
+            )
+        )
+        print(
+            colored(
+                f"self._right_thumb_contact_link_idxs: {self._right_thumb_contact_link_idxs}",
+                "green",
+            )
+        )
+        print(
+            colored(
+                f"self._left_thumb_contact_link_idxs: {self._left_thumb_contact_link_idxs}",
+                "green",
+            )
+        )
+        print(
+            colored(
+                f"self._right_palm_contact_link_idxs: {self._right_palm_contact_link_idxs}",
+                "green",
+            )
+        )
+        print(
+            colored(
+                f"self._left_palm_contact_link_idxs: {self._left_palm_contact_link_idxs}",
+                "green",
             )
         )
         print(colored("!" * 100, "green"))
@@ -1146,8 +1238,59 @@ class BimanualEnv(DirectRLEnv):
         assert obs.shape == (self.num_envs, self.cfg.observation_space), (
             f"obs.shape: {obs.shape} != (self.num_envs, self.cfg.observation_space): {(self.num_envs, self.cfg.observation_space)}"
         )
+        print(f"self.contact_sensor.data.net_forces_w_history.shape: {self.contact_sensor.data.net_forces_w_history.shape}")
+        breakpoint()
 
         # Add critic observations
+        net_forces_w_history = self.contact_sensor.data.net_forces_w_history
+        assert net_forces_w_history is not None
+        assert net_forces_w_history.ndim == 4, f"net_forces_w_history.ndim: {net_forces_w_history.ndim} != 4"
+        N_BODIES = net_forces_w_history.shape[2]
+        assert net_forces_w_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES, NUM_XYZ), (
+            f"net_forces_w_history.shape: {net_forces_w_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES, NUM_XYZ)}"
+        )
+        right_index_force_history = net_forces_w_history[:, :, self._right_index_contact_link_idxs, :]
+        left_index_force_history = net_forces_w_history[:, :, self._left_index_contact_link_idxs, :]
+        right_middle_force_history = net_forces_w_history[:, :, self._right_middle_contact_link_idxs, :]
+        left_middle_force_history = net_forces_w_history[:, :, self._left_middle_contact_link_idxs, :]
+        right_ring_force_history = net_forces_w_history[:, :, self._right_ring_contact_link_idxs, :]
+        left_ring_force_history = net_forces_w_history[:, :, self._left_ring_contact_link_idxs, :]
+        right_thumb_force_history = net_forces_w_history[:, :, self._right_thumb_contact_link_idxs, :]
+        left_thumb_force_history = net_forces_w_history[:, :, self._left_thumb_contact_link_idxs, :]
+        right_palm_force_history = net_forces_w_history[:, :, self._right_palm_contact_link_idxs, :]
+        left_palm_force_history = net_forces_w_history[:, :, self._left_palm_contact_link_idxs, :]
+        N_BODIES_PER_FINGER = 4
+        assert right_index_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+            f"right_index_force_history.shape: {right_index_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
+        )
+        assert left_index_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+            f"left_index_force_history.shape: {left_index_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
+        )
+        assert right_middle_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+            f"right_middle_force_history.shape: {right_middle_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
+        )
+        assert left_middle_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+            f"left_middle_force_history.shape: {left_middle_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
+        )
+        assert right_ring_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+            f"right_ring_force_history.shape: {right_ring_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
+        )
+        assert left_ring_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+            f"left_ring_force_history.shape: {left_ring_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
+        )
+        assert right_thumb_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+            f"right_thumb_force_history.shape: {right_thumb_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
+        )
+        assert left_thumb_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+            f"left_thumb_force_history.shape: {left_thumb_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
+        )
+        N_BODIES_PER_PALM = 1
+        assert right_palm_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_PALM, NUM_XYZ), (
+            f"right_palm_force_history.shape: {right_palm_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_PALM, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_PALM, NUM_XYZ)}"
+        )
+        assert left_palm_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_PALM, NUM_XYZ), (
+            f"left_palm_force_history.shape: {left_palm_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_PALM, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_PALM, NUM_XYZ)}"
+        )
         state_dict = {
             "obs": obs,
             "smallest_this_episode_right_index_fingertip_to_object_dist": self.smallest_this_episode_right_index_fingertip_to_object_dist.reshape(
@@ -1164,6 +1307,16 @@ class BimanualEnv(DirectRLEnv):
             "object_has_been_lifted_this_episode": self.object_has_been_lifted_this_episode.reshape(
                 self.num_envs, -1
             ),
+            "right_index_force_history": right_index_force_history.reshape(self.num_envs, -1),
+            "left_index_force_history": left_index_force_history.reshape(self.num_envs, -1),
+            "right_middle_force_history": right_middle_force_history.reshape(self.num_envs, -1),
+            "left_middle_force_history": left_middle_force_history.reshape(self.num_envs, -1),
+            "right_ring_force_history": right_ring_force_history.reshape(self.num_envs, -1),
+            "left_ring_force_history": left_ring_force_history.reshape(self.num_envs, -1),
+            "right_thumb_force_history": right_thumb_force_history.reshape(self.num_envs, -1),
+            "left_thumb_force_history": left_thumb_force_history.reshape(self.num_envs, -1),
+            "right_palm_force_history": right_palm_force_history.reshape(self.num_envs, -1),
+            "left_palm_force_history": left_palm_force_history.reshape(self.num_envs, -1),
         }
         for k, v in state_dict.items():
             if v.ndim != 2:
