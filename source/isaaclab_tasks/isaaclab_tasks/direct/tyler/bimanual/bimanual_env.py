@@ -77,6 +77,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.robot_constants import (
     NUM_ARM_HAND_JOINTS,
     NUM_ARM_JOINTS,
     NUM_BIMANUAL,
+    NUM_FINGERS,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
     TABLE_LENGTH_Z,
@@ -136,10 +137,15 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         11 * NUM_BIMANUAL if USE_FABRIC else NUM_ARM_HAND_JOINTS * NUM_BIMANUAL
     )
     observation_space = (
-        144
-        + (NUM_XYZ * NUM_BIMANUAL if FINGER_GOALS else 0)
-        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0)
-        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)
+        (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # q
+        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # qd
+        + (NUM_XYZ * NUM_FINGERS * NUM_BIMANUAL)  # fingertip positions
+        # + ((NUM_XYZ + NUM_QUAT) * NUM_BIMANUAL)  # palm poses
+        # + (NUM_XYZ + NUM_QUAT)  # object position and orientation
+        # + (NUM_XYZ + NUM_QUAT)  # goal object position and orientation
+        + (NUM_XYZ * NUM_BIMANUAL if FINGER_GOALS else 0)  # fingertip goal positions
+        # + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0)  # filtered arm actions
+        # + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)  # fabric state
     )
     state_space = 0
 
@@ -982,15 +988,15 @@ class BimanualEnv(DirectRLEnv):
                 self.left_fingertip_positions_w()
                 - self.scene.env_origins.unsqueeze(dim=1)
             ).reshape(self.num_envs, -1),
-            "right_palm_position": right_palm_pose_w[:, :3] - self.scene.env_origins,
-            "right_palm_orientation": right_palm_pose_w[:, 3:],
-            "left_palm_position": left_palm_pose_w[:, :3] - self.scene.env_origins,
-            "left_palm_orientation": left_palm_pose_w[:, 3:],
-            "object_position": self.object_position_w - self.scene.env_origins,
-            "goal_object_position": self.goal_object_position_w
-            - self.scene.env_origins,
-            "object_orientation": self.object_orientation,
-            "goal_object_orientation": self.goal_object_orientation,
+            # "right_palm_position": right_palm_pose_w[:, :3] - self.scene.env_origins,
+            # "right_palm_orientation": right_palm_pose_w[:, 3:],
+            # "left_palm_position": left_palm_pose_w[:, :3] - self.scene.env_origins,
+            # "left_palm_orientation": left_palm_pose_w[:, 3:],
+            # "object_position": self.object_position_w - self.scene.env_origins,
+            # "goal_object_position": self.goal_object_position_w
+            # - self.scene.env_origins,
+            # "object_orientation": self.object_orientation,
+            # "goal_object_orientation": self.goal_object_orientation,
         }
         if FINGER_GOALS:
             obs_dict["right_goal_position"] = (
@@ -1004,9 +1010,9 @@ class BimanualEnv(DirectRLEnv):
                 self.filtered_arm_position_targets
             )
 
-        if USE_FABRIC:
-            obs_dict["fabric_q"] = self.fabric_q
-            obs_dict["fabric_qd"] = self.fabric_qd
+        # if USE_FABRIC:
+        #     obs_dict["fabric_q"] = self.fabric_q
+        #     obs_dict["fabric_qd"] = self.fabric_qd
 
         for k, v in obs_dict.items():
             if v.ndim != 2:
