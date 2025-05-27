@@ -728,31 +728,38 @@ class BimanualEnv(DirectRLEnv):
             self.raw_actions, "self.raw_actions (start of pre_physics_step)"
         )
 
-        right_dpose = torch.zeros(self.num_envs, NUM_XYZ + NUM_RPY, device=self.device)
-        right_dpose[:, :NUM_XYZ] = (
-            torch.nn.functional.normalize(
-                self.right_goal_position_w - self.right_index_fingertip_position_w(),
-                p=2,
-                dim=-1,
+        OVERWRITE_GO_TO_TARGET = False
+        if OVERWRITE_GO_TO_TARGET:
+            right_dpose = torch.zeros(
+                self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
             )
-            * 0.05
-        )
-        left_dpose = torch.zeros(self.num_envs, NUM_XYZ + NUM_RPY, device=self.device)
-        left_dpose[:, :NUM_XYZ] = (
-            torch.nn.functional.normalize(
-                self.left_goal_position_w - self.left_index_fingertip_position_w(),
-                p=2,
-                dim=-1,
+            right_dpose[:, :NUM_XYZ] = (
+                torch.nn.functional.normalize(
+                    self.right_goal_position_w
+                    - self.right_index_fingertip_position_w(),
+                    p=2,
+                    dim=-1,
+                )
+                * 0.05
             )
-            * 0.05
-        )
-        new_q = self.compute_ik(
-            right_dpose=right_dpose,
-            left_dpose=left_dpose,
-        )
-        self.robot.set_joint_position_target(new_q)
-        self.blue_robot.write_joint_position_to_sim(new_q)
-        return
+            left_dpose = torch.zeros(
+                self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
+            )
+            left_dpose[:, :NUM_XYZ] = (
+                torch.nn.functional.normalize(
+                    self.left_goal_position_w - self.left_index_fingertip_position_w(),
+                    p=2,
+                    dim=-1,
+                )
+                * 0.05
+            )
+            new_q = self.compute_ik(
+                right_dpose=right_dpose,
+                left_dpose=left_dpose,
+            )
+            self.robot.set_joint_position_target(new_q)
+            self.blue_robot.write_joint_position_to_sim(new_q)
+            return
 
         if USE_FABRIC:
             check_nan_and_print_if_any(
