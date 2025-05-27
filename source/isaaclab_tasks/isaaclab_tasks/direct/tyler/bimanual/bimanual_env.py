@@ -680,6 +680,8 @@ class BimanualEnv(DirectRLEnv):
         self.cfg.light.func("/World/Light", self.cfg.light)
 
     def _pre_physics_step(self, actions: torch.Tensor):
+        actions = actions.clamp_(min=-1.0, max=1.0)
+
         self.prev_raw_actions = self.raw_actions.clone()
         self.raw_actions = actions.clone()
         assert self.raw_actions.shape == self.prev_raw_actions.shape, (

@@ -14,7 +14,7 @@ from isaaclab_rl.rsl_rl import (
 @configclass
 class BimanualPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     normalize_advantage_per_mini_batch = True
-    num_steps_per_env = 24
+    num_steps_per_env = 32
     max_iterations = 3000
     save_interval = 50
     experiment_name = "bimanual"
@@ -29,16 +29,16 @@ class BimanualPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         noise_std_type="scalar",
     )
     algorithm = RslRlPpoAlgorithmCfg(
-        value_loss_coef=1.0,
+        value_loss_coef=4.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.01,
-        num_learning_epochs=5,
-        num_mini_batches=16,  # mini batch size = num_envs * num_steps / num_mini_batches
-        learning_rate=3e-4,
+        entropy_coef=0.0,
+        num_learning_epochs=8,
+        num_mini_batches=4,  # mini batch size = num_envs * num_steps / num_mini_batches
+        learning_rate=5e-4,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
-        desired_kl=0.01,
+        desired_kl=0.008,
         max_grad_norm=1.0,
     )
