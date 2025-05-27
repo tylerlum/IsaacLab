@@ -1499,7 +1499,7 @@ class BimanualEnv(DirectRLEnv):
         self.reward_buf = total_reward
 
         # HACK: The typical step looks like:
-        # 1. _pre_physics_step() (comput actions)
+        # 1. _pre_physics_step() (compute actions)
         # 2. _apply_action() (apply actions)
         # 3. physics_step() (simulate)
         # 4. _compute_intermediate_values() (compute intermediate values)
