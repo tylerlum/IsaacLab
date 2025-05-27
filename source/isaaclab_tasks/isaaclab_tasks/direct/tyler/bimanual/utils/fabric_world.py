@@ -31,9 +31,6 @@ BUFFER_TO_MAKE_LARGER = 1.0
 TABLE_X_LEN = 0.7 + BUFFER_TO_MAKE_LARGER
 TABLE_Y_LEN = 2.0 + BUFFER_TO_MAKE_LARGER
 
-SIDE_TABLE_X_LEN = 0.4
-SIDE_TABLE_Y_LEN = TABLE_Y_LEN / 2
-
 world_dict_table_frame = {
     "right_wall": {
         "env_index": "all",
@@ -67,16 +64,17 @@ world_dict_table_frame = {
     },
 }
 
-T_R_O = np.eye(4)
+T_R_TABLE = np.eye(4)
+T_R_TABLE[:3, 3] = [0.3, 0, 0.3]
 # TODO: Double check this
-# T_R_O[:3, 3] = [0, 0, -THICKNESS / 2]
+# T_R_TABLE[:3, 3] = [0, 0, -THICKNESS / 2]
 
 world_dict_robot_frame = {
     k: {
         "env_index": v["env_index"],
         "type": v["type"],
         "scaling": v["scaling"],
-        "transform": T_to_transform_str(T_R_O @ transform_str_to_T(v["transform"])),
+        "transform": T_to_transform_str(T_R_TABLE @ transform_str_to_T(v["transform"])),
     }
     for k, v in world_dict_table_frame.items()
 }

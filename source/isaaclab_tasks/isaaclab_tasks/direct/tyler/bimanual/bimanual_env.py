@@ -18,6 +18,7 @@ from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObj
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.markers.config import (
+    CUBOID_MARKER_CFG,
     CYLINDER_MARKER_CFG,
     FRAME_MARKER_CFG,
     SPHERE_MARKER_CFG,
@@ -60,6 +61,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_robot_constants import (
     LEFT_TASKMAP_LINK_NAMES,
     LEFT_THUMB_FINGERTIP_LINK_IDX,
     NUM_FABRIC_SPHERES,
+    NUM_FABRIC_WORLD_CUBES,
     RIGHT_INDEX_FINGERTIP_LINK_IDX,
     RIGHT_MIDDLE_FINGERTIP_LINK_IDX,
     RIGHT_PALM_LINK_IDX,
@@ -112,8 +114,6 @@ FILTER_ARM_ACTIONS = False
 
 USE_FABRIC = True
 USE_FABRIC_CUDA_GRAPH = False  # Leave this False almost all the time, CUDA graphs don't offer any speedup (actually slows down) with large batch size
-
-VISUALIZE_FABRIC_SPHERES = False
 
 SAVE_OBS_HISTORY = False
 
@@ -373,6 +373,16 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     collision_sphere_visualizer.markers[
         "sphere"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=RED_RGB)
+
+    fabric_world_visualizer: VisualizationMarkersCfg = CUBOID_MARKER_CFG.replace(
+        prim_path="/Visuals/FabricWorld"
+    )
+    fabric_world_visualizer.markers[
+        "cuboid"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(
+        diffuse_color=BLUE_RGB, opacity=0.2
+    )  # NOTE: Opacity not working
+    fabric_world_visualizer.markers["cuboid"].size = (1.0, 1.0, 1.0)
 
 
 if FINGER_GOALS:
@@ -1536,7 +1546,7 @@ class BimanualEnv(DirectRLEnv):
                 self.progress_full_visualizer = VisualizationMarkers(
                     self.cfg.progress_full_visualizer
                 )
-            if VISUALIZE_FABRIC_SPHERES:
+            if self.VISUALIZE_FABRIC_SPHERES:
                 if not hasattr(self, "collision_sphere_visualizers"):
                     self.collision_sphere_visualizers = [
                         VisualizationMarkers(
@@ -1545,6 +1555,16 @@ class BimanualEnv(DirectRLEnv):
                             )
                         )
                         for i in range(NUM_FABRIC_SPHERES)
+                    ]
+            if self.VISUALIZE_FABRIC_WORLD:
+                if not hasattr(self, "fabric_world_visualizers"):
+                    self.fabric_world_visualizers = [
+                        VisualizationMarkers(
+                            self.cfg.fabric_world_visualizer.replace(
+                                prim_path=f"{self.cfg.fabric_world_visualizer.prim_path}_{i}"
+                            )
+                        )
+                        for i in range(NUM_FABRIC_WORLD_CUBES)
                     ]
 
             # set their visibility to true
@@ -1563,9 +1583,18 @@ class BimanualEnv(DirectRLEnv):
             self.left_fingertip_visualizer.set_visibility(True)
             self.progress_visualizer.set_visibility(True)
             self.progress_full_visualizer.set_visibility(True)
-            if VISUALIZE_FABRIC_SPHERES:
+            if self.VISUALIZE_FABRIC_SPHERES:
                 for visualizer in self.collision_sphere_visualizers:
                     visualizer.set_visibility(True)
+            elif hasattr(self, "collision_sphere_visualizers"):
+                for visualizer in self.collision_sphere_visualizers:
+                    visualizer.set_visibility(False)
+            if self.VISUALIZE_FABRIC_WORLD:
+                for visualizer in self.fabric_world_visualizers:
+                    visualizer.set_visibility(True)
+            elif hasattr(self, "fabric_world_visualizers"):
+                for visualizer in self.fabric_world_visualizers:
+                    visualizer.set_visibility(False)
         else:
             if hasattr(self, "origin_pose_visualizer"):
                 self.origin_pose_visualizer.set_visibility(False)
@@ -1595,9 +1624,13 @@ class BimanualEnv(DirectRLEnv):
                 self.progress_visualizer.set_visibility(False)
             if hasattr(self, "progress_full_visualizer"):
                 self.progress_full_visualizer.set_visibility(False)
-            if VISUALIZE_FABRIC_SPHERES:
+            if self.VISUALIZE_FABRIC_SPHERES:
                 if hasattr(self, "collision_sphere_visualizers"):
                     for visualizer in self.collision_sphere_visualizers:
+                        visualizer.set_visibility(False)
+            if self.VISUALIZE_FABRIC_WORLD:
+                if hasattr(self, "fabric_world_visualizers"):
+                    for visualizer in self.fabric_world_visualizers:
                         visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
@@ -1713,7 +1746,7 @@ class BimanualEnv(DirectRLEnv):
             scales=progress_scale_full,
         )
 
-        if VISUALIZE_FABRIC_SPHERES:
+        if self.VISUALIZE_FABRIC_SPHERES:
             fabric_collision_spheres = self.fabric_robot_collision_spheres()
             fabric_collision_sphere_radii = self.fabric_robot_collision_sphere_radii()
             n_spheres = fabric_collision_spheres.shape[1]
@@ -1737,6 +1770,39 @@ class BimanualEnv(DirectRLEnv):
                     )
                     .unsqueeze(dim=0)
                     .repeat_interleave(self.num_envs, dim=0),
+                )
+
+        if self.VISUALIZE_FABRIC_WORLD:
+            from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_world import (
+                transform_str_to_T,
+            )
+
+            assert len(self.fabric_world_dict) == NUM_FABRIC_WORLD_CUBES, (
+                f"NUM_FABRIC_WORLD_CUBES: {NUM_FABRIC_WORLD_CUBES}, len(self.fabric_world_dict): {len(self.fabric_world_dict)}"
+            )
+            for i, (_name, cuboid_dict) in enumerate(self.fabric_world_dict.items()):
+                T = (
+                    torch.from_numpy(transform_str_to_T(cuboid_dict["transform"]))
+                    .float()
+                    .to(self.device)
+                )
+                scaling = (
+                    torch.from_numpy(
+                        np.array([float(x) for x in cuboid_dict["scaling"].split(" ")])
+                    )
+                    .float()
+                    .to(self.device)
+                )
+                assert T.shape == (4, 4), f"T shape: {T.shape}"
+                assert scaling.shape == (3,), f"scaling shape: {scaling.shape}"
+                translations = self.scene.env_origins + T[:3, 3].unsqueeze(dim=0)
+                quat_wxyz = matrix_to_quat_wxyz(T[:3, :3].unsqueeze(dim=0))
+                self.fabric_world_visualizers[i].visualize(
+                    translations=translations,
+                    orientations=quat_wxyz.repeat_interleave(self.num_envs, dim=0),
+                    scales=scaling.unsqueeze(dim=0).repeat_interleave(
+                        self.num_envs, dim=0
+                    ),
                 )
 
     #### DEBUG END ####
@@ -1764,6 +1830,21 @@ class BimanualEnv(DirectRLEnv):
                     KeyboardCommand(
                         key=carb.input.KeyboardInput.S,
                         func=self._save_kbc,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.W,
+                        func=self._toggle_fabric_world,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.C,
+                        func=self._toggle_fabric_spheres,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.D,
+                        func=self._toggle_debug_vis,
                         args=[],
                     ),
                 ]
@@ -1811,6 +1892,25 @@ class BimanualEnv(DirectRLEnv):
             episode_frac=episode_frac,
         )
         print(colored(f"Saved data to {output_filename}", "green"))
+
+    def _toggle_fabric_spheres(self):
+        self.VISUALIZE_FABRIC_SPHERES = not self.VISUALIZE_FABRIC_SPHERES
+        print(
+            colored(
+                f"Toggling fabric spheres: {self.VISUALIZE_FABRIC_SPHERES}", "green"
+            )
+        )
+        self.set_debug_vis(self.DEBUG_VIS)
+
+    def _toggle_fabric_world(self):
+        self.VISUALIZE_FABRIC_WORLD = not self.VISUALIZE_FABRIC_WORLD
+        print(colored(f"Toggling fabric world: {self.VISUALIZE_FABRIC_WORLD}", "green"))
+        self.set_debug_vis(self.DEBUG_VIS)
+
+    def _toggle_debug_vis(self):
+        self.DEBUG_VIS = not self.DEBUG_VIS
+        print(colored(f"Toggling debug vis: {self.DEBUG_VIS}", "green"))
+        self.set_debug_vis(self.DEBUG_VIS)
 
     #### KEYBOARD END ####
 
@@ -2196,5 +2296,35 @@ class BimanualEnv(DirectRLEnv):
     @property
     def include_blue_robot(self) -> bool:
         return self.cfg.debug_vis and self.num_envs < 10
+
+    @property
+    def VISUALIZE_FABRIC_SPHERES(self) -> bool:
+        if not hasattr(self, "_VISUALIZE_FABRIC_SPHERES"):
+            self._VISUALIZE_FABRIC_SPHERES = False
+        return self._VISUALIZE_FABRIC_SPHERES
+
+    @VISUALIZE_FABRIC_SPHERES.setter
+    def VISUALIZE_FABRIC_SPHERES(self, value: bool):
+        self._VISUALIZE_FABRIC_SPHERES = value
+
+    @property
+    def VISUALIZE_FABRIC_WORLD(self) -> bool:
+        if not hasattr(self, "_VISUALIZE_FABRIC_WORLD"):
+            self._VISUALIZE_FABRIC_WORLD = False
+        return self._VISUALIZE_FABRIC_WORLD
+
+    @VISUALIZE_FABRIC_WORLD.setter
+    def VISUALIZE_FABRIC_WORLD(self, value: bool):
+        self._VISUALIZE_FABRIC_WORLD = value
+
+    @property
+    def DEBUG_VIS(self) -> bool:
+        if not hasattr(self, "_DEBUG_VIS"):
+            self._DEBUG_VIS = self.cfg.debug_vis
+        return self._DEBUG_VIS
+
+    @DEBUG_VIS.setter
+    def DEBUG_VIS(self, value: bool):
+        self._DEBUG_VIS = value
 
     #### OTHER PROPERTIES END ####
