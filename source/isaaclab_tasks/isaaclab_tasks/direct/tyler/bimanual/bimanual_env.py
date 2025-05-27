@@ -134,18 +134,12 @@ physics_material = sim_utils.RigidBodyMaterialCfg(
 ENV_REGEX_NS = "/World/envs/env_.*"
 
 
-@configclass
-class BimanualEnvCfg(DirectRLEnvCfg):
-    # env
-    episode_length_s = 5.0
-    decimation = 4
-    arm_action_scale = 0.1
-    hand_action_scale = 2.0
-    debug_vis = False
-    action_space = (
-        11 * NUM_BIMANUAL if USE_FABRIC else NUM_ARM_HAND_JOINTS * NUM_BIMANUAL
-    )
-    observation_space = (
+def compute_num_actions():
+    return 11 * NUM_BIMANUAL if USE_FABRIC else NUM_ARM_HAND_JOINTS * NUM_BIMANUAL
+
+
+def compute_num_observations():
+    return (
         (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # q
         # + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # qd
         + (NUM_XYZ * NUM_FINGERS * NUM_BIMANUAL)  # fingertip positions
@@ -158,7 +152,36 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         )  # filtered arm actions
         # + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)  # fabric state
     )
-    state_space = 0
+
+
+def compute_num_states():
+    return (
+        compute_num_observations()
+        + 1  # smallest_this_episode_right_index_fingertip_to_object_dist
+        + 1  # smallest_this_episode_left_index_fingertip_to_object_dist
+        + 1  # smallest_this_episode_object_to_goal_dist
+        + 1  # episode_length_buf
+        + 1  # object_is_lifted
+        + 1  # object_has_been_lifted_this_episode
+    )
+
+
+NUM_ACTIONS = compute_num_actions()
+NUM_OBSERVATIONS = compute_num_observations()
+NUM_STATES = compute_num_states()
+
+
+@configclass
+class BimanualEnvCfg(DirectRLEnvCfg):
+    # env
+    episode_length_s = 5.0
+    decimation = 4
+    arm_action_scale = 0.1
+    hand_action_scale = 2.0
+    debug_vis = False
+    action_space = NUM_ACTIONS
+    observation_space = NUM_OBSERVATIONS
+    state_space = NUM_STATES
 
     # simulation
     sim: SimulationCfg = SimulationCfg(
@@ -1130,7 +1153,37 @@ class BimanualEnv(DirectRLEnv):
         assert obs.shape == (self.num_envs, self.cfg.observation_space), (
             f"obs.shape: {obs.shape} != (self.num_envs, self.cfg.observation_space): {(self.num_envs, self.cfg.observation_space)}"
         )
-        observations = {"policy": obs}
+
+        # Add critic observations
+        state_dict = {
+            "obs": obs,
+            "smallest_this_episode_right_index_fingertip_to_object_dist": self.smallest_this_episode_right_index_fingertip_to_object_dist.reshape(
+                self.num_envs, -1
+            ),
+            "smallest_this_episode_left_index_fingertip_to_object_dist": self.smallest_this_episode_left_index_fingertip_to_object_dist.reshape(
+                self.num_envs, -1
+            ),
+            "smallest_this_episode_object_to_goal_dist": self.smallest_this_episode_object_to_goal_dist.reshape(
+                self.num_envs, -1
+            ),
+            "episode_length_buf": self.episode_length_buf.reshape(self.num_envs, -1),
+            "object_is_lifted": self.object_is_lifted.reshape(self.num_envs, -1),
+            "object_has_been_lifted_this_episode": self.object_has_been_lifted_this_episode.reshape(
+                self.num_envs, -1
+            ),
+        }
+        for k, v in state_dict.items():
+            if v.ndim != 2:
+                print(colored(f"{k}: {v.shape} (WRONG)", "red"))
+
+        for k, v in state_dict.items():
+            if torch.isnan(v).any():
+                nan_env_ids = torch.where(torch.isnan(v))[0]
+                print(colored(f"{k}: {v.shape} (NAN) at {nan_env_ids}", "red"))
+
+        state = torch.cat([state_dict[key] for key in state_dict], dim=-1)
+
+        observations = {"policy": obs, "critic": state}
         return observations
 
     def _get_rewards(self) -> torch.Tensor:
@@ -1172,7 +1225,7 @@ class BimanualEnv(DirectRLEnv):
                 self.individual_reward_weights = {
                     "right_index_fingertip_to_object_dist": 1.0,
                     "left_index_fingertip_to_object_dist": 1.0,
-                    "object_lifted": 50.0,
+                    "object_lifted": 1.0,
                     "object_to_goal_dist": 10.0,
                 }
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
