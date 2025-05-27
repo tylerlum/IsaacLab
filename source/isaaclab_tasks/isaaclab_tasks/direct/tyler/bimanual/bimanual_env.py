@@ -156,7 +156,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         + (
             NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0
         )  # filtered arm actions
-        # + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)  # fabric state
+        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)  # fabric state
     )
     state_space = 0
 
@@ -1079,9 +1079,9 @@ class BimanualEnv(DirectRLEnv):
                 self.filtered_arm_position_targets
             )
 
-        # if USE_FABRIC:
-        #     obs_dict["fabric_q"] = self.fabric_q
-        #     obs_dict["fabric_qd"] = self.fabric_qd
+        if USE_FABRIC:
+            obs_dict["fabric_q"] = self.fabric_q
+            obs_dict["fabric_qd"] = self.fabric_qd
 
         for k, v in obs_dict.items():
             if v.ndim != 2:
