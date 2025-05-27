@@ -122,6 +122,8 @@ OBJECT_LENGTH_Z = 0.22
 SIM_DT = 1 / 60
 CONTACT_SENSOR_HISTORY_LENGTH = 1
 
+FORCE_MAG = 1.0
+
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
     restitution_combine_mode="multiply",
@@ -161,7 +163,12 @@ def compute_num_states():
         + 1  # episode_length_buf
         + 1  # object_is_lifted
         + 1  # object_has_been_lifted_this_episode
-        + (CONTACT_SENSOR_HISTORY_LENGTH * (NUM_FINGERS * 4 + 1) * NUM_BIMANUAL * NUM_XYZ)  # contact_sensor
+        + (
+            CONTACT_SENSOR_HISTORY_LENGTH
+            * (NUM_FINGERS * 4 + 1)
+            * NUM_BIMANUAL
+            * NUM_XYZ
+        )  # contact_sensor
     )
 
 
@@ -1242,51 +1249,128 @@ class BimanualEnv(DirectRLEnv):
         # Add critic observations
         net_forces_w_history = self.contact_sensor.data.net_forces_w_history
         assert net_forces_w_history is not None
-        assert net_forces_w_history.ndim == 4, f"net_forces_w_history.ndim: {net_forces_w_history.ndim} != 4"
+        assert net_forces_w_history.ndim == 4, (
+            f"net_forces_w_history.ndim: {net_forces_w_history.ndim} != 4"
+        )
         N_BODIES = net_forces_w_history.shape[2]
-        assert net_forces_w_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES, NUM_XYZ), (
+        assert net_forces_w_history.shape == (
+            self.num_envs,
+            CONTACT_SENSOR_HISTORY_LENGTH,
+            N_BODIES,
+            NUM_XYZ,
+        ), (
             f"net_forces_w_history.shape: {net_forces_w_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES, NUM_XYZ)}"
         )
-        right_index_force_history = net_forces_w_history[:, :, self._right_index_contact_link_idxs, :]
-        left_index_force_history = net_forces_w_history[:, :, self._left_index_contact_link_idxs, :]
-        right_middle_force_history = net_forces_w_history[:, :, self._right_middle_contact_link_idxs, :]
-        left_middle_force_history = net_forces_w_history[:, :, self._left_middle_contact_link_idxs, :]
-        right_ring_force_history = net_forces_w_history[:, :, self._right_ring_contact_link_idxs, :]
-        left_ring_force_history = net_forces_w_history[:, :, self._left_ring_contact_link_idxs, :]
-        right_thumb_force_history = net_forces_w_history[:, :, self._right_thumb_contact_link_idxs, :]
-        left_thumb_force_history = net_forces_w_history[:, :, self._left_thumb_contact_link_idxs, :]
-        right_palm_force_history = net_forces_w_history[:, :, self._right_palm_contact_link_idxs, :]
-        left_palm_force_history = net_forces_w_history[:, :, self._left_palm_contact_link_idxs, :]
+        right_index_force_history = net_forces_w_history[
+            :, :, self._right_index_contact_link_idxs, :
+        ]
+        left_index_force_history = net_forces_w_history[
+            :, :, self._left_index_contact_link_idxs, :
+        ]
+        right_middle_force_history = net_forces_w_history[
+            :, :, self._right_middle_contact_link_idxs, :
+        ]
+        left_middle_force_history = net_forces_w_history[
+            :, :, self._left_middle_contact_link_idxs, :
+        ]
+        right_ring_force_history = net_forces_w_history[
+            :, :, self._right_ring_contact_link_idxs, :
+        ]
+        left_ring_force_history = net_forces_w_history[
+            :, :, self._left_ring_contact_link_idxs, :
+        ]
+        right_thumb_force_history = net_forces_w_history[
+            :, :, self._right_thumb_contact_link_idxs, :
+        ]
+        left_thumb_force_history = net_forces_w_history[
+            :, :, self._left_thumb_contact_link_idxs, :
+        ]
+        right_palm_force_history = net_forces_w_history[
+            :, :, self._right_palm_contact_link_idxs, :
+        ]
+        left_palm_force_history = net_forces_w_history[
+            :, :, self._left_palm_contact_link_idxs, :
+        ]
         N_BODIES_PER_FINGER = 4
-        assert right_index_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+        assert right_index_force_history.shape == (
+            self.num_envs,
+            CONTACT_SENSOR_HISTORY_LENGTH,
+            N_BODIES_PER_FINGER,
+            NUM_XYZ,
+        ), (
             f"right_index_force_history.shape: {right_index_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
         )
-        assert left_index_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+        assert left_index_force_history.shape == (
+            self.num_envs,
+            CONTACT_SENSOR_HISTORY_LENGTH,
+            N_BODIES_PER_FINGER,
+            NUM_XYZ,
+        ), (
             f"left_index_force_history.shape: {left_index_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
         )
-        assert right_middle_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+        assert right_middle_force_history.shape == (
+            self.num_envs,
+            CONTACT_SENSOR_HISTORY_LENGTH,
+            N_BODIES_PER_FINGER,
+            NUM_XYZ,
+        ), (
             f"right_middle_force_history.shape: {right_middle_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
         )
-        assert left_middle_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+        assert left_middle_force_history.shape == (
+            self.num_envs,
+            CONTACT_SENSOR_HISTORY_LENGTH,
+            N_BODIES_PER_FINGER,
+            NUM_XYZ,
+        ), (
             f"left_middle_force_history.shape: {left_middle_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
         )
-        assert right_ring_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+        assert right_ring_force_history.shape == (
+            self.num_envs,
+            CONTACT_SENSOR_HISTORY_LENGTH,
+            N_BODIES_PER_FINGER,
+            NUM_XYZ,
+        ), (
             f"right_ring_force_history.shape: {right_ring_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
         )
-        assert left_ring_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+        assert left_ring_force_history.shape == (
+            self.num_envs,
+            CONTACT_SENSOR_HISTORY_LENGTH,
+            N_BODIES_PER_FINGER,
+            NUM_XYZ,
+        ), (
             f"left_ring_force_history.shape: {left_ring_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
         )
-        assert right_thumb_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+        assert right_thumb_force_history.shape == (
+            self.num_envs,
+            CONTACT_SENSOR_HISTORY_LENGTH,
+            N_BODIES_PER_FINGER,
+            NUM_XYZ,
+        ), (
             f"right_thumb_force_history.shape: {right_thumb_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
         )
-        assert left_thumb_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ), (
+        assert left_thumb_force_history.shape == (
+            self.num_envs,
+            CONTACT_SENSOR_HISTORY_LENGTH,
+            N_BODIES_PER_FINGER,
+            NUM_XYZ,
+        ), (
             f"left_thumb_force_history.shape: {left_thumb_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_FINGER, NUM_XYZ)}"
         )
         N_BODIES_PER_PALM = 1
-        assert right_palm_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_PALM, NUM_XYZ), (
+        assert right_palm_force_history.shape == (
+            self.num_envs,
+            CONTACT_SENSOR_HISTORY_LENGTH,
+            N_BODIES_PER_PALM,
+            NUM_XYZ,
+        ), (
             f"right_palm_force_history.shape: {right_palm_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_PALM, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_PALM, NUM_XYZ)}"
         )
-        assert left_palm_force_history.shape == (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_PALM, NUM_XYZ), (
+        assert left_palm_force_history.shape == (
+            self.num_envs,
+            CONTACT_SENSOR_HISTORY_LENGTH,
+            N_BODIES_PER_PALM,
+            NUM_XYZ,
+        ), (
             f"left_palm_force_history.shape: {left_palm_force_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_PALM, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES_PER_PALM, NUM_XYZ)}"
         )
         state_dict = {
@@ -1305,16 +1389,36 @@ class BimanualEnv(DirectRLEnv):
             "object_has_been_lifted_this_episode": self.object_has_been_lifted_this_episode.reshape(
                 self.num_envs, -1
             ),
-            "right_index_force_history": right_index_force_history.reshape(self.num_envs, -1),
-            "left_index_force_history": left_index_force_history.reshape(self.num_envs, -1),
-            "right_middle_force_history": right_middle_force_history.reshape(self.num_envs, -1),
-            "left_middle_force_history": left_middle_force_history.reshape(self.num_envs, -1),
-            "right_ring_force_history": right_ring_force_history.reshape(self.num_envs, -1),
-            "left_ring_force_history": left_ring_force_history.reshape(self.num_envs, -1),
-            "right_thumb_force_history": right_thumb_force_history.reshape(self.num_envs, -1),
-            "left_thumb_force_history": left_thumb_force_history.reshape(self.num_envs, -1),
-            "right_palm_force_history": right_palm_force_history.reshape(self.num_envs, -1),
-            "left_palm_force_history": left_palm_force_history.reshape(self.num_envs, -1),
+            "right_index_force_history": right_index_force_history.reshape(
+                self.num_envs, -1
+            ),
+            "left_index_force_history": left_index_force_history.reshape(
+                self.num_envs, -1
+            ),
+            "right_middle_force_history": right_middle_force_history.reshape(
+                self.num_envs, -1
+            ),
+            "left_middle_force_history": left_middle_force_history.reshape(
+                self.num_envs, -1
+            ),
+            "right_ring_force_history": right_ring_force_history.reshape(
+                self.num_envs, -1
+            ),
+            "left_ring_force_history": left_ring_force_history.reshape(
+                self.num_envs, -1
+            ),
+            "right_thumb_force_history": right_thumb_force_history.reshape(
+                self.num_envs, -1
+            ),
+            "left_thumb_force_history": left_thumb_force_history.reshape(
+                self.num_envs, -1
+            ),
+            "right_palm_force_history": right_palm_force_history.reshape(
+                self.num_envs, -1
+            ),
+            "left_palm_force_history": left_palm_force_history.reshape(
+                self.num_envs, -1
+            ),
         }
         for k, v in state_dict.items():
             if v.ndim != 2:
@@ -1540,6 +1644,7 @@ class BimanualEnv(DirectRLEnv):
             env_ids = self.robot._ALL_INDICES
 
         self.robot.reset(env_ids)
+        self.object.reset(env_ids)
         self.contact_sensor.reset(env_ids)
         super()._reset_idx(env_ids)
 
@@ -2135,6 +2240,36 @@ class BimanualEnv(DirectRLEnv):
                         func=self._toggle_debug_vis,
                         args=[],
                     ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.LEFT,
+                        func=self._apply_external_force_neg_y,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.RIGHT,
+                        func=self._apply_external_force_pos_y,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.UP,
+                        func=self._apply_external_force_neg_x,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.DOWN,
+                        func=self._apply_external_force_pos_x,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.PAGE_UP,
+                        func=self._apply_external_force_pos_z,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.PAGE_DOWN,
+                        func=self._apply_external_force_neg_z,
+                        args=[],
+                    ),
                 ]
             )
         except AttributeError as e:
@@ -2199,6 +2334,78 @@ class BimanualEnv(DirectRLEnv):
         self.DEBUG_VIS = not self.DEBUG_VIS
         print(colored(f"Toggling debug vis: {self.DEBUG_VIS}", "green"))
         self.set_debug_vis(self.DEBUG_VIS)
+
+    def _apply_external_force_neg_y(self):
+        print(colored("In apply_external_force_neg_y", "green"))
+        ENV_ID = 0
+        external_force = torch.zeros(1, NUM_XYZ, device=self.device)
+        external_force[:, 1] = -FORCE_MAG
+        external_torque = torch.zeros(1, NUM_XYZ, device=self.device)
+        self.object.set_external_force_and_torque(
+            forces=external_force,
+            torques=external_torque,
+            env_ids=[ENV_ID],
+        )
+
+    def _apply_external_force_pos_y(self):
+        print(colored("In apply_external_force_pos_y", "green"))
+        ENV_ID = 0
+        external_force = torch.zeros(1, NUM_XYZ, device=self.device)
+        external_force[:, 1] = FORCE_MAG
+        external_torque = torch.zeros(1, NUM_XYZ, device=self.device)
+        self.object.set_external_force_and_torque(
+            forces=external_force,
+            torques=external_torque,
+            env_ids=[ENV_ID],
+        )
+
+    def _apply_external_force_neg_x(self):
+        print(colored("In apply_external_force_neg_x", "green"))
+        ENV_ID = 0
+        external_force = torch.zeros(1, NUM_XYZ, device=self.device)
+        external_force[:, 0] = -FORCE_MAG
+        external_torque = torch.zeros(1, NUM_XYZ, device=self.device)
+        self.object.set_external_force_and_torque(
+            forces=external_force,
+            torques=external_torque,
+            env_ids=[ENV_ID],
+        )
+
+    def _apply_external_force_pos_x(self):
+        print(colored("In apply_external_force_pos_x", "green"))
+        ENV_ID = 0
+        external_force = torch.zeros(1, NUM_XYZ, device=self.device)
+        external_force[:, 0] = FORCE_MAG
+        external_torque = torch.zeros(1, NUM_XYZ, device=self.device)
+        self.object.set_external_force_and_torque(
+            forces=external_force,
+            torques=external_torque,
+            env_ids=[ENV_ID],
+        )
+
+    def _apply_external_force_pos_z(self):
+        print(colored("In apply_external_force_pos_z", "green"))
+        ENV_ID = 0
+        external_force = torch.zeros(1, NUM_XYZ, device=self.device)
+        external_force[:, 2] = FORCE_MAG
+        external_torque = torch.zeros(1, NUM_XYZ, device=self.device)
+        self.object.set_external_force_and_torque(
+            forces=external_force,
+            torques=external_torque,
+            env_ids=[ENV_ID],
+        )
+
+    def _apply_external_force_neg_z(self):
+        print(colored("In apply_external_force_neg_z", "green"))
+        ENV_ID = 0
+        external_force = torch.zeros(1, NUM_XYZ, device=self.device)
+        external_force[:, 2] = -FORCE_MAG
+        external_torque = torch.zeros(1, NUM_XYZ, device=self.device)
+        self.object.set_external_force_and_torque(
+            forces=external_force,
+            torques=external_torque,
+            env_ids=[ENV_ID],
+        )
 
     #### KEYBOARD END ####
 
