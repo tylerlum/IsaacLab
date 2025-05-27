@@ -120,7 +120,7 @@ SAVE_OBS_HISTORY = False
 OBJECT_LENGTH_Z = 0.22
 
 SIM_DT = 1 / 60
-CONTACT_SENSOR_HISTORY_LENGTH = 3
+CONTACT_SENSOR_HISTORY_LENGTH = 1
 
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
@@ -1238,8 +1238,6 @@ class BimanualEnv(DirectRLEnv):
         assert obs.shape == (self.num_envs, self.cfg.observation_space), (
             f"obs.shape: {obs.shape} != (self.num_envs, self.cfg.observation_space): {(self.num_envs, self.cfg.observation_space)}"
         )
-        print(f"self.contact_sensor.data.net_forces_w_history.shape: {self.contact_sensor.data.net_forces_w_history.shape}")
-        breakpoint()
 
         # Add critic observations
         net_forces_w_history = self.contact_sensor.data.net_forces_w_history
@@ -1542,6 +1540,7 @@ class BimanualEnv(DirectRLEnv):
             env_ids = self.robot._ALL_INDICES
 
         self.robot.reset(env_ids)
+        self.contact_sensor.reset(env_ids)
         super()._reset_idx(env_ids)
 
         # Reset robot
