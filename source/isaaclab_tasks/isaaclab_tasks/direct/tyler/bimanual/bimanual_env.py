@@ -754,17 +754,21 @@ class BimanualEnv(DirectRLEnv):
             NUM_ARM_JOINTS,
         ), f"left_jacobian.shape: {left_jacobian.shape}"
         right_dpose = torch.zeros(self.num_envs, NUM_XYZ + NUM_RPY, device=self.device)
-        # right_dpose[:, 2] = 0.05
-        right_dpose[:, 1] = 0.05
-        # right_dpose[:, 3] = np.deg2rad(10)
+        right_dpose[:, :NUM_XYZ] = torch.nn.functional.normalize(
+            self.right_goal_position_w - self.right_index_fingertip_position_w(),
+            p=2,
+            dim=-1,
+        ) * 0.05
         right_arm_delta_q = control_ik(
             j_eef=right_jacobian,
             dpose=right_dpose,
         )
         left_dpose = torch.zeros(self.num_envs, NUM_XYZ + NUM_RPY, device=self.device)
-        # left_dpose[:, 2] = 0.05
-        left_dpose[:, 1] = 0.05
-        # left_dpose[:, 3] = np.deg2rad(10)
+        left_dpose[:, :NUM_XYZ] = torch.nn.functional.normalize(
+            self.left_goal_position_w - self.left_index_fingertip_position_w(),
+            p=2,
+            dim=-1,
+        ) * 0.05
         left_arm_delta_q = control_ik(
             j_eef=left_jacobian,
             dpose=left_dpose,
