@@ -109,7 +109,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
     sample_uniform_tensor,
 )
 
-FINGER_GOALS = True
+FINGER_GOALS = False
 FILTER_ARM_ACTIONS = False
 
 USE_FABRIC = True
