@@ -26,7 +26,7 @@ ppo: ${match_value:"${.ppo_name}",
                    ${eval:None}}
 
 # Choose asymmetric critic_name in ["mlp", "lstm", ""]
-asymmetric_critic_name: ""
+asymmetric_critic_name: "mlp"
 
 # Choose parameters for asymmetric critic
 # Can't be empty dict, must be None (else gets error looking for keys in this dict)
