@@ -72,7 +72,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_robot_constants import (
     URDF_PATH,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.ik_utils import (
-    control_ik,
+    compute_ik,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
     ISAACLAB_JOINT_ORDER,
@@ -728,63 +728,27 @@ class BimanualEnv(DirectRLEnv):
             self.raw_actions, "self.raw_actions (start of pre_physics_step)"
         )
 
-        pk_q = change_joint_order_torch(
-            self.robot.data.joint_pos,
-            from_order=ISAACLAB_JOINT_ORDER,
-            to_order=PYTORCH_KINEMATICS_JOINT_ORDER,
-        )
-        right_arm_pk_q = pk_q[:, :NUM_ARM_JOINTS]
-        left_arm_pk_q = pk_q[:, NUM_ARM_JOINTS : NUM_ARM_JOINTS * NUM_BIMANUAL]
-        right_jacobian = self.right_arm_pk_chain.jacobian(right_arm_pk_q)
-        left_jacobian = self.left_arm_pk_chain.jacobian(left_arm_pk_q)
-        assert isinstance(right_jacobian, torch.Tensor), (
-            f"right_jacobian: {type(right_jacobian)}"
-        )
-        assert isinstance(left_jacobian, torch.Tensor), (
-            f"left_jacobian: {type(left_jacobian)}"
-        )
-        assert right_jacobian.shape == (
-            self.num_envs,
-            NUM_XYZ + NUM_RPY,
-            NUM_ARM_JOINTS,
-        ), f"right_jacobian.shape: {right_jacobian.shape}"
-        assert left_jacobian.shape == (
-            self.num_envs,
-            NUM_XYZ + NUM_RPY,
-            NUM_ARM_JOINTS,
-        ), f"left_jacobian.shape: {left_jacobian.shape}"
         right_dpose = torch.zeros(self.num_envs, NUM_XYZ + NUM_RPY, device=self.device)
-        right_dpose[:, :NUM_XYZ] = torch.nn.functional.normalize(
-            self.right_goal_position_w - self.right_index_fingertip_position_w(),
-            p=2,
-            dim=-1,
-        ) * 0.05
-        right_arm_delta_q = control_ik(
-            j_eef=right_jacobian,
-            dpose=right_dpose,
+        right_dpose[:, :NUM_XYZ] = (
+            torch.nn.functional.normalize(
+                self.right_goal_position_w - self.right_index_fingertip_position_w(),
+                p=2,
+                dim=-1,
+            )
+            * 0.05
         )
         left_dpose = torch.zeros(self.num_envs, NUM_XYZ + NUM_RPY, device=self.device)
-        left_dpose[:, :NUM_XYZ] = torch.nn.functional.normalize(
-            self.left_goal_position_w - self.left_index_fingertip_position_w(),
-            p=2,
-            dim=-1,
-        ) * 0.05
-        left_arm_delta_q = control_ik(
-            j_eef=left_jacobian,
-            dpose=left_dpose,
+        left_dpose[:, :NUM_XYZ] = (
+            torch.nn.functional.normalize(
+                self.left_goal_position_w - self.left_index_fingertip_position_w(),
+                p=2,
+                dim=-1,
+            )
+            * 0.05
         )
-        new_pk_q = pk_q + torch.cat(
-            [
-                right_arm_delta_q,
-                left_arm_delta_q,
-                torch.zeros(self.num_envs, NUM_HAND_JOINTS * NUM_BIMANUAL),
-            ],
-            dim=1,
-        )
-        new_q = change_joint_order_torch(
-            new_pk_q,
-            from_order=PYTORCH_KINEMATICS_JOINT_ORDER,
-            to_order=ISAACLAB_JOINT_ORDER,
+        new_q = self.compute_ik(
+            right_dpose=right_dpose,
+            left_dpose=left_dpose,
         )
         self.robot.set_joint_position_target(new_q)
         self.blue_robot.write_joint_position_to_sim(new_q)
@@ -2149,6 +2113,77 @@ class BimanualEnv(DirectRLEnv):
         )
 
     #### TENSOR SLICE PROPERTIES END ####
+
+    #### PYTORCH KINEMATICS START ####
+    def compute_ik(
+        self,
+        right_dpose: torch.Tensor,
+        left_dpose: torch.Tensor,
+        q: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        if q is None:
+            q = self.robot.data.joint_pos
+
+        assert right_dpose.shape == (self.num_envs, NUM_XYZ + NUM_RPY), (
+            f"right_dpose.shape: {right_dpose.shape}"
+        )
+        assert left_dpose.shape == (self.num_envs, NUM_XYZ + NUM_RPY), (
+            f"left_dpose.shape: {left_dpose.shape}"
+        )
+
+        # Convert joint order
+        pk_q = change_joint_order_torch(
+            q,
+            from_order=ISAACLAB_JOINT_ORDER,
+            to_order=PYTORCH_KINEMATICS_JOINT_ORDER,
+        )
+        right_arm_pk_q = pk_q[:, :NUM_ARM_JOINTS]
+        left_arm_pk_q = pk_q[:, NUM_ARM_JOINTS : NUM_ARM_JOINTS * NUM_BIMANUAL]
+
+        # Compute Jacobians
+        right_jacobian = self.right_arm_pk_chain.jacobian(right_arm_pk_q)
+        left_jacobian = self.left_arm_pk_chain.jacobian(left_arm_pk_q)
+        assert isinstance(right_jacobian, torch.Tensor), (
+            f"right_jacobian: {type(right_jacobian)}"
+        )
+        assert isinstance(left_jacobian, torch.Tensor), (
+            f"left_jacobian: {type(left_jacobian)}"
+        )
+        assert right_jacobian.shape == (
+            self.num_envs,
+            NUM_XYZ + NUM_RPY,
+            NUM_ARM_JOINTS,
+        ), f"right_jacobian.shape: {right_jacobian.shape}"
+        assert left_jacobian.shape == (
+            self.num_envs,
+            NUM_XYZ + NUM_RPY,
+            NUM_ARM_JOINTS,
+        ), f"left_jacobian.shape: {left_jacobian.shape}"
+
+        right_arm_delta_q = compute_ik(
+            j_eef=right_jacobian,
+            dpose=right_dpose,
+        )
+        left_arm_delta_q = compute_ik(
+            j_eef=left_jacobian,
+            dpose=left_dpose,
+        )
+        new_pk_q = pk_q + torch.cat(
+            [
+                right_arm_delta_q,
+                left_arm_delta_q,
+                torch.zeros(self.num_envs, NUM_HAND_JOINTS * NUM_BIMANUAL),
+            ],
+            dim=1,
+        )
+        new_q = change_joint_order_torch(
+            new_pk_q,
+            from_order=PYTORCH_KINEMATICS_JOINT_ORDER,
+            to_order=ISAACLAB_JOINT_ORDER,
+        )
+        return new_q
+
+    #### PYTORCH KINEMATICS END ####
 
     #### OTHER PROPERTIES START ####
     @property

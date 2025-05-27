@@ -1,7 +1,7 @@
 import torch
 
 
-def control_ik(
+def compute_ik(
     j_eef: torch.Tensor, dpose: torch.Tensor, damping: float = 0.5
 ) -> torch.Tensor:
     # solve damped least squares
