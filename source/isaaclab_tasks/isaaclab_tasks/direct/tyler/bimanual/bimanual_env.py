@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
 import isaaclab.envs.mdp as mdp
 import isaaclab.sim as sim_utils
@@ -935,7 +935,7 @@ class BimanualEnv(DirectRLEnv):
         self.object_contact_sensor = ContactSensor(self.cfg.object_contact_sensor)
         self.scene.sensors["object_contact_sensor"] = self.object_contact_sensor
 
-        self.fingertip_contact_sensors = {}
+        self.fingertip_contact_sensors: Dict[str, ContactSensor] = {}
         for link in FINGERTIP_CONTACT_SENSOR_ROBOT_LINKS:
             contact_sensor = ContactSensor(
                 self.cfg.fingertip_contact_sensor.replace(
@@ -1783,6 +1783,10 @@ class BimanualEnv(DirectRLEnv):
         self.robot.reset(env_ids)
         self.object.reset(env_ids)
         # self.contact_sensor.reset(env_ids)
+        self.table_contact_sensor.reset(env_ids)
+        self.object_contact_sensor.reset(env_ids)
+        for fingertip_contact_sensor in self.fingertip_contact_sensors.values():
+            fingertip_contact_sensor.reset(env_ids)
         super()._reset_idx(env_ids)
 
         # Reset robot
