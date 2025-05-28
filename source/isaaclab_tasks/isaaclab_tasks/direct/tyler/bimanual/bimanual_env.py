@@ -5,9 +5,11 @@
 
 from __future__ import annotations
 
+import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
+import isaaclab.envs.mdp as mdp
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
 import numpy as np
@@ -16,6 +18,8 @@ import torch
 import yaml
 from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObjectCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
+from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import SceneEntityCfg
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.markers.config import (
     CUBOID_MARKER_CFG,
@@ -30,6 +34,7 @@ from isaaclab.sim.spawners.lights import DomeLightCfg, LightCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
+from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelWithAdditiveBiasCfg
 from isaaclab_assets import ISAACLAB_ASSETS_DATA_DIR
 from isaaclab_assets.robots.bimanual import BIMANUAL_CFG, BLUE_BIMANUAL_CFG
 from scipy.spatial.transform import Rotation as R
@@ -180,6 +185,43 @@ NUM_STATES = compute_num_states()
 
 
 @configclass
+class BimanualEventCfg:
+    robot_physics_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
+            "static_friction_range": (0.7, 1.3),
+            "dynamic_friction_range": (1.0, 1.0),
+            "restitution_range": (1.0, 1.0),
+            "num_buckets": 250,
+        },
+    )
+    robot_joint_stiffness_and_damping = EventTerm(
+        func=mdp.randomize_actuator_gains,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "stiffness_distribution_params": (0.75, 1.5),
+            "damping_distribution_params": (0.3, 3.0),
+            "operation": "scale",
+            "distribution": "log_uniform",
+        },
+    )
+    reset_gravity = EventTerm(
+        func=mdp.randomize_physics_scene_gravity,
+        mode="interval",
+        is_global_time=True,
+        interval_range_s=(36.0, 36.0),  # time_s = num_steps * (decimation * dt)
+        params={
+            "gravity_distribution_params": ([0.0, 0.0, 0.0], [0.0, 0.0, 0.4]),
+            "operation": "add",
+            "distribution": "gaussian",
+        },
+    )
+
+
+@configclass
 class BimanualEnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 5.0
@@ -327,6 +369,25 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     light: LightCfg = DomeLightCfg(
         intensity=750.0,
         texture_file=f"{ISAAC_NUCLEUS_DIR}/Materials/Textures/Skies/PolyHaven/kloofendal_43d_clear_puresky_4k.hdr",
+    )
+
+    # events
+    events: BimanualEventCfg = BimanualEventCfg()
+
+    # Action noise
+    # at every time-step add gaussian noise + bias. The bias is a gaussian sampled at reset
+    action_noise_model: NoiseModelWithAdditiveBiasCfg = NoiseModelWithAdditiveBiasCfg(
+        noise_cfg=GaussianNoiseCfg(mean=0.0, std=0.05, operation="add"),
+        bias_noise_cfg=GaussianNoiseCfg(mean=0.0, std=0.015, operation="abs"),
+    )
+
+    # Observation noise
+    # at every time-step add gaussian noise + bias. The bias is a gaussian sampled at reset
+    observation_noise_model: NoiseModelWithAdditiveBiasCfg = (
+        NoiseModelWithAdditiveBiasCfg(
+            noise_cfg=GaussianNoiseCfg(mean=0.0, std=0.002, operation="add"),
+            bias_noise_cfg=GaussianNoiseCfg(mean=0.0, std=0.0001, operation="abs"),
+        )
     )
 
     origin_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
@@ -1261,8 +1322,6 @@ class BimanualEnv(DirectRLEnv):
                 print(colored(f"{k}: {v.shape} (NAN) at {nan_env_ids}", "red"))
         if any_nan:
             if SAVE_OBS_HISTORY:
-                import datetime
-
                 datetime_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
                 obs_history_filename = f"{datetime_str}_obs_history.pth"
                 torch.save(self.obs_history, obs_history_filename)
@@ -2364,7 +2423,6 @@ class BimanualEnv(DirectRLEnv):
         assert episode_frac.shape == (N_TIMESTEPS,)
         plot_data = np.stack([actual_data, cmd_data], axis=0)
         assert plot_data.shape == (2, N_TIMESTEPS, NUM_ARM_JOINTS * NUM_BIMANUAL)
-        import datetime
 
         output_filename = f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.npz"
         np.savez(
