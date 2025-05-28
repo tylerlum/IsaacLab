@@ -264,8 +264,8 @@ class BimanualEventCfg:
         func=mdp.randomize_rigid_body_scale,
         mode="prestartup",
         params={
-            "scale_range": {"x": (0.5, 1.5), "y": (0.5, 1.5), "z": (0.5, 1.5)},
-            "asset_cfg": SceneEntityCfg("cube"),
+            "asset_cfg": SceneEntityCfg("object", body_names=".*"),
+            "scale_range": {"x": (0.1, 10), "y": (0.5, 1.5), "z": (0.5, 1.5)},
         },
     )
 
@@ -309,7 +309,10 @@ class BimanualEnvCfg(DirectRLEnvCfg):
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
-        num_envs=4096, env_spacing=4.0, replicate_physics=True
+        num_envs=4096,
+        env_spacing=4.0,
+        # replicate_physics=True,
+        replicate_physics=False,  # Should normally be True, but if randomize USDs, then must be False
     )
 
     # robot
