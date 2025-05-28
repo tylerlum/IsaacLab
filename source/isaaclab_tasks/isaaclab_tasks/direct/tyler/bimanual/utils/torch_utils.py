@@ -438,3 +438,31 @@ def rescale(
     ) + new_mins[None]
 
     return rescaled
+
+
+def transform_points(T: torch.Tensor, points: torch.Tensor) -> torch.Tensor:
+    N = T.shape[0]
+    assert T.shape == (N, 4, 4), f"T.shape: {T.shape}, expected: {(N, 4, 4)}"
+    assert points.shape == (N, 3), f"points.shape: {points.shape}, expected: {(N, 3)}"
+
+    # (N,4,1): make each point homogeneous by appending 1 and adding a dummy axis
+    points_h = torch.cat([points, torch.ones_like(points[..., :1])], dim=-1).unsqueeze(
+        -1
+    )
+
+    # (N,4,1): batched transform
+    points_tf = torch.bmm(T, points_h)
+
+    # (N,3): discard the homogeneous component
+    return points_tf[:, :3, 0]
+
+
+def pose_to_T(pose: torch.Tensor) -> torch.Tensor:
+    N = pose.shape[0]
+    assert pose.shape == (N, 7), f"pose.shape: {pose.shape}, expected: {(N, 7)}"
+    T = torch.eye(4, device=pose.device, dtype=pose.dtype).repeat(N, 1, 1)
+    pos = pose[:, :3]
+    quat_wxyz = pose[:, 3:]
+    T[:, :3, 3] = pos
+    T[:, :3, :3] = quat_wxyz_to_matrix(quat_wxyz)
+    return T

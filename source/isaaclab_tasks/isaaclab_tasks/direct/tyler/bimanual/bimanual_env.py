@@ -104,9 +104,11 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
     euler_angles_to_matrix,
     matrix_to_euler_angles,
     matrix_to_quat_wxyz,
+    pose_to_T,
     quat_wxyz_to_matrix,
     rescale,
     sample_uniform_tensor,
+    transform_points,
 )
 
 FINGER_GOALS = False
@@ -1000,8 +1002,51 @@ class BimanualEnv(DirectRLEnv):
             self.blue_robot.write_joint_position_to_sim(position_targets)
             self.blue_robot.set_joint_position_target(position_targets)
 
+        self._apply_external_wrench()
+
     def _apply_action(self):
         pass
+
+    def _apply_external_wrench(self):
+        # NOTE: external forces are stateful and need to be reset after applying them
+        external_force_o = torch.zeros(self.num_envs, NUM_XYZ, device=self.device)
+        external_torque_o = torch.zeros(self.num_envs, NUM_XYZ, device=self.device)
+
+        # Keyboard force
+        if (self.keyboard_external_force_w.abs() > 0.0).any():
+            # self.keyboard_external_force_w is in world frame
+            # When applying to the object, we need to transform it to the object frame
+            T_W_O = pose_to_T(
+                torch.cat(
+                    [
+                        torch.zeros_like(self.object_position_w),
+                        self.object_orientation,
+                    ],
+                    dim=-1,
+                )
+            )
+            T_O_W = T_W_O.inverse()
+            keyboard_external_force_o = transform_points(
+                T=T_O_W,
+                points=self.keyboard_external_force_w,
+            )
+            # Reset keyboard external force after applying it
+            self.keyboard_external_force_w[:] = 0.0
+
+            external_force_o += keyboard_external_force_o
+
+        # Random force
+        APPLY_RANDOM_FORCE = False
+        if APPLY_RANDOM_FORCE:
+            random_force_o = (
+                torch.randn(self.num_envs, NUM_XYZ, device=self.device) * FORCE_MAG
+            )
+            external_force_o += random_force_o
+
+        self.object.set_external_force_and_torque(
+            forces=external_force_o,
+            torques=external_torque_o,
+        )
 
     def _compute_fabric_actions(
         self, raw_actions: torch.Tensor
@@ -1616,6 +1661,12 @@ class BimanualEnv(DirectRLEnv):
         """
         time_out = self.episode_length_buf >= self.max_episode_length - 1
         died = torch.zeros_like(time_out)
+
+        # Set to True to debug
+        DEBUG_NO_RESET = False
+        if DEBUG_NO_RESET:
+            return died, time_out
+
         died = torch.where(self.object_fallen_off_table, torch.ones_like(died), died)
         died = torch.where(
             (self.right_index_fingertip_position_w() - self.object_position_w).norm(
@@ -1765,6 +1816,10 @@ class BimanualEnv(DirectRLEnv):
             self.smallest_this_episode_object_to_goal_dist = (
                 self.object_position_w - self.goal_object_position_w
             ).norm(dim=-1, p=2)
+
+            self.keyboard_external_force_w = torch.zeros(
+                self.num_envs, NUM_XYZ, device=self.device
+            )
         else:
             self.raw_actions[env_ids] = torch.zeros(
                 len(env_ids), self.cfg.action_space, device=self.device
@@ -1828,6 +1883,10 @@ class BimanualEnv(DirectRLEnv):
             self.smallest_this_episode_object_to_goal_dist[env_ids] = (
                 self.object_position_w[env_ids] - self.goal_object_position_w[env_ids]
             ).norm(dim=-1, p=2)
+
+            self.keyboard_external_force_w[env_ids] = torch.zeros(
+                len(env_ids), NUM_XYZ, device=self.device
+            )
 
     def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
@@ -2338,74 +2397,32 @@ class BimanualEnv(DirectRLEnv):
     def _apply_external_force_neg_y(self):
         print(colored("In apply_external_force_neg_y", "green"))
         ENV_ID = 0
-        external_force = torch.zeros(1, NUM_XYZ, device=self.device)
-        external_force[:, 1] = -FORCE_MAG
-        external_torque = torch.zeros(1, NUM_XYZ, device=self.device)
-        self.object.set_external_force_and_torque(
-            forces=external_force,
-            torques=external_torque,
-            env_ids=[ENV_ID],
-        )
+        self.keyboard_external_force_w[ENV_ID, 1] = -FORCE_MAG
 
     def _apply_external_force_pos_y(self):
         print(colored("In apply_external_force_pos_y", "green"))
         ENV_ID = 0
-        external_force = torch.zeros(1, NUM_XYZ, device=self.device)
-        external_force[:, 1] = FORCE_MAG
-        external_torque = torch.zeros(1, NUM_XYZ, device=self.device)
-        self.object.set_external_force_and_torque(
-            forces=external_force,
-            torques=external_torque,
-            env_ids=[ENV_ID],
-        )
+        self.keyboard_external_force_w[ENV_ID, 1] = FORCE_MAG
 
     def _apply_external_force_neg_x(self):
         print(colored("In apply_external_force_neg_x", "green"))
         ENV_ID = 0
-        external_force = torch.zeros(1, NUM_XYZ, device=self.device)
-        external_force[:, 0] = -FORCE_MAG
-        external_torque = torch.zeros(1, NUM_XYZ, device=self.device)
-        self.object.set_external_force_and_torque(
-            forces=external_force,
-            torques=external_torque,
-            env_ids=[ENV_ID],
-        )
+        self.keyboard_external_force_w[ENV_ID, 0] = -FORCE_MAG
 
     def _apply_external_force_pos_x(self):
         print(colored("In apply_external_force_pos_x", "green"))
         ENV_ID = 0
-        external_force = torch.zeros(1, NUM_XYZ, device=self.device)
-        external_force[:, 0] = FORCE_MAG
-        external_torque = torch.zeros(1, NUM_XYZ, device=self.device)
-        self.object.set_external_force_and_torque(
-            forces=external_force,
-            torques=external_torque,
-            env_ids=[ENV_ID],
-        )
+        self.keyboard_external_force_w[ENV_ID, 0] = FORCE_MAG
 
     def _apply_external_force_pos_z(self):
         print(colored("In apply_external_force_pos_z", "green"))
         ENV_ID = 0
-        external_force = torch.zeros(1, NUM_XYZ, device=self.device)
-        external_force[:, 2] = FORCE_MAG
-        external_torque = torch.zeros(1, NUM_XYZ, device=self.device)
-        self.object.set_external_force_and_torque(
-            forces=external_force,
-            torques=external_torque,
-            env_ids=[ENV_ID],
-        )
+        self.keyboard_external_force_w[ENV_ID, 2] = FORCE_MAG
 
     def _apply_external_force_neg_z(self):
         print(colored("In apply_external_force_neg_z", "green"))
         ENV_ID = 0
-        external_force = torch.zeros(1, NUM_XYZ, device=self.device)
-        external_force[:, 2] = -FORCE_MAG
-        external_torque = torch.zeros(1, NUM_XYZ, device=self.device)
-        self.object.set_external_force_and_torque(
-            forces=external_force,
-            torques=external_torque,
-            env_ids=[ENV_ID],
-        )
+        self.keyboard_external_force_w[ENV_ID, 2] = -FORCE_MAG
 
     #### KEYBOARD END ####
 
