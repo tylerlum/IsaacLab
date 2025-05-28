@@ -189,6 +189,7 @@ class BimanualEventCfg:
     robot_physics_material = EventTerm(
         func=mdp.randomize_rigid_body_material,
         mode="reset",
+        min_step_count_between_reset=720,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
             "static_friction_range": (0.7, 1.3),
@@ -199,6 +200,7 @@ class BimanualEventCfg:
     )
     robot_joint_stiffness_and_damping = EventTerm(
         func=mdp.randomize_actuator_gains,
+        min_step_count_between_reset=720,
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
@@ -208,7 +210,20 @@ class BimanualEventCfg:
             "distribution": "log_uniform",
         },
     )
-    reset_gravity = EventTerm(
+    robot_joint_pos_limits = EventTerm(
+        func=mdp.randomize_joint_parameters,
+        min_step_count_between_reset=720,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+            "lower_limit_distribution_params": (0.00, 0.01),
+            "upper_limit_distribution_params": (0.00, 0.01),
+            "operation": "add",
+            "distribution": "gaussian",
+        },
+    )
+
+    gravity = EventTerm(
         func=mdp.randomize_physics_scene_gravity,
         mode="interval",
         is_global_time=True,
@@ -217,6 +232,40 @@ class BimanualEventCfg:
             "gravity_distribution_params": ([0.0, 0.0, 0.0], [0.0, 0.0, 0.4]),
             "operation": "add",
             "distribution": "gaussian",
+        },
+    )
+
+    # -- object
+    object_physics_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        min_step_count_between_reset=720,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("object", body_names=".*"),
+            "static_friction_range": (0.5, 0.7),
+            "dynamic_friction_range": (0.5, 0.7),
+            "restitution_range": (1.0, 1.0),
+            "num_buckets": 250,
+        },
+    )
+    object_mass = EventTerm(
+        func=mdp.randomize_rigid_body_mass,
+        min_step_count_between_reset=720,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("object", body_names=".*"),
+            "mass_distribution_params": (0.5, 1.5),
+            "operation": "scale",
+            "distribution": "uniform",
+        },
+    )
+
+    object_scale = EventTerm(
+        func=mdp.randomize_rigid_body_scale,
+        mode="prestartup",
+        params={
+            "scale_range": {"x": (0.5, 1.5), "y": (0.5, 1.5), "z": (0.5, 1.5)},
+            "asset_cfg": SceneEntityCfg("cube"),
         },
     )
 
