@@ -542,6 +542,7 @@ else:
         "left_index_fingertip_to_object_dist",
         "object_lifted",
         "object_to_goal_dist",
+        "object_reached_goal",
     ]
 
 
@@ -1613,6 +1614,7 @@ class BimanualEnv(DirectRLEnv):
                 "left_index_fingertip_to_object_dist": left_improvement,
                 "object_lifted": torch.logical_and(self.object_is_lifted, ~self.object_has_been_lifted_this_episode),
                 "object_to_goal_dist": object_goal_improvement,
+                "object_reached_goal": object_goal_dist < 0.1,
             }
         # fmt: on
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
@@ -1631,6 +1633,7 @@ class BimanualEnv(DirectRLEnv):
                     "left_index_fingertip_to_object_dist": 1.0,
                     "object_lifted": 1.0,
                     "object_to_goal_dist": 10.0,
+                    "object_reached_goal": 10.0,
                 }
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
