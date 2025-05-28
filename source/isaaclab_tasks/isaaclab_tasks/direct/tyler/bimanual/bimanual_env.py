@@ -265,7 +265,8 @@ class BimanualEventCfg:
         mode="prestartup",  # Must be done "prestartup"
         params={
             "asset_cfg": SceneEntityCfg("object", body_names=".*"),
-            "scale_range": {"x": (0.5, 1.5), "y": (0.5, 1.5), "z": (0.5, 1.5)},
+            "scale_range": (0.8, 1.2),  # Scale all axes equally
+            # "scale_range": {"x": (0.5, 1.5), "y": (0.5, 1.5), "z": (0.5, 1.5)},  # Scale axes independently
         },
     )
 
@@ -543,6 +544,7 @@ else:
         "object_lifted",
         "object_to_goal_dist",
         "object_reached_goal",
+        "fingertip_contact",
     ]
 
 
@@ -661,6 +663,28 @@ class BimanualEnv(DirectRLEnv):
         self._left_palm_contact_link_idxs, self._left_palm_contact_link_names = (
             self.contact_sensor.find_bodies("left_iiwa14_link_7")
         )
+        (
+            self._right_fingertip_contact_link_idxs,
+            self._right_fingertip_contact_link_names,
+        ) = self.contact_sensor.find_bodies(
+            [
+                "right_index_link_3",
+                "right_middle_link_3",
+                "right_ring_link_3",
+                "right_thumb_link_3",
+            ]
+        )
+        (
+            self._left_fingertip_contact_link_idxs,
+            self._left_fingertip_contact_link_names,
+        ) = self.contact_sensor.find_bodies(
+            [
+                "left_index_link_3",
+                "left_middle_link_3",
+                "left_ring_link_3",
+                "left_thumb_link_3",
+            ]
+        )
         print(colored("!" * 100, "green"))
         print(
             colored(
@@ -724,6 +748,18 @@ class BimanualEnv(DirectRLEnv):
         print(
             colored(
                 f"self._left_palm_contact_link_idxs: {self._left_palm_contact_link_idxs}",
+                "green",
+            )
+        )
+        print(
+            colored(
+                f"self._right_fingertip_contact_link_idxs: {self._right_fingertip_contact_link_idxs}",
+                "green",
+            )
+        )
+        print(
+            colored(
+                f"self._left_fingertip_contact_link_idxs: {self._left_fingertip_contact_link_idxs}",
                 "green",
             )
         )
@@ -1613,12 +1649,47 @@ class BimanualEnv(DirectRLEnv):
             left_improvement = (self.smallest_this_episode_left_index_fingertip_to_object_dist - left_index_fingertip_to_object_dist).clip(min=0.0)
             object_goal_dist = (self.object_position_w - self.goal_object_position_w).norm(dim=-1, p=2)
             object_goal_improvement = (self.smallest_this_episode_object_to_goal_dist - object_goal_dist).clip(min=0.0)
+
+            net_forces_w_history = self.contact_sensor.data.net_forces_w_history
+            assert net_forces_w_history is not None
+            assert net_forces_w_history.ndim == 4, (
+                f"net_forces_w_history.ndim: {net_forces_w_history.ndim} != 4"
+            )
+            N_BODIES = net_forces_w_history.shape[2]
+            assert net_forces_w_history.shape == (
+                self.num_envs,
+                CONTACT_SENSOR_HISTORY_LENGTH,
+                N_BODIES,
+                NUM_XYZ,
+            ), (
+                f"net_forces_w_history.shape: {net_forces_w_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES, NUM_XYZ)}"
+            )
+            right_fingertip_force = net_forces_w_history[
+                :, 0, self._right_fingertip_contact_link_idxs, :
+            ].norm(dim=-1, p=2)
+            left_fingertip_force = net_forces_w_history[
+                :, 0, self._left_fingertip_contact_link_idxs, :
+            ].norm(dim=-1, p=2)
+            assert right_fingertip_force.shape == (
+                self.num_envs,
+                NUM_FINGERS,
+            )
+            assert left_fingertip_force.shape == (
+                self.num_envs,
+                NUM_FINGERS,
+            )
+            right_fingertip_contacts = (right_fingertip_force > 0.01).sum(dim=-1)
+            left_fingertip_contacts = (left_fingertip_force > 0.01).sum(dim=-1)
+            print(f"right_fingertip_contacts: {right_fingertip_contacts}")
+            print(f"left_fingertip_contacts: {left_fingertip_contacts}")
+
             self.individual_reward_bufs = {
                 "right_index_fingertip_to_object_dist": right_improvement,
                 "left_index_fingertip_to_object_dist": left_improvement,
                 "object_lifted": torch.logical_and(self.object_is_lifted, ~self.object_has_been_lifted_this_episode),
                 "object_to_goal_dist": object_goal_improvement,
                 "object_reached_goal": object_goal_dist < 0.1,
+                "fingertip_contact": (right_fingertip_contacts + left_fingertip_contacts),
             }
         # fmt: on
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
@@ -1633,11 +1704,12 @@ class BimanualEnv(DirectRLEnv):
                 }
             else:
                 self.individual_reward_weights = {
-                    "right_index_fingertip_to_object_dist": 1.0,  # max = init_dist(right, object)
-                    "left_index_fingertip_to_object_dist": 1.0,  # max = init_dist(left, object)
+                    "right_index_fingertip_to_object_dist": 1.0,  # max = init_dist(right, object) ~ 0.2
+                    "left_index_fingertip_to_object_dist": 1.0,  # max = init_dist(left, object) ~ 0.2
                     "object_lifted": 1.0,  # max = 1.0
-                    "object_to_goal_dist": 10.0,  # max = init_dist(object, goal)
-                    "object_reached_goal": 1.0,  # max = num_steps
+                    "object_to_goal_dist": 10.0,  # max = init_dist(object, goal) ~ 0.2
+                    "object_reached_goal": 0.1,  # max = num_steps ~ 75
+                    "fingertip_contact": 0.01,  # max = NUM_BIMANUAL * NUM_FINGERS * num_steps ~ 600
                 }
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
