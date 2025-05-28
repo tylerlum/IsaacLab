@@ -262,7 +262,7 @@ class BimanualEventCfg:
 
     object_scale = EventTerm(
         func=mdp.randomize_rigid_body_scale,
-        mode="prestartup",
+        mode="prestartup",  # Must be done "prestartup"
         params={
             "asset_cfg": SceneEntityCfg("object", body_names=".*"),
             "scale_range": {"x": (0.1, 10), "y": (0.5, 1.5), "z": (0.5, 1.5)},
@@ -1783,7 +1783,7 @@ class BimanualEnv(DirectRLEnv):
             (self.right_index_fingertip_position_w() - self.object_position_w).norm(
                 dim=-1, p=2
             )
-            > 0.3,
+            > 0.5,
             torch.ones_like(died),
             died,
         )
@@ -1791,7 +1791,7 @@ class BimanualEnv(DirectRLEnv):
             (self.left_index_fingertip_position_w() - self.object_position_w).norm(
                 dim=-1, p=2
             )
-            > 0.3,
+            > 0.5,
             torch.ones_like(died),
             died,
         )
