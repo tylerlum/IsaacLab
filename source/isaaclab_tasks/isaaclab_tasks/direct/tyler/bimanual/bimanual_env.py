@@ -282,6 +282,7 @@ TABLE_CONTACT_SENSOR_LEFT_ROBOT_LINKS = [
 TABLE_CONTACT_SENSOR_ROBOT_LINKS = (
     TABLE_CONTACT_SENSOR_RIGHT_ROBOT_LINKS + TABLE_CONTACT_SENSOR_LEFT_ROBOT_LINKS
 )
+OBJECT_CONTACT_SENSOR_ROBOT_LINKS = TABLE_CONTACT_SENSOR_ROBOT_LINKS
 
 
 FINGERTIP_CONTACT_SENSOR_RIGHT_ROBOT_LINKS = [
@@ -352,6 +353,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     object: RigidObjectCfg = RigidObjectCfg(
         prim_path=f"{ENV_REGEX_NS}/Object",
         spawn=sim_utils.UsdFileCfg(
+            activate_contact_sensors=True,
             usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/starbucks_bottle/usd/starbucks_bottle.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
@@ -443,17 +445,27 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     #     prim_path=f"{ENV_REGEX_NS}/Robot/.*",
     #     history_length=CONTACT_SENSOR_HISTORY_LENGTH,
     #     update_period=SIM_DT,
-    #     debug_vis=True,
+    #     debug_vis=False,
     #     force_threshold=0.01,
     # )
     table_contact_sensor = ContactSensorCfg(
         prim_path=f"{ENV_REGEX_NS}/Table/table",
         history_length=CONTACT_SENSOR_HISTORY_LENGTH,
         update_period=SIM_DT,
-        debug_vis=True,
+        debug_vis=False,
         force_threshold=0.01,
         filter_prim_paths_expr=[
             f"{ENV_REGEX_NS}/Robot/{link}" for link in TABLE_CONTACT_SENSOR_ROBOT_LINKS
+        ],
+    )
+    object_contact_sensor = ContactSensorCfg(
+        prim_path=f"{ENV_REGEX_NS}/Object/baseLink",
+        history_length=CONTACT_SENSOR_HISTORY_LENGTH,
+        update_period=SIM_DT,
+        debug_vis=False,
+        force_threshold=0.01,
+        filter_prim_paths_expr=[
+            f"{ENV_REGEX_NS}/Robot/{link}" for link in OBJECT_CONTACT_SENSOR_ROBOT_LINKS
         ],
     )
 
@@ -461,7 +473,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         prim_path=f"{ENV_REGEX_NS}/Robot/REPLACE",
         history_length=CONTACT_SENSOR_HISTORY_LENGTH,
         update_period=SIM_DT,
-        debug_vis=True,
+        debug_vis=False,
         force_threshold=0.01,
         filter_prim_paths_expr=[f"{ENV_REGEX_NS}/Object/baseLink"],
     )
@@ -906,6 +918,9 @@ class BimanualEnv(DirectRLEnv):
         # add table contact sensor to scene
         self.table_contact_sensor = ContactSensor(self.cfg.table_contact_sensor)
         self.scene.sensors["table_contact_sensor"] = self.table_contact_sensor
+
+        self.object_contact_sensor = ContactSensor(self.cfg.object_contact_sensor)
+        self.scene.sensors["object_contact_sensor"] = self.object_contact_sensor
 
         self.fingertip_contact_sensors = {}
         for link in FINGERTIP_CONTACT_SENSOR_ROBOT_LINKS:
@@ -1468,6 +1483,10 @@ class BimanualEnv(DirectRLEnv):
             table_force = self.table_contact_sensor.data.force_matrix_w.abs().max()
             if table_force > 0.0:
                 print(colored(f"table_force: {table_force}", "yellow"))
+
+            object_force = self.object_contact_sensor.data.force_matrix_w.abs().max()
+            if object_force > 0.0:
+                print(colored(f"object_force: {object_force}", "yellow"))
 
             right_index_tip_force = self.fingertip_contact_sensors["right_index_link_3"].data.force_matrix_w.abs().max()
             if right_index_tip_force > 0.0:
