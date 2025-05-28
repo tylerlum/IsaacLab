@@ -127,7 +127,7 @@ SAVE_OBS_HISTORY = False
 OBJECT_LENGTH_Z = 0.22
 
 SIM_DT = 1 / 60
-CONTACT_SENSOR_HISTORY_LENGTH = 1
+CONTACT_SENSOR_HISTORY_LENGTH = 6
 
 FORCE_MAG = 1.0
 
@@ -416,6 +416,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         prim_path=f"{ENV_REGEX_NS}/Robot/.*",
         history_length=CONTACT_SENSOR_HISTORY_LENGTH,
         update_period=SIM_DT,
+        debug_vis=True,
+        force_threshold=0.01,
     )
 
     # light
@@ -1664,6 +1666,13 @@ class BimanualEnv(DirectRLEnv):
             ), (
                 f"net_forces_w_history.shape: {net_forces_w_history.shape} != (self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES, NUM_XYZ): {(self.num_envs, CONTACT_SENSOR_HISTORY_LENGTH, N_BODIES, NUM_XYZ)}"
             )
+            if net_forces_w_history.abs().max() > 0.0:
+                print(colored(f"net_forces_w_history.abs().max(): {net_forces_w_history.abs().max()}", "red"))
+                net_forces_w = net_forces_w_history.mean(dim=1).norm(dim=-1, p=2)
+                print(colored(f"net_forces_w: {net_forces_w}", "red"))
+                idx = net_forces_w[0].argmax()
+                name = self._contact_link_names[idx]
+                print(colored(f"name: {name} {net_forces_w[0, idx]}", "red"))
             right_fingertip_force = net_forces_w_history[
                 :, 0, self._right_fingertip_contact_link_idxs, :
             ].norm(dim=-1, p=2)
@@ -1680,8 +1689,9 @@ class BimanualEnv(DirectRLEnv):
             )
             right_fingertip_contacts = (right_fingertip_force > 0.01).sum(dim=-1)
             left_fingertip_contacts = (left_fingertip_force > 0.01).sum(dim=-1)
-            print(f"right_fingertip_contacts: {right_fingertip_contacts}")
-            print(f"left_fingertip_contacts: {left_fingertip_contacts}")
+            if (right_fingertip_contacts > 0).any() or (left_fingertip_contacts > 0).any():
+                print(colored(f"right_fingertip_contacts: {right_fingertip_contacts}", "yellow"))
+                print(colored(f"left_fingertip_contacts: {left_fingertip_contacts}", "yellow"))
 
             self.individual_reward_bufs = {
                 "right_index_fingertip_to_object_dist": right_improvement,
