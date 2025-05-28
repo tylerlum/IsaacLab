@@ -790,6 +790,10 @@ class BimanualEnv(DirectRLEnv):
             fabric_params = yaml.safe_load(file)
         fabric_params = fabric_params["fabric_params"]
 
+        # HACK: Hardcode new params
+        fabric_params["cspace_damping"]["gain"] = 10.0
+        fabric_params["cspace_damping"]["hand_gain"] = 5.0
+
         # Declare device for fabric
         self.fabric_world_model = WorldMeshesModel(
             batch_size=self.num_envs,
