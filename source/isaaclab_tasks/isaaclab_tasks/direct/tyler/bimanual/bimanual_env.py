@@ -173,12 +173,7 @@ def compute_num_states():
         + 1  # episode_length_buf
         + 1  # object_is_lifted
         + 1  # object_has_been_lifted_this_episode
-        # + (
-        #     CONTACT_SENSOR_HISTORY_LENGTH
-        #     * (NUM_FINGERS * 4 + 1)
-        #     * NUM_BIMANUAL
-        #     * NUM_XYZ
-        # )  # contact_sensor
+        + (NUM_FINGERS * NUM_BIMANUAL)  # fingertip contacts
     )
 
 
@@ -1418,6 +1413,64 @@ class BimanualEnv(DirectRLEnv):
             f"obs.shape: {obs.shape} != (self.num_envs, self.cfg.observation_space): {(self.num_envs, self.cfg.observation_space)}"
         )
 
+        table_forces = self.table_contact_sensor.data.force_matrix_w
+        assert table_forces.shape == (
+            self.num_envs,
+            1,
+            len(TABLE_CONTACT_SENSOR_ROBOT_LINKS),
+            NUM_XYZ,
+        ), (
+            f"table_forces.shape: {table_forces.shape} != (self.num_envs, 1, len(TABLE_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ): {(self.num_envs, 1, len(TABLE_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ)}"
+        )
+        max_table_force = (
+            table_forces.squeeze(dim=1).norm(dim=-1, p=2).max(dim=-1).values
+        )
+        assert max_table_force.shape == (self.num_envs,), (
+            f"max_table_force.shape: {max_table_force.shape} != (self.num_envs,): {(self.num_envs,)}"
+        )
+
+        object_forces = self.object_contact_sensor.data.force_matrix_w
+        assert object_forces.shape == (
+            self.num_envs,
+            1,
+            len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS),
+            NUM_XYZ,
+        ), (
+            f"object_forces.shape: {object_forces.shape} != (self.num_envs, 1, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ): {(self.num_envs, 1, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ)}"
+        )
+        object_forces = object_forces.squeeze(dim=1).norm(dim=-1, p=2)
+        assert object_forces.shape == (
+            self.num_envs,
+            len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS),
+        ), (
+            f"object_forces.shape: {object_forces.shape} != (self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS)): {(self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS))}"
+        )
+        object_contacts = object_forces > 0.01
+        right_index_tip_contact = object_contacts[
+            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_index_link_3")
+        ]
+        left_index_tip_contact = object_contacts[
+            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_index_link_3")
+        ]
+        right_middle_tip_contact = object_contacts[
+            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_middle_link_3")
+        ]
+        left_middle_tip_contact = object_contacts[
+            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_middle_link_3")
+        ]
+        right_ring_tip_contact = object_contacts[
+            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_ring_link_3")
+        ]
+        left_ring_tip_contact = object_contacts[
+            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_ring_link_3")
+        ]
+        right_thumb_tip_contact = object_contacts[
+            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_thumb_link_3")
+        ]
+        left_thumb_tip_contact = object_contacts[
+            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_thumb_link_3")
+        ]
+
         # Add critic observations
         state_dict = {
             "obs": obs,
@@ -1435,36 +1488,22 @@ class BimanualEnv(DirectRLEnv):
             "object_has_been_lifted_this_episode": self.object_has_been_lifted_this_episode.reshape(
                 self.num_envs, -1
             ),
-            # "right_index_force_history": right_index_force_history.reshape(
-            #     self.num_envs, -1
-            # ),
-            # "left_index_force_history": left_index_force_history.reshape(
-            #     self.num_envs, -1
-            # ),
-            # "right_middle_force_history": right_middle_force_history.reshape(
-            #     self.num_envs, -1
-            # ),
-            # "left_middle_force_history": left_middle_force_history.reshape(
-            #     self.num_envs, -1
-            # ),
-            # "right_ring_force_history": right_ring_force_history.reshape(
-            #     self.num_envs, -1
-            # ),
-            # "left_ring_force_history": left_ring_force_history.reshape(
-            #     self.num_envs, -1
-            # ),
-            # "right_thumb_force_history": right_thumb_force_history.reshape(
-            #     self.num_envs, -1
-            # ),
-            # "left_thumb_force_history": left_thumb_force_history.reshape(
-            #     self.num_envs, -1
-            # ),
-            # "right_palm_force_history": right_palm_force_history.reshape(
-            #     self.num_envs, -1
-            # ),
-            # "left_palm_force_history": left_palm_force_history.reshape(
-            #     self.num_envs, -1
-            # ),
+            "right_index_tip_contact": right_index_tip_contact.reshape(
+                self.num_envs, -1
+            ),
+            "left_index_tip_contact": left_index_tip_contact.reshape(self.num_envs, -1),
+            "right_middle_tip_contact": right_middle_tip_contact.reshape(
+                self.num_envs, -1
+            ),
+            "left_middle_tip_contact": left_middle_tip_contact.reshape(
+                self.num_envs, -1
+            ),
+            "right_ring_tip_contact": right_ring_tip_contact.reshape(self.num_envs, -1),
+            "left_ring_tip_contact": left_ring_tip_contact.reshape(self.num_envs, -1),
+            "right_thumb_tip_contact": right_thumb_tip_contact.reshape(
+                self.num_envs, -1
+            ),
+            "left_thumb_tip_contact": left_thumb_tip_contact.reshape(self.num_envs, -1),
         }
         for k, v in state_dict.items():
             if v.ndim != 2:
@@ -1535,8 +1574,6 @@ class BimanualEnv(DirectRLEnv):
                 + right_thumb_tip_contact
                 + left_thumb_tip_contact
             ).float()
-            if num_tip_contacts.any():
-                print(f"num_tip_contacts: {num_tip_contacts}")
 
             self.individual_reward_bufs = {
                 "right_index_fingertip_to_object_dist": right_improvement,
