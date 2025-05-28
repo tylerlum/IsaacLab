@@ -1633,11 +1633,11 @@ class BimanualEnv(DirectRLEnv):
                 }
             else:
                 self.individual_reward_weights = {
-                    "right_index_fingertip_to_object_dist": 1.0,
-                    "left_index_fingertip_to_object_dist": 1.0,
-                    "object_lifted": 1.0,
-                    "object_to_goal_dist": 10.0,
-                    "object_reached_goal": 10.0,
+                    "right_index_fingertip_to_object_dist": 1.0,  # max = init_dist(right, object)
+                    "left_index_fingertip_to_object_dist": 1.0,  # max = init_dist(left, object)
+                    "object_lifted": 1.0,  # max = 1.0
+                    "object_to_goal_dist": 10.0,  # max = init_dist(object, goal)
+                    "object_reached_goal": 1.0,  # max = num_steps
                 }
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
