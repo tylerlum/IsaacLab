@@ -134,6 +134,8 @@ CONTACT_SENSOR_HISTORY_LENGTH = 6
 
 FORCE_MAG = 1.0
 
+INCLUDE_CONTACT_REWARD = True
+
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
     restitution_combine_mode="multiply",
@@ -617,8 +619,9 @@ else:
         "object_lifted",
         "object_to_goal_dist",
         "object_reached_goal",
-        "fingertip_contact",
     ]
+    if INCLUDE_CONTACT_REWARD:
+        REWARD_NAMES.append("fingertip_contact")
 
 
 def assert_equals(a, b):
@@ -1581,8 +1584,9 @@ class BimanualEnv(DirectRLEnv):
                 "object_lifted": torch.logical_and(self.object_is_lifted, ~self.object_has_been_lifted_this_episode),
                 "object_to_goal_dist": object_goal_improvement,
                 "object_reached_goal": object_goal_dist < 0.1,
-                "fingertip_contact": num_tip_contacts,
             }
+            if INCLUDE_CONTACT_REWARD:
+                self.individual_reward_bufs["fingertip_contact"] = num_tip_contacts
         # fmt: on
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
             f"Individual reward buffers and reward names do not match: {self.individual_reward_bufs.keys()} vs {REWARD_NAMES}\nOnly in individual reward buffers: {set(self.individual_reward_bufs.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_bufs.keys())}"
@@ -1601,8 +1605,11 @@ class BimanualEnv(DirectRLEnv):
                     "object_lifted": 1.0,  # max = 1.0
                     "object_to_goal_dist": 10.0,  # max = init_dist(object, goal) ~ 0.2
                     "object_reached_goal": 0.1,  # max = num_steps ~ 75
-                    "fingertip_contact": 0.01,  # max = NUM_BIMANUAL * NUM_FINGERS * num_steps ~ 600
                 }
+                if INCLUDE_CONTACT_REWARD:
+                    self.individual_reward_weights["fingertip_contact"] = (
+                        0.01  # max = NUM_BIMANUAL * NUM_FINGERS * num_steps ~ 600
+                    )
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
             )
