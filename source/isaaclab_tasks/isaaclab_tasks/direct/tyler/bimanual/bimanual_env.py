@@ -265,7 +265,7 @@ class BimanualEventCfg:
         mode="prestartup",  # Must be done "prestartup"
         params={
             "asset_cfg": SceneEntityCfg("object", body_names=".*"),
-            "scale_range": {"x": (0.1, 10), "y": (0.5, 1.5), "z": (0.5, 1.5)},
+            "scale_range": {"x": (0.5, 1.5), "y": (0.5, 1.5), "z": (0.5, 1.5)},
         },
     )
 
@@ -1805,6 +1805,10 @@ class BimanualEnv(DirectRLEnv):
         if env_ids is None or len(env_ids) == self.num_envs:
             env_ids = self.robot._ALL_INDICES
 
+        # Must be called before super()._reset_idx()
+        # Since it uses episode_length_buf, which gets reset
+        self._update_metrics(env_ids)
+
         self.robot.reset(env_ids)
         self.object.reset(env_ids)
         self.contact_sensor.reset(env_ids)
@@ -1815,8 +1819,6 @@ class BimanualEnv(DirectRLEnv):
 
         # Reset object
         self._reset_object(env_ids)
-
-        self._update_metrics(env_ids)
 
         # Must be done after _reset_robot() and _reset_object()
         # Since it uses the newly sampled initial robot and object and goal poses
