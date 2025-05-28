@@ -260,15 +260,15 @@ class BimanualEventCfg:
         },
     )
 
-    object_scale = EventTerm(
-        func=mdp.randomize_rigid_body_scale,
-        mode="prestartup",  # Must be done "prestartup"
-        params={
-            "asset_cfg": SceneEntityCfg("object", body_names=".*"),
-            "scale_range": (0.8, 1.2),  # Scale all axes equally
-            # "scale_range": {"x": (0.5, 1.5), "y": (0.5, 1.5), "z": (0.5, 1.5)},  # Scale axes independently
-        },
-    )
+    # object_scale = EventTerm(
+    #     func=mdp.randomize_rigid_body_scale,
+    #     mode="prestartup",  # Must be done "prestartup"
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("object", body_names=".*"),
+    #         "scale_range": (0.8, 1.2),  # Scale all axes equally
+    #         # "scale_range": {"x": (0.5, 1.5), "y": (0.5, 1.5), "z": (0.5, 1.5)},  # Scale axes independently
+    #     },
+    # )
 
 
 @configclass
@@ -312,8 +312,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
         num_envs=4096,
         env_spacing=4.0,
-        # replicate_physics=True,
-        replicate_physics=False,  # Should normally be True, but if randomize USDs, then must be False
+        replicate_physics=True,
+        # replicate_physics=False,  # Should normally be True, but if randomize USDs, then must be False
     )
 
     # robot
@@ -368,9 +368,10 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             ),
             # mass_props=sim_utils.MassPropertiesCfg(density=400.0),
             scale=(1, 1, 1),
-            collision_props=sim_utils.CollisionPropertiesCfg(
-                collision_enabled=False,
-            ),
+            # Setting no collisions doesn't work, need to change usd
+            # collision_props=sim_utils.CollisionPropertiesCfg(
+            #     collision_enabled=False,
+            # ),
             # TODO: This actually doesn't work, so just change the USD: https://github.com/isaac-sim/IsaacLab/issues/622
             # visual_material=sim_utils.PreviewSurfaceCfg(
             #     diffuse_color=GREEN_RGB,
@@ -391,6 +392,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     table: RigidObjectCfg = RigidObjectCfg(
         prim_path=f"{ENV_REGEX_NS}/Table",
         spawn=sim_utils.UsdFileCfg(
+            activate_contact_sensors=True,
             usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/table/usd/table.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,  # make it static
@@ -418,6 +420,49 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         update_period=SIM_DT,
         debug_vis=True,
         force_threshold=0.01,
+    )
+    table_contact_sensor = ContactSensorCfg(
+        prim_path=f"{ENV_REGEX_NS}/Table/table",
+        history_length=CONTACT_SENSOR_HISTORY_LENGTH,
+        update_period=SIM_DT,
+        debug_vis=True,
+        force_threshold=0.01,
+        filter_prim_paths_expr=[
+            f"{ENV_REGEX_NS}/Robot/right_iiwa14_link_7",
+            f"{ENV_REGEX_NS}/Robot/left_iiwa14_link_7",
+            f"{ENV_REGEX_NS}/Robot/right_index_link_0",
+            f"{ENV_REGEX_NS}/Robot/left_index_link_0",
+            f"{ENV_REGEX_NS}/Robot/right_index_link_1",
+            f"{ENV_REGEX_NS}/Robot/left_index_link_1",
+            f"{ENV_REGEX_NS}/Robot/right_index_link_2",
+            f"{ENV_REGEX_NS}/Robot/left_index_link_2",
+            f"{ENV_REGEX_NS}/Robot/right_index_link_3",
+            f"{ENV_REGEX_NS}/Robot/left_index_link_3",
+            f"{ENV_REGEX_NS}/Robot/right_middle_link_0",
+            f"{ENV_REGEX_NS}/Robot/left_middle_link_0",
+            f"{ENV_REGEX_NS}/Robot/right_middle_link_1",
+            f"{ENV_REGEX_NS}/Robot/left_middle_link_1",
+            f"{ENV_REGEX_NS}/Robot/right_middle_link_2",
+            f"{ENV_REGEX_NS}/Robot/left_middle_link_2",
+            f"{ENV_REGEX_NS}/Robot/right_middle_link_3",
+            f"{ENV_REGEX_NS}/Robot/left_middle_link_3",
+            f"{ENV_REGEX_NS}/Robot/right_ring_link_0",
+            f"{ENV_REGEX_NS}/Robot/left_ring_link_0",
+            f"{ENV_REGEX_NS}/Robot/right_ring_link_1",
+            f"{ENV_REGEX_NS}/Robot/left_ring_link_1",
+            f"{ENV_REGEX_NS}/Robot/right_ring_link_2",
+            f"{ENV_REGEX_NS}/Robot/left_ring_link_2",
+            f"{ENV_REGEX_NS}/Robot/right_ring_link_3",
+            f"{ENV_REGEX_NS}/Robot/left_ring_link_3",
+            f"{ENV_REGEX_NS}/Robot/right_thumb_link_0",
+            f"{ENV_REGEX_NS}/Robot/left_thumb_link_0",
+            f"{ENV_REGEX_NS}/Robot/right_thumb_link_1",
+            f"{ENV_REGEX_NS}/Robot/left_thumb_link_1",
+            f"{ENV_REGEX_NS}/Robot/right_thumb_link_2",
+            f"{ENV_REGEX_NS}/Robot/left_thumb_link_2",
+            f"{ENV_REGEX_NS}/Robot/right_thumb_link_3",
+            f"{ENV_REGEX_NS}/Robot/left_thumb_link_3",
+        ],
     )
 
     # light
@@ -981,6 +1026,10 @@ class BimanualEnv(DirectRLEnv):
         self.contact_sensor = ContactSensor(self.cfg.contact_sensor)
         self.scene.sensors["contact_sensor"] = self.contact_sensor
 
+        # add table contact sensor to scene
+        self.table_contact_sensor = ContactSensor(self.cfg.table_contact_sensor)
+        self.scene.sensors["table_contact_sensor"] = self.table_contact_sensor
+
         # add ground plane
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
@@ -1018,31 +1067,33 @@ class BimanualEnv(DirectRLEnv):
             self.raw_actions, "self.raw_actions (start of pre_physics_step)"
         )
 
-        OVERWRITE_GO_TO_TARGET = False
+        OVERWRITE_GO_TO_TARGET = True
         if OVERWRITE_GO_TO_TARGET:
             right_dpose = torch.zeros(
                 self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
             )
-            right_dpose[:, :NUM_XYZ] = (
-                torch.nn.functional.normalize(
-                    self.right_goal_position_w
-                    - self.right_index_fingertip_position_w(),
-                    p=2,
-                    dim=-1,
-                )
-                * 0.05
-            )
+            right_dpose[:, 2] = -0.05
+            # right_dpose[:, :NUM_XYZ] = (
+            #     torch.nn.functional.normalize(
+            #         self.right_goal_position_w
+            #         - self.right_index_fingertip_position_w(),
+            #         p=2,
+            #         dim=-1,
+            #     )
+            #     * 0.05
+            # )
             left_dpose = torch.zeros(
                 self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
             )
-            left_dpose[:, :NUM_XYZ] = (
-                torch.nn.functional.normalize(
-                    self.left_goal_position_w - self.left_index_fingertip_position_w(),
-                    p=2,
-                    dim=-1,
-                )
-                * 0.05
-            )
+            left_dpose[:, 2] = -0.05
+            # left_dpose[:, :NUM_XYZ] = (
+            #     torch.nn.functional.normalize(
+            #         self.left_goal_position_w - self.left_index_fingertip_position_w(),
+            #         p=2,
+            #         dim=-1,
+            #     )
+            #     * 0.05
+            # )
             new_q = self.compute_ik(
                 right_dpose=right_dpose,
                 left_dpose=left_dpose,
@@ -1673,6 +1724,13 @@ class BimanualEnv(DirectRLEnv):
                 idx = net_forces_w[0].argmax()
                 name = self._contact_link_names[idx]
                 print(colored(f"name: {name} {net_forces_w[0, idx]}", "red"))
+            table_net_force = self.table_contact_sensor.data.net_forces_w_history.abs().max()
+            table_force = self.table_contact_sensor.data.force_matrix_w.abs().max()
+            if table_net_force > 0.0:
+                print(colored(f"table_net_force: {table_net_force}", "yellow"))
+                print(colored(f"table_force: {table_force}", "yellow"))
+
+
             right_fingertip_force = net_forces_w_history[
                 :, 0, self._right_fingertip_contact_link_idxs, :
             ].norm(dim=-1, p=2)
