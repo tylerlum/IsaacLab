@@ -21,25 +21,43 @@ import numpy as np
 ##
 
 DEFAULT_KUKA_DOF_POS = np.deg2rad([0, 0, 0, -90, 0, 90, 0]).tolist()
-
+#
 DEFAULT_ALLEGRO_DOF_POS = [
     0.0,
-    0.3,
-    0.3,
-    0.3,
     0.0,
-    0.3,
-    0.3,
-    0.3,
     0.0,
-    0.3,
-    0.3,
-    0.3,
-    1.2,
-    0.6,
-    0.3,
-    0.6,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.3,  # Thumb is [0.263, 1.396]
+    0.0,
+    0.0,
+    0.0,
 ]
+# DEFAULT_ALLEGRO_DOF_POS = [
+#     0.0,
+#     0.3,
+#     0.3,
+#     0.3,
+#     0.0,
+#     0.3,
+#     0.3,
+#     0.3,
+#     0.0,
+#     0.3,
+#     0.3,
+#     0.3,
+#     1.2,
+#     0.6,
+#     0.3,
+#     0.6,
+# ]
 
 BIMANUAL_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
