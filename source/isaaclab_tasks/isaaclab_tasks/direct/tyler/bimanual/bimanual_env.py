@@ -1465,51 +1465,34 @@ class BimanualEnv(DirectRLEnv):
             object_goal_dist = (self.object_position_w - self.goal_object_position_w).norm(dim=-1, p=2)
             object_goal_improvement = (self.smallest_this_episode_object_to_goal_dist - object_goal_dist).clip(min=0.0)
 
-            table_net_force = self.table_contact_sensor.data.net_forces_w_history.abs().max()
             table_force = self.table_contact_sensor.data.force_matrix_w.abs().max()
-            if table_net_force > 0.0:
-                print(colored(f"table_net_force: {table_net_force}", "yellow"))
+            if table_force > 0.0:
                 print(colored(f"table_force: {table_force}", "yellow"))
 
-            right_index_tip_net_force = self.fingertip_contact_sensors["right_index_link_3"].data.net_forces_w_history.abs().max()
             right_index_tip_force = self.fingertip_contact_sensors["right_index_link_3"].data.force_matrix_w.abs().max()
-            if right_index_tip_net_force > 0.0:
-                print(colored(f"right_index_tip_net_force: {right_index_tip_net_force}", "yellow"))
+            if right_index_tip_force > 0.0:
                 print(colored(f"right_index_tip_force: {right_index_tip_force}", "yellow"))
-            left_index_tip_net_force = self.fingertip_contact_sensors["left_index_link_3"].data.net_forces_w_history.abs().max()
             left_index_tip_force = self.fingertip_contact_sensors["left_index_link_3"].data.force_matrix_w.abs().max()
-            if left_index_tip_net_force > 0.0:
-                print(colored(f"left_index_tip_net_force: {left_index_tip_net_force}", "yellow"))
+            if left_index_tip_force > 0.0:
                 print(colored(f"left_index_tip_force: {left_index_tip_force}", "yellow"))
-            right_middle_tip_net_force = self.fingertip_contact_sensors["right_middle_link_3"].data.net_forces_w_history.abs().max()
             right_middle_tip_force = self.fingertip_contact_sensors["right_middle_link_3"].data.force_matrix_w.abs().max()
-            if right_middle_tip_net_force > 0.0:
-                print(colored(f"right_middle_tip_net_force: {right_middle_tip_net_force}", "yellow"))
+            if right_middle_tip_force > 0.0:
                 print(colored(f"right_middle_tip_force: {right_middle_tip_force}", "yellow"))
-            left_middle_tip_net_force = self.fingertip_contact_sensors["left_middle_link_3"].data.net_forces_w_history.abs().max()
             left_middle_tip_force = self.fingertip_contact_sensors["left_middle_link_3"].data.force_matrix_w.abs().max()
-            if left_middle_tip_net_force > 0.0:
-                print(colored(f"left_middle_tip_net_force: {left_middle_tip_net_force}", "yellow"))
+            if left_middle_tip_force > 0.0:
                 print(colored(f"left_middle_tip_force: {left_middle_tip_force}", "yellow"))
-            right_ring_tip_net_force = self.fingertip_contact_sensors["right_ring_link_3"].data.net_forces_w_history.abs().max()
+                print(colored(f"left_middle_tip_force: {left_middle_tip_force}", "yellow"))
             right_ring_tip_force = self.fingertip_contact_sensors["right_ring_link_3"].data.force_matrix_w.abs().max()
-            if right_ring_tip_net_force > 0.0:
-                print(colored(f"right_ring_tip_net_force: {right_ring_tip_net_force}", "yellow"))
+            if right_ring_tip_force > 0.0:
                 print(colored(f"right_ring_tip_force: {right_ring_tip_force}", "yellow"))
-            left_ring_tip_net_force = self.fingertip_contact_sensors["left_ring_link_3"].data.net_forces_w_history.abs().max()
             left_ring_tip_force = self.fingertip_contact_sensors["left_ring_link_3"].data.force_matrix_w.abs().max()
-            if left_ring_tip_net_force > 0.0:
-                print(colored(f"left_ring_tip_net_force: {left_ring_tip_net_force}", "yellow"))
+            if left_ring_tip_force > 0.0:
                 print(colored(f"left_ring_tip_force: {left_ring_tip_force}", "yellow"))
-            right_thumb_tip_net_force = self.fingertip_contact_sensors["right_thumb_link_3"].data.net_forces_w_history.abs().max()
             right_thumb_tip_force = self.fingertip_contact_sensors["right_thumb_link_3"].data.force_matrix_w.abs().max()
-            if right_thumb_tip_net_force > 0.0:
-                print(colored(f"right_thumb_tip_net_force: {right_thumb_tip_net_force}", "yellow"))
+            if right_thumb_tip_force > 0.0:
                 print(colored(f"right_thumb_tip_force: {right_thumb_tip_force}", "yellow"))
-            left_thumb_tip_net_force = self.fingertip_contact_sensors["left_thumb_link_3"].data.net_forces_w_history.abs().max()
             left_thumb_tip_force = self.fingertip_contact_sensors["left_thumb_link_3"].data.force_matrix_w.abs().max()
-            if left_thumb_tip_net_force > 0.0:
-                print(colored(f"left_thumb_tip_net_force: {left_thumb_tip_net_force}", "yellow"))
+            if left_thumb_tip_force > 0.0:
                 print(colored(f"left_thumb_tip_force: {left_thumb_tip_force}", "yellow"))
 
             self.individual_reward_bufs = {
