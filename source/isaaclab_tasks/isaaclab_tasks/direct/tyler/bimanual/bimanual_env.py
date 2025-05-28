@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, TYPE_CHECKING
 
 import isaaclab.envs.mdp as mdp
 import isaaclab.sim as sim_utils
@@ -116,6 +116,9 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
     transform_points,
 )
 
+if TYPE_CHECKING:
+    from isaaclab.envs import ManagerBasedEnv
+
 FINGER_GOALS = False
 FILTER_ARM_ACTIONS = False
 
@@ -182,6 +185,18 @@ def compute_num_states():
 NUM_ACTIONS = compute_num_actions()
 NUM_OBSERVATIONS = compute_num_observations()
 NUM_STATES = compute_num_states()
+
+RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filtering
+
+
+def do_nothing(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor | None,
+    scale_range: tuple[float, float] | dict[str, tuple[float, float]],
+    asset_cfg: SceneEntityCfg,
+    relative_child_path: str | None = None,
+):
+    pass
 
 
 @configclass
@@ -260,15 +275,15 @@ class BimanualEventCfg:
         },
     )
 
-    # object_scale = EventTerm(
-    #     func=mdp.randomize_rigid_body_scale,
-    #     mode="prestartup",  # Must be done "prestartup"
-    #     params={
-    #         "asset_cfg": SceneEntityCfg("object", body_names=".*"),
-    #         "scale_range": (0.8, 1.2),  # Scale all axes equally
-    #         # "scale_range": {"x": (0.5, 1.5), "y": (0.5, 1.5), "z": (0.5, 1.5)},  # Scale axes independently
-    #     },
-    # )
+    object_scale = EventTerm(
+        func=mdp.randomize_rigid_body_scale if RANDOMIZE_OBJECT_SCALE else do_nothing,
+        mode="prestartup" if RANDOMIZE_OBJECT_SCALE else "reset",  # Must be done "prestartup" to work normally, but if disable, can't be prestartup
+        params={
+            "asset_cfg": SceneEntityCfg("object", body_names=".*"),
+            "scale_range": (0.8, 1.2),  # Scale all axes equally
+            # "scale_range": {"x": (0.5, 1.5), "y": (0.5, 1.5), "z": (0.5, 1.5)},  # Scale axes independently
+        },
+    )
 
 
 TABLE_CONTACT_SENSOR_RIGHT_ROBOT_LINKS = ["right_iiwa14_link_7"] + [
@@ -338,8 +353,9 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
         num_envs=4096,
         env_spacing=4.0,
-        replicate_physics=True,
-        # replicate_physics=False,  # Should normally be True, but if randomize USDs, then must be False
+        # replicate_physics=True,
+        # replicate_physics=False,  # Should normally be True, but if randomize USDs, then must be False. But must be True for collision filtering
+        replicate_physics=not RANDOMIZE_OBJECT_SCALE,
     )
 
     # robot
@@ -971,7 +987,7 @@ class BimanualEnv(DirectRLEnv):
             self.raw_actions, "self.raw_actions (start of pre_physics_step)"
         )
 
-        OVERWRITE_GO_TO_TARGET = True
+        OVERWRITE_GO_TO_TARGET = False
         if OVERWRITE_GO_TO_TARGET:
             right_dpose = torch.zeros(
                 self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
@@ -1002,7 +1018,8 @@ class BimanualEnv(DirectRLEnv):
                 left_dpose=left_dpose,
             )
             self.robot.set_joint_position_target(new_q)
-            self.blue_robot.write_joint_position_to_sim(new_q)
+            if self.include_blue_robot:
+                self.blue_robot.write_joint_position_to_sim(new_q)
             return
 
         if USE_FABRIC:
@@ -1480,39 +1497,39 @@ class BimanualEnv(DirectRLEnv):
             object_goal_dist = (self.object_position_w - self.goal_object_position_w).norm(dim=-1, p=2)
             object_goal_improvement = (self.smallest_this_episode_object_to_goal_dist - object_goal_dist).clip(min=0.0)
 
-            table_force = self.table_contact_sensor.data.force_matrix_w.abs().max()
-            if table_force > 0.0:
-                print(colored(f"table_force: {table_force}", "yellow"))
+            # table_force = self.table_contact_sensor.data.force_matrix_w.abs().max()
+            # if table_force > 0.0:
+            #     print(colored(f"table_force: {table_force}", "yellow"))
 
-            object_force = self.object_contact_sensor.data.force_matrix_w.abs().max()
-            if object_force > 0.0:
-                print(colored(f"object_force: {object_force}", "yellow"))
+            # object_force = self.object_contact_sensor.data.force_matrix_w.abs().max()
+            # if object_force > 0.0:
+            #     print(colored(f"object_force: {object_force}", "yellow"))
 
-            right_index_tip_force = self.fingertip_contact_sensors["right_index_link_3"].data.force_matrix_w.abs().max()
-            if right_index_tip_force > 0.0:
-                print(colored(f"right_index_tip_force: {right_index_tip_force}", "yellow"))
-            left_index_tip_force = self.fingertip_contact_sensors["left_index_link_3"].data.force_matrix_w.abs().max()
-            if left_index_tip_force > 0.0:
-                print(colored(f"left_index_tip_force: {left_index_tip_force}", "yellow"))
-            right_middle_tip_force = self.fingertip_contact_sensors["right_middle_link_3"].data.force_matrix_w.abs().max()
-            if right_middle_tip_force > 0.0:
-                print(colored(f"right_middle_tip_force: {right_middle_tip_force}", "yellow"))
-            left_middle_tip_force = self.fingertip_contact_sensors["left_middle_link_3"].data.force_matrix_w.abs().max()
-            if left_middle_tip_force > 0.0:
-                print(colored(f"left_middle_tip_force: {left_middle_tip_force}", "yellow"))
-                print(colored(f"left_middle_tip_force: {left_middle_tip_force}", "yellow"))
-            right_ring_tip_force = self.fingertip_contact_sensors["right_ring_link_3"].data.force_matrix_w.abs().max()
-            if right_ring_tip_force > 0.0:
-                print(colored(f"right_ring_tip_force: {right_ring_tip_force}", "yellow"))
-            left_ring_tip_force = self.fingertip_contact_sensors["left_ring_link_3"].data.force_matrix_w.abs().max()
-            if left_ring_tip_force > 0.0:
-                print(colored(f"left_ring_tip_force: {left_ring_tip_force}", "yellow"))
-            right_thumb_tip_force = self.fingertip_contact_sensors["right_thumb_link_3"].data.force_matrix_w.abs().max()
-            if right_thumb_tip_force > 0.0:
-                print(colored(f"right_thumb_tip_force: {right_thumb_tip_force}", "yellow"))
-            left_thumb_tip_force = self.fingertip_contact_sensors["left_thumb_link_3"].data.force_matrix_w.abs().max()
-            if left_thumb_tip_force > 0.0:
-                print(colored(f"left_thumb_tip_force: {left_thumb_tip_force}", "yellow"))
+            # right_index_tip_force = self.fingertip_contact_sensors["right_index_link_3"].data.force_matrix_w.abs().max()
+            # if right_index_tip_force > 0.0:
+            #     print(colored(f"right_index_tip_force: {right_index_tip_force}", "yellow"))
+            # left_index_tip_force = self.fingertip_contact_sensors["left_index_link_3"].data.force_matrix_w.abs().max()
+            # if left_index_tip_force > 0.0:
+            #     print(colored(f"left_index_tip_force: {left_index_tip_force}", "yellow"))
+            # right_middle_tip_force = self.fingertip_contact_sensors["right_middle_link_3"].data.force_matrix_w.abs().max()
+            # if right_middle_tip_force > 0.0:
+            #     print(colored(f"right_middle_tip_force: {right_middle_tip_force}", "yellow"))
+            # left_middle_tip_force = self.fingertip_contact_sensors["left_middle_link_3"].data.force_matrix_w.abs().max()
+            # if left_middle_tip_force > 0.0:
+            #     print(colored(f"left_middle_tip_force: {left_middle_tip_force}", "yellow"))
+            #     print(colored(f"left_middle_tip_force: {left_middle_tip_force}", "yellow"))
+            # right_ring_tip_force = self.fingertip_contact_sensors["right_ring_link_3"].data.force_matrix_w.abs().max()
+            # if right_ring_tip_force > 0.0:
+            #     print(colored(f"right_ring_tip_force: {right_ring_tip_force}", "yellow"))
+            # left_ring_tip_force = self.fingertip_contact_sensors["left_ring_link_3"].data.force_matrix_w.abs().max()
+            # if left_ring_tip_force > 0.0:
+            #     print(colored(f"left_ring_tip_force: {left_ring_tip_force}", "yellow"))
+            # right_thumb_tip_force = self.fingertip_contact_sensors["right_thumb_link_3"].data.force_matrix_w.abs().max()
+            # if right_thumb_tip_force > 0.0:
+            #     print(colored(f"right_thumb_tip_force: {right_thumb_tip_force}", "yellow"))
+            # left_thumb_tip_force = self.fingertip_contact_sensors["left_thumb_link_3"].data.force_matrix_w.abs().max()
+            # if left_thumb_tip_force > 0.0:
+            #     print(colored(f"left_thumb_tip_force: {left_thumb_tip_force}", "yellow"))
 
             self.individual_reward_bufs = {
                 "right_index_fingertip_to_object_dist": right_improvement,
@@ -2819,7 +2836,7 @@ class BimanualEnv(DirectRLEnv):
             [
                 right_arm_delta_q,
                 left_arm_delta_q,
-                torch.zeros(self.num_envs, NUM_HAND_JOINTS * NUM_BIMANUAL),
+                torch.zeros(self.num_envs, NUM_HAND_JOINTS * NUM_BIMANUAL, device=self.device),
             ],
             dim=1,
         )
