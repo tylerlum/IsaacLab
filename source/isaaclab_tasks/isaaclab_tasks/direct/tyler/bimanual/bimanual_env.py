@@ -89,6 +89,11 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
     fabric_to_isaaclab_joint_order_torch,
     isaaclab_to_fabric_joint_order_torch,
 )
+from isaaclab_tasks.direct.tyler.bimanual.utils.object_constants import (
+    NUM_OBJECT_KEYPOINTS,
+    OBJECT_KEYPOINT_OFFSETS,
+    compute_keypoint_positions,
+)
 from isaaclab_tasks.direct.tyler.bimanual.utils.robot_constants import (
     NUM_ARM_HAND_JOINTS,
     NUM_ARM_JOINTS,
@@ -1691,11 +1696,12 @@ class BimanualEnv(DirectRLEnv):
                 + left_thumb_tip_contact
             ).float()
 
+            object_goal_keypoint_dist = self.object_goal_keypoint_distance
             is_right_fingertips_object_close = (self.right_index_fingertip_position_w() - self.object_position_w).norm(dim=-1, p=2) < 0.3
             is_left_fingertips_object_close = (self.left_index_fingertip_position_w() - self.object_position_w).norm(dim=-1, p=2) < 0.3
             object_tracking_reward = torch.where(
                 torch.logical_and(is_right_fingertips_object_close, is_left_fingertips_object_close),
-                torch.exp(-object_goal_dist * 10.0),
+                torch.exp(-object_goal_keypoint_dist * 10.0),
                 torch.zeros(self.num_envs, device=self.device),
             )
             is_object_lifted = self.object_is_lifted
@@ -2740,6 +2746,40 @@ class BimanualEnv(DirectRLEnv):
             NUM_QUAT,
         ), f"Goal object orientation shape: {self.goal_object.data.body_quat_w.shape}"
         return self.goal_object.data.body_quat_w[:, 0]
+
+    @property
+    def object_goal_keypoint_distance(self) -> torch.Tensor:
+        object_keypoint_offsets = (
+            torch.tensor(
+                OBJECT_KEYPOINT_OFFSETS,
+                device=self.device,
+                dtype=self.object_position_w.dtype,
+            )
+            .unsqueeze(dim=0)
+            .repeat_interleave(self.num_envs, dim=0)
+        )
+        assert object_keypoint_offsets.shape == (
+            self.num_envs,
+            NUM_OBJECT_KEYPOINTS,
+            3,
+        ), (
+            f"Expected object_keypoint_offsets to have shape (self.num_envs, NUM_OBJECT_KEYPOINTS, 3), got {object_keypoint_offsets.shape}"
+        )
+
+        keypoint_positions = compute_keypoint_positions(
+            pos=self.object_position_w,
+            quat_xyzw=self.object_orientation,
+            keypoint_offsets=object_keypoint_offsets,
+        )
+        goal_keypoint_positions = compute_keypoint_positions(
+            pos=self.goal_object_position_w,
+            quat_xyzw=self.goal_object_orientation,
+            keypoint_offsets=object_keypoint_offsets,
+        )
+        distance = (
+            (keypoint_positions - goal_keypoint_positions).norm(dim=-1).mean(dim=-1)
+        )
+        return distance
 
     @property
     def robot_position_w(self) -> torch.Tensor:
