@@ -668,7 +668,7 @@ class BimanualEnv(DirectRLEnv):
         self._setup_robot_idxs()
         self._setup_sanity_checks()
         self._setup_pytorch_kinematics()
-        self._setup_target_wrist_poses()
+        self._setup_demo_trajectory()
 
         # Taskmap is needed for FK, even if not using fabric
         # Must be done before _reset_state() because it uses the taskmap
@@ -704,22 +704,23 @@ class BimanualEnv(DirectRLEnv):
             end_link_name="left_palm_link",
         ).to(device=self.device)
 
-    def _setup_target_wrist_poses(self):
-        TARGET_WRIST_POSES_PATH = Path(
+    def _setup_demo_trajectory(self):
+        DEMO_TRAJECTORY_PATH = Path(
             "/home/tylerlum/github_repos/bimanual_human2sim2robot/2025-05-29_basket.pkl"
         )
-        assert TARGET_WRIST_POSES_PATH.exists(), (
-            f"{TARGET_WRIST_POSES_PATH} does not exist"
-        )
-        with open(TARGET_WRIST_POSES_PATH, "rb") as f:
+        assert DEMO_TRAJECTORY_PATH.exists(), f"{DEMO_TRAJECTORY_PATH} does not exist"
+        with open(DEMO_TRAJECTORY_PATH, "rb") as f:
             data = pickle.load(f)
         right_T_R_Ps = data["right_T_R_Ps"]
         left_T_R_Ps = data["left_T_R_Ps"]
+        T_R_Os = data["T_R_Os"]
         NUM_TIMESTEPS = right_T_R_Ps.shape[0]
         assert_equals(right_T_R_Ps.shape, (NUM_TIMESTEPS, 4, 4))
         assert_equals(left_T_R_Ps.shape, (NUM_TIMESTEPS, 4, 4))
+        assert_equals(T_R_Os.shape, (NUM_TIMESTEPS, 4, 4))
         self.right_T_R_Ps = torch.from_numpy(right_T_R_Ps).to(self.device).float()
         self.left_T_R_Ps = torch.from_numpy(left_T_R_Ps).to(self.device).float()
+        self.T_R_Os = torch.from_numpy(T_R_Os).to(self.device).float()
 
     def _setup_robot_idxs(self):
         # Robot joint idxs
@@ -1028,7 +1029,9 @@ class BimanualEnv(DirectRLEnv):
             right_wrist_quat_wxyz = right_wrist_pose_w[:, 3:]
             right_wrist_rot_matrix = quat_wxyz_to_matrix(right_wrist_quat_wxyz)
 
-            right_T_R_P = self.right_T_R_Ps[self.episode_length_buf.clip(max=self.right_T_R_Ps.shape[0] - 1)]
+            right_T_R_P = self.right_T_R_Ps[
+                self.episode_length_buf.clip(max=self.right_T_R_Ps.shape[0] - 1)
+            ]
             right_target_wrist_pos = right_T_R_P[:, :3, 3]
             right_target_wrist_rot_matrix = right_T_R_P[:, :3, :3]
 
@@ -1057,7 +1060,9 @@ class BimanualEnv(DirectRLEnv):
             left_wrist_quat_wxyz = left_wrist_pose_w[:, 3:]
             left_wrist_rot_matrix = quat_wxyz_to_matrix(left_wrist_quat_wxyz)
 
-            left_T_R_P = self.left_T_R_Ps[self.episode_length_buf.clip(max=self.left_T_R_Ps.shape[0] - 1)]
+            left_T_R_P = self.left_T_R_Ps[
+                self.episode_length_buf.clip(max=self.left_T_R_Ps.shape[0] - 1)
+            ]
             left_target_wrist_pos = left_T_R_P[:, :3, 3]
             left_target_wrist_rot_matrix = left_T_R_P[:, :3, :3]
 
@@ -1195,6 +1200,13 @@ class BimanualEnv(DirectRLEnv):
             self.blue_robot.set_joint_position_target(position_targets)
 
         self._apply_external_wrench()
+
+        T_R_Os = self.T_R_Os[self.episode_length_buf.clip(max=self.T_R_Os.shape[0] - 1)]
+        goal_object_pos = T_R_Os[:, :3, 3] + self.scene.env_origins
+        goal_object_quat_wxyz = matrix_to_quat_wxyz(T_R_Os[:, :3, :3])
+        self.goal_object.write_root_pose_to_sim(
+            torch.cat([goal_object_pos, goal_object_quat_wxyz], dim=-1)
+        )
 
     def _apply_action(self):
         pass
@@ -1934,14 +1946,21 @@ class BimanualEnv(DirectRLEnv):
             self.blue_robot.set_joint_position_target(joint_pos, env_ids=env_ids)
 
     def _reset_object(self, env_ids: torch.Tensor):
-        object_pose = self._sample_initial_object_pose(env_ids)
-        final_object_pose = self._sample_final_object_pose(env_ids)
+        # object_pose = self._sample_initial_object_pose(env_ids)
+        # final_object_pose = self._sample_final_object_pose(env_ids)
+        T_R_Os = self.T_R_Os[self.episode_length_buf[env_ids].clip(max=self.T_R_Os.shape[0] - 1)]
+        object_pos = T_R_Os[:, :3, 3] + self.scene.env_origins[env_ids]
+        object_quat_wxyz = matrix_to_quat_wxyz(T_R_Os[:, :3, :3])
+        object_pose = torch.cat([object_pos, object_quat_wxyz], dim=-1)
+        goal_object_pos = T_R_Os[:, :3, 3] + self.scene.env_origins[env_ids]
+        goal_object_quat_wxyz = matrix_to_quat_wxyz(T_R_Os[:, :3, :3])
+        goal_object_pose = torch.cat([goal_object_pos, goal_object_quat_wxyz], dim=-1)
         self.object.write_root_pose_to_sim(object_pose, env_ids=env_ids)
 
         self.object.write_root_velocity_to_sim(
             torch.zeros(len(env_ids), 6, device=self.device), env_ids=env_ids
         )
-        self.goal_object.write_root_pose_to_sim(final_object_pose, env_ids=env_ids)
+        self.goal_object.write_root_pose_to_sim(goal_object_pose, env_ids=env_ids)
         # self.goal_object.write_root_velocity_to_sim(
         #     torch.zeros(len(env_ids), 6, device=self.device), env_ids=env_ids
         # )
@@ -2465,8 +2484,12 @@ class BimanualEnv(DirectRLEnv):
                         self.num_envs, dim=0
                     ),
                 )
-        right_T_R_P = self.right_T_R_Ps[self.episode_length_buf.clip(max=self.right_T_R_Ps.shape[0] - 1)]
-        left_T_R_P = self.left_T_R_Ps[self.episode_length_buf.clip(max=self.left_T_R_Ps.shape[0] - 1)]
+        right_T_R_P = self.right_T_R_Ps[
+            self.episode_length_buf.clip(max=self.right_T_R_Ps.shape[0] - 1)
+        ]
+        left_T_R_P = self.left_T_R_Ps[
+            self.episode_length_buf.clip(max=self.left_T_R_Ps.shape[0] - 1)
+        ]
         assert right_T_R_P.shape == (self.num_envs, 4, 4), (
             f"right_T_R_P shape: {right_T_R_P.shape}"
         )
