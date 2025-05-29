@@ -377,7 +377,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         spawn=sim_utils.UsdFileCfg(
             activate_contact_sensors=True,
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/starbucks_bottle/usd/starbucks_bottle.usd",
-            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/basket/usd/basket.usd",
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/basket/usd_convex_decomp/basket.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=False,
