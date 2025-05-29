@@ -1909,7 +1909,7 @@ class BimanualEnv(DirectRLEnv):
     def _reset_robot(self, env_ids: torch.Tensor):
         joint_pos = self.robot.data.default_joint_pos[env_ids].clone()
         joint_pos *= math_utils.sample_uniform(
-            *(0.8, 1.2), joint_pos.shape, joint_pos.device
+            *(0.95, 1.05), joint_pos.shape, joint_pos.device
         )
         joint_vel = self.robot.data.default_joint_vel[env_ids].clone()
         joint_vel *= math_utils.sample_uniform(
