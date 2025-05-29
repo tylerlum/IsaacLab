@@ -58,6 +58,8 @@ DEFAULT_ALLEGRO_DOF_POS = [
 #     0.3,
 #     0.6,
 # ]
+RIGHT_ARM_PREMANIP_Q = [ 0.14615603, -0.02587373, -0.6173182, -1.8528028, 1.03773, 1.2328178, -0.3025025 ]
+LEFT_ARM_PREMANIP_Q = [ 0.3030453, 0.18810458, -0.295523, -1.8318614, -1.1443766, 0.8722071, -0.01243544]
 
 BIMANUAL_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
@@ -78,13 +80,13 @@ BIMANUAL_CFG = ArticulationCfg(
         pos=(0.0, 0.0, 0.0),
         joint_pos={
             # Right arm
-            "right_iiwa14_joint_1": DEFAULT_KUKA_DOF_POS[0],
-            "right_iiwa14_joint_2": DEFAULT_KUKA_DOF_POS[1],
-            "right_iiwa14_joint_3": DEFAULT_KUKA_DOF_POS[2],
-            "right_iiwa14_joint_4": DEFAULT_KUKA_DOF_POS[3],
-            "right_iiwa14_joint_5": DEFAULT_KUKA_DOF_POS[4],
-            "right_iiwa14_joint_6": DEFAULT_KUKA_DOF_POS[5],
-            "right_iiwa14_joint_7": DEFAULT_KUKA_DOF_POS[6],
+            "right_iiwa14_joint_1": RIGHT_ARM_PREMANIP_Q[0],
+            "right_iiwa14_joint_2": RIGHT_ARM_PREMANIP_Q[1],
+            "right_iiwa14_joint_3": RIGHT_ARM_PREMANIP_Q[2],
+            "right_iiwa14_joint_4": RIGHT_ARM_PREMANIP_Q[3],
+            "right_iiwa14_joint_5": RIGHT_ARM_PREMANIP_Q[4],
+            "right_iiwa14_joint_6": RIGHT_ARM_PREMANIP_Q[5],
+            "right_iiwa14_joint_7": RIGHT_ARM_PREMANIP_Q[6],
             # Right hand
             "right_index_joint_0": DEFAULT_ALLEGRO_DOF_POS[0],
             "right_index_joint_1": DEFAULT_ALLEGRO_DOF_POS[1],
@@ -103,13 +105,13 @@ BIMANUAL_CFG = ArticulationCfg(
             "right_thumb_joint_2": DEFAULT_ALLEGRO_DOF_POS[14],
             "right_thumb_joint_3": DEFAULT_ALLEGRO_DOF_POS[15],
             # Left arm
-            "left_iiwa14_joint_1": DEFAULT_KUKA_DOF_POS[0],
-            "left_iiwa14_joint_2": DEFAULT_KUKA_DOF_POS[1],
-            "left_iiwa14_joint_3": DEFAULT_KUKA_DOF_POS[2],
-            "left_iiwa14_joint_4": DEFAULT_KUKA_DOF_POS[3],
-            "left_iiwa14_joint_5": DEFAULT_KUKA_DOF_POS[4],
-            "left_iiwa14_joint_6": DEFAULT_KUKA_DOF_POS[5],
-            "left_iiwa14_joint_7": DEFAULT_KUKA_DOF_POS[6],
+            "left_iiwa14_joint_1": LEFT_ARM_PREMANIP_Q[0],
+            "left_iiwa14_joint_2": LEFT_ARM_PREMANIP_Q[1],
+            "left_iiwa14_joint_3": LEFT_ARM_PREMANIP_Q[2],
+            "left_iiwa14_joint_4": LEFT_ARM_PREMANIP_Q[3],
+            "left_iiwa14_joint_5": LEFT_ARM_PREMANIP_Q[4],
+            "left_iiwa14_joint_6": LEFT_ARM_PREMANIP_Q[5],
+            "left_iiwa14_joint_7": LEFT_ARM_PREMANIP_Q[6],
             # Left hand
             "left_index_joint_0": DEFAULT_ALLEGRO_DOF_POS[0],
             "left_index_joint_1": DEFAULT_ALLEGRO_DOF_POS[1],
