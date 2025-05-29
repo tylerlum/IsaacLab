@@ -124,7 +124,7 @@ if TYPE_CHECKING:
 FINGER_GOALS = False
 FILTER_ARM_ACTIONS = False
 
-USE_FABRIC = False
+USE_FABRIC = True
 USE_FABRIC_CUDA_GRAPH = False  # Leave this False almost all the time, CUDA graphs don't offer any speedup (actually slows down) with large batch size
 
 SAVE_OBS_HISTORY = False
@@ -1016,7 +1016,7 @@ class BimanualEnv(DirectRLEnv):
             self.raw_actions, "self.raw_actions (start of pre_physics_step)"
         )
 
-        OVERWRITE_GO_TO_TARGET = True
+        OVERWRITE_GO_TO_TARGET = False
         if OVERWRITE_GO_TO_TARGET:
             right_dpose = torch.zeros(
                 self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
@@ -1850,7 +1850,7 @@ class BimanualEnv(DirectRLEnv):
         died = torch.zeros_like(time_out)
 
         # Set to True to debug
-        DEBUG_NO_RESET = True
+        DEBUG_NO_RESET = False
         if DEBUG_NO_RESET:
             return died, time_out
 
