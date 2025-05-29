@@ -41,7 +41,7 @@ from isaaclab_assets.robots.bimanual import BIMANUAL_CFG, BLUE_BIMANUAL_CFG
 from scipy.spatial.transform import Rotation as R
 from termcolor import colored
 
-ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent
+ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
 
 import wandb
 from isaaclab_tasks.direct.tyler.bimanual.utils.adjusted_terrain_importer import (
