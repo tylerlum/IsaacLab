@@ -41,8 +41,6 @@ from isaaclab_assets.robots.bimanual import BIMANUAL_CFG, BLUE_BIMANUAL_CFG
 from scipy.spatial.transform import Rotation as R
 from termcolor import colored
 
-ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
-
 import wandb
 from isaaclab_tasks.direct.tyler.bimanual.utils.adjusted_terrain_importer import (
     AdjustedTerrainImporter,
@@ -323,7 +321,7 @@ FINGERTIP_CONTACT_SENSOR_ROBOT_LINKS = (
 @configclass
 class BimanualEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 5.0
+    episode_length_s = 20.0
     decimation = 4
     arm_action_scale = 0.1
     hand_action_scale = 2.0
@@ -713,6 +711,7 @@ class BimanualEnv(DirectRLEnv):
         ).to(device=self.device)
 
     def _setup_demo_trajectory(self):
+        ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
         DEMO_TRAJECTORY_PATH = ROOT_DIR / "2025-05-29_basket.pkl"
         assert DEMO_TRAJECTORY_PATH.exists(), f"{DEMO_TRAJECTORY_PATH} does not exist"
         with open(DEMO_TRAJECTORY_PATH, "rb") as f:
