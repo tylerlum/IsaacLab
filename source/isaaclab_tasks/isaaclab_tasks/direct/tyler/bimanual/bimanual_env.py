@@ -136,7 +136,7 @@ CONTACT_SENSOR_HISTORY_LENGTH = 6
 
 FORCE_MAG = 1.0
 
-INCLUDE_CONTACT_REWARD = True
+INCLUDE_CONTACT_REWARD = False
 
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
@@ -629,9 +629,10 @@ else:
     REWARD_NAMES = [
         "right_index_fingertip_to_object_dist",
         "left_index_fingertip_to_object_dist",
-        "object_lifted",
-        "object_to_goal_dist",
-        "object_reached_goal",
+        # "object_lifted",
+        # "object_to_goal_dist",
+        # "object_reached_goal",
+        "object_tracking_reward",
     ]
     if INCLUDE_CONTACT_REWARD:
         REWARD_NAMES.append("fingertip_contact")
@@ -1690,12 +1691,28 @@ class BimanualEnv(DirectRLEnv):
                 + left_thumb_tip_contact
             ).float()
 
+            is_right_fingertips_object_close = (self.right_index_fingertip_position_w() - self.object_position_w).norm(dim=-1, p=2) < 0.3
+            is_left_fingertips_object_close = (self.left_index_fingertip_position_w() - self.object_position_w).norm(dim=-1, p=2) < 0.3
+            object_tracking_reward = torch.where(
+                torch.logical_and(is_right_fingertips_object_close, is_left_fingertips_object_close),
+                torch.exp(-object_goal_dist * 10.0),
+                torch.zeros(self.num_envs, device=self.device),
+            )
+            is_object_lifted = self.object_is_lifted
+            is_goal_object_lifted = self.goal_object_is_lifted
+            object_tracking_reward = torch.where(
+                torch.logical_and(is_object_lifted, is_goal_object_lifted),
+                5 * object_tracking_reward,
+                object_tracking_reward,
+            )
+
             self.individual_reward_bufs = {
                 "right_index_fingertip_to_object_dist": right_improvement,
                 "left_index_fingertip_to_object_dist": left_improvement,
-                "object_lifted": torch.logical_and(self.object_is_lifted, ~self.object_has_been_lifted_this_episode),
-                "object_to_goal_dist": object_goal_improvement,
-                "object_reached_goal": object_goal_dist < 0.1,
+                # "object_lifted": torch.logical_and(self.object_is_lifted, ~self.object_has_been_lifted_this_episode),
+                # "object_to_goal_dist": object_goal_improvement,
+                # "object_reached_goal": object_goal_dist < 0.1,
+                "object_tracking_reward": object_tracking_reward,
             }
             if INCLUDE_CONTACT_REWARD:
                 self.individual_reward_bufs["fingertip_contact"] = num_tip_contacts
@@ -1714,9 +1731,10 @@ class BimanualEnv(DirectRLEnv):
                 self.individual_reward_weights = {
                     "right_index_fingertip_to_object_dist": 1.0,  # max = init_dist(right, object) ~ 0.2
                     "left_index_fingertip_to_object_dist": 1.0,  # max = init_dist(left, object) ~ 0.2
-                    "object_lifted": 1.0,  # max = 1.0
-                    "object_to_goal_dist": 10.0,  # max = init_dist(object, goal) ~ 0.2
-                    "object_reached_goal": 0.1,  # max = num_steps ~ 75
+                    # "object_lifted": 1.0,  # max = 1.0
+                    # "object_to_goal_dist": 10.0,  # max = init_dist(object, goal) ~ 0.2
+                    # "object_reached_goal": 0.1,  # max = num_steps ~ 75
+                    "object_tracking_reward": 0.1,  # max = (1 or 5) * num_steps ~ 75 or 375
                 }
                 if INCLUDE_CONTACT_REWARD:
                     self.individual_reward_weights["fingertip_contact"] = (
@@ -1948,7 +1966,9 @@ class BimanualEnv(DirectRLEnv):
     def _reset_object(self, env_ids: torch.Tensor):
         # object_pose = self._sample_initial_object_pose(env_ids)
         # final_object_pose = self._sample_final_object_pose(env_ids)
-        T_R_Os = self.T_R_Os[self.episode_length_buf[env_ids].clip(max=self.T_R_Os.shape[0] - 1)]
+        T_R_Os = self.T_R_Os[
+            self.episode_length_buf[env_ids].clip(max=self.T_R_Os.shape[0] - 1)
+        ]
         object_pos = T_R_Os[:, :3, 3] + self.scene.env_origins[env_ids]
         object_quat_wxyz = matrix_to_quat_wxyz(T_R_Os[:, :3, :3])
         object_pose = torch.cat([object_pos, object_quat_wxyz], dim=-1)
@@ -2729,6 +2749,13 @@ class BimanualEnv(DirectRLEnv):
     def object_is_lifted(self) -> torch.Tensor:
         return (
             self.object_position_w[:, 2] > self.table_position[:, 2] + OBJECT_LENGTH_Z
+        )
+
+    @property
+    def goal_object_is_lifted(self) -> torch.Tensor:
+        return (
+            self.goal_object_position_w[:, 2]
+            > self.table_position[:, 2] + OBJECT_LENGTH_Z
         )
 
     @property
