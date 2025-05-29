@@ -6,10 +6,10 @@
 from __future__ import annotations
 
 import datetime
+import pickle
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
-import pickle
 import isaaclab.envs.mdp as mdp
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
@@ -108,6 +108,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
     euler_angles_to_matrix,
+    matrix_to_axis_angle,
     matrix_to_euler_angles,
     matrix_to_quat_wxyz,
     pose_to_T,
@@ -123,7 +124,7 @@ if TYPE_CHECKING:
 FINGER_GOALS = False
 FILTER_ARM_ACTIONS = False
 
-USE_FABRIC = True
+USE_FABRIC = False
 USE_FABRIC_CUDA_GRAPH = False  # Leave this False almost all the time, CUDA graphs don't offer any speedup (actually slows down) with large batch size
 
 SAVE_OBS_HISTORY = False
@@ -607,12 +608,12 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     )  # NOTE: Opacity not working
     fabric_world_visualizer.markers["cuboid"].size = (1.0, 1.0, 1.0)
 
-    right_target_wrist_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
-        prim_path="/Visuals/Command/right_target_wrist_pose"
+    right_target_wrist_pose_visualizer: VisualizationMarkersCfg = (
+        FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/right_target_wrist_pose")
     )
     right_target_wrist_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
-    left_target_wrist_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
-        prim_path="/Visuals/Command/left_target_wrist_pose"
+    left_target_wrist_pose_visualizer: VisualizationMarkersCfg = (
+        FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/left_target_wrist_pose")
     )
     left_target_wrist_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
 
@@ -705,7 +706,9 @@ class BimanualEnv(DirectRLEnv):
         TARGET_WRIST_POSES_PATH = Path(
             "/home/tylerlum/github_repos/bimanual_human2sim2robot/2025-05-29_basket.pkl"
         )
-        assert TARGET_WRIST_POSES_PATH.exists(), f"{TARGET_WRIST_POSES_PATH} does not exist"
+        assert TARGET_WRIST_POSES_PATH.exists(), (
+            f"{TARGET_WRIST_POSES_PATH} does not exist"
+        )
         with open(TARGET_WRIST_POSES_PATH, "rb") as f:
             data = pickle.load(f)
         right_T_R_Ps = data["right_T_R_Ps"]
@@ -1013,32 +1016,66 @@ class BimanualEnv(DirectRLEnv):
             self.raw_actions, "self.raw_actions (start of pre_physics_step)"
         )
 
-        OVERWRITE_GO_TO_TARGET = False
+        OVERWRITE_GO_TO_TARGET = True
         if OVERWRITE_GO_TO_TARGET:
             right_dpose = torch.zeros(
                 self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
             )
-            # right_dpose[:, 2] = -0.05
-            right_dpose[:, :NUM_XYZ] = (
-                torch.nn.functional.normalize(
-                    self.object_position_w - self.right_index_fingertip_position_w(),
-                    p=2,
-                    dim=-1,
+            right_wrist_pose_w = self.right_palm_pose_w()
+            right_wrist_pos = right_wrist_pose_w[:, :3] - self.scene.env_origins
+            right_wrist_quat_wxyz = right_wrist_pose_w[:, 3:]
+            right_wrist_rot_matrix = quat_wxyz_to_matrix(right_wrist_quat_wxyz)
+
+            right_T_R_P = self.right_T_R_Ps[self.episode_length_buf]
+            right_target_wrist_pos = right_T_R_P[:, :3, 3]
+            right_target_wrist_rot_matrix = right_T_R_P[:, :3, :3]
+
+            right_dpose[:, :NUM_XYZ] = right_target_wrist_pos - right_wrist_pos
+            right_dpose[:, NUM_XYZ:] = matrix_to_axis_angle(
+                torch.bmm(
+                    right_target_wrist_rot_matrix,
+                    right_wrist_rot_matrix.transpose(1, 2),
                 )
-                * 0.05
             )
+
+            # right_dpose[:, 2] = -0.05
+            # right_dpose[:, :NUM_XYZ] = (
+            #     torch.nn.functional.normalize(
+            #         self.object_position_w - self.right_index_fingertip_position_w(),
+            #         p=2,
+            #         dim=-1,
+            #     )
+            #     * 0.05
+            # )
             left_dpose = torch.zeros(
                 self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
             )
-            # left_dpose[:, 2] = -0.05
-            left_dpose[:, :NUM_XYZ] = (
-                torch.nn.functional.normalize(
-                    self.object_position_w - self.left_index_fingertip_position_w(),
-                    p=2,
-                    dim=-1,
+            left_wrist_pose_w = self.left_palm_pose_w()
+            left_wrist_pos = left_wrist_pose_w[:, :3] - self.scene.env_origins
+            left_wrist_quat_wxyz = left_wrist_pose_w[:, 3:]
+            left_wrist_rot_matrix = quat_wxyz_to_matrix(left_wrist_quat_wxyz)
+
+            left_T_R_P = self.left_T_R_Ps[self.episode_length_buf]
+            left_target_wrist_pos = left_T_R_P[:, :3, 3]
+            left_target_wrist_rot_matrix = left_T_R_P[:, :3, :3]
+
+            left_dpose[:, :NUM_XYZ] = left_target_wrist_pos - left_wrist_pos
+            left_dpose[:, NUM_XYZ:] = matrix_to_axis_angle(
+                torch.bmm(
+                    left_target_wrist_rot_matrix,
+                    left_wrist_rot_matrix.transpose(1, 2),
                 )
-                * 0.05
             )
+
+            # left_dpose[:, 2] = -0.05
+            # left_dpose[:, :NUM_XYZ] = (
+            #     torch.nn.functional.normalize(
+            #         self.object_position_w - self.left_index_fingertip_position_w(),
+            #         p=2,
+            #         dim=-1,
+            #     )
+            #     * 0.05
+            # )
             new_q = self.compute_ik(
                 right_dpose=right_dpose,
                 left_dpose=left_dpose,
@@ -1343,11 +1380,21 @@ class BimanualEnv(DirectRLEnv):
             check_nan_and_print_if_any(self.fabric_qd, "self.fabric_qd (after step)")
             check_nan_and_print_if_any(self.fabric_qdd, "self.fabric_qdd (after step)")
         else:
-            check_nan_and_print_if_any(self.fabric_hand_target, "self.fabric_hand_target (before set_features)")
-            check_nan_and_print_if_any(self.fabric_palm_target, "self.fabric_palm_target (before set_features)")
-            check_nan_and_print_if_any(self.fabric_q, "self.fabric_q (before set_features)")
-            check_nan_and_print_if_any(self.fabric_qd, "self.fabric_qd (before set_features)")
-            check_nan_and_print_if_any(self.fabric_qdd, "self.fabric_qdd (before set_features)")
+            check_nan_and_print_if_any(
+                self.fabric_hand_target, "self.fabric_hand_target (before set_features)"
+            )
+            check_nan_and_print_if_any(
+                self.fabric_palm_target, "self.fabric_palm_target (before set_features)"
+            )
+            check_nan_and_print_if_any(
+                self.fabric_q, "self.fabric_q (before set_features)"
+            )
+            check_nan_and_print_if_any(
+                self.fabric_qd, "self.fabric_qd (before set_features)"
+            )
+            check_nan_and_print_if_any(
+                self.fabric_qdd, "self.fabric_qdd (before set_features)"
+            )
             # Set the targets
             self.fabric.set_features(
                 self.fabric_hand_target,
@@ -1358,9 +1405,15 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_object_ids,
                 self.fabric_object_indicator,
             )
-            check_nan_and_print_if_any(self.fabric_q, "self.fabric_q (after set_features)")
-            check_nan_and_print_if_any(self.fabric_qd, "self.fabric_qd (after set_features)")
-            check_nan_and_print_if_any(self.fabric_qdd, "self.fabric_qdd (after set_features)")
+            check_nan_and_print_if_any(
+                self.fabric_q, "self.fabric_q (after set_features)"
+            )
+            check_nan_and_print_if_any(
+                self.fabric_qd, "self.fabric_qd (after set_features)"
+            )
+            check_nan_and_print_if_any(
+                self.fabric_qdd, "self.fabric_qdd (after set_features)"
+            )
             prev_fabric_q = self.fabric_q.detach().clone()
             prev_fabric_qd = self.fabric_qd.detach().clone()
             prev_fabric_qdd = self.fabric_qdd.detach().clone()
@@ -2412,21 +2465,25 @@ class BimanualEnv(DirectRLEnv):
                 )
         right_T_R_P = self.right_T_R_Ps[self.episode_length_buf]
         left_T_R_P = self.left_T_R_Ps[self.episode_length_buf]
-        assert right_T_R_P.shape == (self.num_envs, 4, 4), f"right_T_R_P shape: {right_T_R_P.shape}"
-        assert left_T_R_P.shape == (self.num_envs, 4, 4), f"left_T_R_P shape: {left_T_R_P.shape}"
-        right_target_wrist_pos = right_T_R_P[:, :3, 3]
+        assert right_T_R_P.shape == (self.num_envs, 4, 4), (
+            f"right_T_R_P shape: {right_T_R_P.shape}"
+        )
+        assert left_T_R_P.shape == (self.num_envs, 4, 4), (
+            f"left_T_R_P shape: {left_T_R_P.shape}"
+        )
+        right_target_wrist_pos_w = right_T_R_P[:, :3, 3] + self.scene.env_origins
         right_target_wrist_quat_wxyz = matrix_to_quat_wxyz(right_T_R_P[:, :3, :3])
-        left_target_wrist_pos = left_T_R_P[:, :3, 3]
+        left_target_wrist_pos_w = left_T_R_P[:, :3, 3] + self.scene.env_origins
         left_target_wrist_quat_wxyz = matrix_to_quat_wxyz(left_T_R_P[:, :3, :3])
         self.right_target_wrist_pose_visualizer.visualize(
-            translations=right_target_wrist_pos,
+            translations=right_target_wrist_pos_w,
             orientations=right_target_wrist_quat_wxyz,
             scales=torch.tensor(POSE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         self.left_target_wrist_pose_visualizer.visualize(
-            translations=left_target_wrist_pos,
+            translations=left_target_wrist_pos_w,
             orientations=left_target_wrist_quat_wxyz,
             scales=torch.tensor(POSE_SCALE, device=self.device)
             .unsqueeze(dim=0)
