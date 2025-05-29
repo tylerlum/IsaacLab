@@ -9,6 +9,7 @@ import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
+import pickle
 import isaaclab.envs.mdp as mdp
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
@@ -606,6 +607,15 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     )  # NOTE: Opacity not working
     fabric_world_visualizer.markers["cuboid"].size = (1.0, 1.0, 1.0)
 
+    right_target_wrist_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/right_target_wrist_pose"
+    )
+    right_target_wrist_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+    left_target_wrist_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/left_target_wrist_pose"
+    )
+    left_target_wrist_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+
 
 if FINGER_GOALS:
     REWARD_NAMES = [
@@ -655,6 +665,7 @@ class BimanualEnv(DirectRLEnv):
         self._setup_robot_idxs()
         self._setup_sanity_checks()
         self._setup_pytorch_kinematics()
+        self._setup_target_wrist_poses()
 
         # Taskmap is needed for FK, even if not using fabric
         # Must be done before _reset_state() because it uses the taskmap
@@ -689,6 +700,21 @@ class BimanualEnv(DirectRLEnv):
             urdf_str,
             end_link_name="left_palm_link",
         ).to(device=self.device)
+
+    def _setup_target_wrist_poses(self):
+        TARGET_WRIST_POSES_PATH = Path(
+            "/home/tylerlum/github_repos/bimanual_human2sim2robot/2025-05-29_basket.pkl"
+        )
+        assert TARGET_WRIST_POSES_PATH.exists(), f"{TARGET_WRIST_POSES_PATH} does not exist"
+        with open(TARGET_WRIST_POSES_PATH, "rb") as f:
+            data = pickle.load(f)
+        right_T_R_Ps = data["right_T_R_Ps"]
+        left_T_R_Ps = data["left_T_R_Ps"]
+        NUM_TIMESTEPS = right_T_R_Ps.shape[0]
+        assert_equals(right_T_R_Ps.shape, (NUM_TIMESTEPS, 4, 4))
+        assert_equals(left_T_R_Ps.shape, (NUM_TIMESTEPS, 4, 4))
+        self.right_T_R_Ps = torch.from_numpy(right_T_R_Ps).to(self.device).float()
+        self.left_T_R_Ps = torch.from_numpy(left_T_R_Ps).to(self.device).float()
 
     def _setup_robot_idxs(self):
         # Robot joint idxs
@@ -2132,6 +2158,14 @@ class BimanualEnv(DirectRLEnv):
                         )
                         for i in range(NUM_FABRIC_WORLD_CUBES)
                     ]
+            if not hasattr(self, "right_target_wrist_pose_visualizer"):
+                self.right_target_wrist_pose_visualizer = VisualizationMarkers(
+                    self.cfg.right_target_wrist_pose_visualizer
+                )
+            if not hasattr(self, "left_target_wrist_pose_visualizer"):
+                self.left_target_wrist_pose_visualizer = VisualizationMarkers(
+                    self.cfg.left_target_wrist_pose_visualizer
+                )
 
             # set their visibility to true
             self.origin_pose_visualizer.set_visibility(True)
@@ -2161,6 +2195,8 @@ class BimanualEnv(DirectRLEnv):
             elif hasattr(self, "fabric_world_visualizers"):
                 for visualizer in self.fabric_world_visualizers:
                     visualizer.set_visibility(False)
+            self.right_target_wrist_pose_visualizer.set_visibility(True)
+            self.left_target_wrist_pose_visualizer.set_visibility(True)
         else:
             if hasattr(self, "origin_pose_visualizer"):
                 self.origin_pose_visualizer.set_visibility(False)
@@ -2198,6 +2234,10 @@ class BimanualEnv(DirectRLEnv):
                 if hasattr(self, "fabric_world_visualizers"):
                     for visualizer in self.fabric_world_visualizers:
                         visualizer.set_visibility(False)
+            if hasattr(self, "right_target_wrist_pose_visualizer"):
+                self.right_target_wrist_pose_visualizer.set_visibility(False)
+            if hasattr(self, "left_target_wrist_pose_visualizer"):
+                self.left_target_wrist_pose_visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
         # Make sure the robot is initialized
@@ -2370,6 +2410,28 @@ class BimanualEnv(DirectRLEnv):
                         self.num_envs, dim=0
                     ),
                 )
+        right_T_R_P = self.right_T_R_Ps[self.episode_length_buf]
+        left_T_R_P = self.left_T_R_Ps[self.episode_length_buf]
+        assert right_T_R_P.shape == (self.num_envs, 4, 4), f"right_T_R_P shape: {right_T_R_P.shape}"
+        assert left_T_R_P.shape == (self.num_envs, 4, 4), f"left_T_R_P shape: {left_T_R_P.shape}"
+        right_target_wrist_pos = right_T_R_P[:, :3, 3]
+        right_target_wrist_quat_wxyz = matrix_to_quat_wxyz(right_T_R_P[:, :3, :3])
+        left_target_wrist_pos = left_T_R_P[:, :3, 3]
+        left_target_wrist_quat_wxyz = matrix_to_quat_wxyz(left_T_R_P[:, :3, :3])
+        self.right_target_wrist_pose_visualizer.visualize(
+            translations=right_target_wrist_pos,
+            orientations=right_target_wrist_quat_wxyz,
+            scales=torch.tensor(POSE_SCALE, device=self.device)
+            .unsqueeze(dim=0)
+            .repeat_interleave(self.num_envs, dim=0),
+        )
+        self.left_target_wrist_pose_visualizer.visualize(
+            translations=left_target_wrist_pos,
+            orientations=left_target_wrist_quat_wxyz,
+            scales=torch.tensor(POSE_SCALE, device=self.device)
+            .unsqueeze(dim=0)
+            .repeat_interleave(self.num_envs, dim=0),
+        )
 
     #### DEBUG END ####
 
