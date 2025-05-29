@@ -1306,12 +1306,22 @@ class BimanualEnv(DirectRLEnv):
 
     def _step_fabric_state(self):
         if USE_FABRIC_CUDA_GRAPH:
+            check_nan_and_print_if_any(self.fabric_q, "self.fabric_q (before step)")
+            check_nan_and_print_if_any(self.fabric_qd, "self.fabric_qd (before step)")
+            check_nan_and_print_if_any(self.fabric_qdd, "self.fabric_qdd (before step)")
             self.fabric_cuda_graph.replay()
             self.fabric_q.copy_(self.fabric_q_new)
             self.fabric_qd.copy_(self.fabric_qd_new)
             self.fabric_qdd.copy_(self.fabric_qdd_new)
-
+            check_nan_and_print_if_any(self.fabric_q, "self.fabric_q (after step)")
+            check_nan_and_print_if_any(self.fabric_qd, "self.fabric_qd (after step)")
+            check_nan_and_print_if_any(self.fabric_qdd, "self.fabric_qdd (after step)")
         else:
+            check_nan_and_print_if_any(self.fabric_hand_target, "self.fabric_hand_target (before set_features)")
+            check_nan_and_print_if_any(self.fabric_palm_target, "self.fabric_palm_target (before set_features)")
+            check_nan_and_print_if_any(self.fabric_q, "self.fabric_q (before set_features)")
+            check_nan_and_print_if_any(self.fabric_qd, "self.fabric_qd (before set_features)")
+            check_nan_and_print_if_any(self.fabric_qdd, "self.fabric_qdd (before set_features)")
             # Set the targets
             self.fabric.set_features(
                 self.fabric_hand_target,
@@ -1322,16 +1332,25 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_object_ids,
                 self.fabric_object_indicator,
             )
+            check_nan_and_print_if_any(self.fabric_q, "self.fabric_q (after set_features)")
+            check_nan_and_print_if_any(self.fabric_qd, "self.fabric_qd (after set_features)")
+            check_nan_and_print_if_any(self.fabric_qdd, "self.fabric_qdd (after set_features)")
+            prev_fabric_q = self.fabric_q.detach().clone()
+            prev_fabric_qd = self.fabric_qd.detach().clone()
+            prev_fabric_qdd = self.fabric_qdd.detach().clone()
 
             # Integrate fabrics one step producing new position and velocity.
             self.fabric_q, self.fabric_qd, self.fabric_qdd = (
                 self.fabric_integrator.step(
-                    self.fabric_q.detach(),
-                    self.fabric_qd.detach(),
-                    self.fabric_qdd.detach(),
+                    prev_fabric_q,
+                    prev_fabric_qd,
+                    prev_fabric_qdd,
                     self.fabric_dt,
                 )
             )
+            check_nan_and_print_if_any(self.fabric_q, "self.fabric_q (after step)")
+            check_nan_and_print_if_any(self.fabric_qd, "self.fabric_qd (after step)")
+            check_nan_and_print_if_any(self.fabric_qdd, "self.fabric_qdd (after step)")
 
     def _compute_intermediate_values(self):
         pass
