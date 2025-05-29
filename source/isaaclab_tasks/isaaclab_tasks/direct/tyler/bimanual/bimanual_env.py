@@ -41,6 +41,8 @@ from isaaclab_assets.robots.bimanual import BIMANUAL_CFG, BLUE_BIMANUAL_CFG
 from scipy.spatial.transform import Rotation as R
 from termcolor import colored
 
+ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent
+
 import wandb
 from isaaclab_tasks.direct.tyler.bimanual.utils.adjusted_terrain_importer import (
     AdjustedTerrainImporter,
@@ -711,9 +713,7 @@ class BimanualEnv(DirectRLEnv):
         ).to(device=self.device)
 
     def _setup_demo_trajectory(self):
-        DEMO_TRAJECTORY_PATH = Path(
-            "/home/tylerlum/github_repos/bimanual_human2sim2robot/2025-05-29_basket.pkl"
-        )
+        DEMO_TRAJECTORY_PATH = ROOT_DIR / "2025-05-29_basket.pkl"
         assert DEMO_TRAJECTORY_PATH.exists(), f"{DEMO_TRAJECTORY_PATH} does not exist"
         with open(DEMO_TRAJECTORY_PATH, "rb") as f:
             data = pickle.load(f)
