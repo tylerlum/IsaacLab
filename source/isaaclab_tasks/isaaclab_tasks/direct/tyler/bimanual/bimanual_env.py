@@ -1026,7 +1026,7 @@ class BimanualEnv(DirectRLEnv):
             right_wrist_quat_wxyz = right_wrist_pose_w[:, 3:]
             right_wrist_rot_matrix = quat_wxyz_to_matrix(right_wrist_quat_wxyz)
 
-            right_T_R_P = self.right_T_R_Ps[self.episode_length_buf]
+            right_T_R_P = self.right_T_R_Ps[self.episode_length_buf.clip(max=self.right_T_R_Ps.shape[0] - 1)]
             right_target_wrist_pos = right_T_R_P[:, :3, 3]
             right_target_wrist_rot_matrix = right_T_R_P[:, :3, :3]
 
@@ -1055,7 +1055,7 @@ class BimanualEnv(DirectRLEnv):
             left_wrist_quat_wxyz = left_wrist_pose_w[:, 3:]
             left_wrist_rot_matrix = quat_wxyz_to_matrix(left_wrist_quat_wxyz)
 
-            left_T_R_P = self.left_T_R_Ps[self.episode_length_buf]
+            left_T_R_P = self.left_T_R_Ps[self.episode_length_buf.clip(max=self.left_T_R_Ps.shape[0] - 1)]
             left_target_wrist_pos = left_T_R_P[:, :3, 3]
             left_target_wrist_rot_matrix = left_T_R_P[:, :3, :3]
 
@@ -1850,7 +1850,7 @@ class BimanualEnv(DirectRLEnv):
         died = torch.zeros_like(time_out)
 
         # Set to True to debug
-        DEBUG_NO_RESET = False
+        DEBUG_NO_RESET = True
         if DEBUG_NO_RESET:
             return died, time_out
 
@@ -2463,8 +2463,8 @@ class BimanualEnv(DirectRLEnv):
                         self.num_envs, dim=0
                     ),
                 )
-        right_T_R_P = self.right_T_R_Ps[self.episode_length_buf]
-        left_T_R_P = self.left_T_R_Ps[self.episode_length_buf]
+        right_T_R_P = self.right_T_R_Ps[self.episode_length_buf.clip(max=self.right_T_R_Ps.shape[0] - 1)]
+        left_T_R_P = self.left_T_R_Ps[self.episode_length_buf.clip(max=self.left_T_R_Ps.shape[0] - 1)]
         assert right_T_R_P.shape == (self.num_envs, 4, 4), (
             f"right_T_R_P shape: {right_T_R_P.shape}"
         )
