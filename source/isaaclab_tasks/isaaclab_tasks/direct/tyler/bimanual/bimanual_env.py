@@ -379,9 +379,9 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         spawn=sim_utils.UsdFileCfg(
             activate_contact_sensors=True,
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/starbucks_bottle/usd/starbucks_bottle.usd",
-            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/basket/usd_convex_decomp/basket.usd",
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/basket/usd_convex_decomp/basket.usd",
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/pitcher/usd_convex_decomp/pitcher.usd",
-            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/white_box/usd/white_box.usd",
+            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/white_box/usd/white_box.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=False,
@@ -410,9 +410,9 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         prim_path=f"{ENV_REGEX_NS}/GoalObject",
         spawn=sim_utils.UsdFileCfg(
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_starbucks_bottle/usd/starbucks_bottle.usd",
-            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_basket/usd/basket.usd",
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_basket/usd/basket.usd",
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_pitcher/usd/pitcher.usd",
-            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_white_box/usd/white_box.usd",
+            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_white_box/usd/white_box.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,
                 disable_gravity=False,
@@ -719,7 +719,7 @@ class BimanualEnv(DirectRLEnv):
 
     def _setup_demo_trajectory(self):
         ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
-        DEMO_TRAJECTORY_PATH = ROOT_DIR / "2025-05-29_outputs/box_2.pkl"
+        DEMO_TRAJECTORY_PATH = ROOT_DIR / "2025-05-29_outputs/basket_1.pkl"
         assert DEMO_TRAJECTORY_PATH.exists(), f"{DEMO_TRAJECTORY_PATH} does not exist"
         with open(DEMO_TRAJECTORY_PATH, "rb") as f:
             data = pickle.load(f)
@@ -736,7 +736,7 @@ class BimanualEnv(DirectRLEnv):
 
     def _setup_default_joint_pos(self):
         ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
-        DEMO_ARM_PATH = ROOT_DIR / "2025-05-29_outputs/box_2_arm.pkl"
+        DEMO_ARM_PATH = ROOT_DIR / "2025-05-29_outputs/basket_1_arm.pkl"
         assert DEMO_ARM_PATH.exists(), f"{DEMO_ARM_PATH} does not exist"
         with open(DEMO_ARM_PATH, "rb") as f:
             data = pickle.load(f)
