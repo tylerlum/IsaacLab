@@ -84,6 +84,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.ik_utils import (
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
     ISAACLAB_JOINT_ORDER,
+    VISER_JOINT_ORDER,
     PYTORCH_KINEMATICS_JOINT_ORDER,
     change_joint_order_torch,
     fabric_to_isaaclab_joint_order_torch,
@@ -712,7 +713,7 @@ class BimanualEnv(DirectRLEnv):
 
     def _setup_demo_trajectory(self):
         ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
-        DEMO_TRAJECTORY_PATH = ROOT_DIR / "2025-05-29_basket.pkl"
+        DEMO_TRAJECTORY_PATH = ROOT_DIR / "2025-05-29_outputs/basket_0.pkl"
         assert DEMO_TRAJECTORY_PATH.exists(), f"{DEMO_TRAJECTORY_PATH} does not exist"
         with open(DEMO_TRAJECTORY_PATH, "rb") as f:
             data = pickle.load(f)
@@ -726,6 +727,40 @@ class BimanualEnv(DirectRLEnv):
         self.right_T_R_Ps = torch.from_numpy(right_T_R_Ps).to(self.device).float()
         self.left_T_R_Ps = torch.from_numpy(left_T_R_Ps).to(self.device).float()
         self.T_R_Os = torch.from_numpy(T_R_Os).to(self.device).float()
+
+    def _setup_default_joint_pos(self):
+        ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
+        DEMO_ARM_PATH = ROOT_DIR / "2025-05-29_outputs/basket_0_arm.pkl"
+        assert DEMO_ARM_PATH.exists(), f"{DEMO_ARM_PATH} does not exist"
+        with open(DEMO_ARM_PATH, "rb") as f:
+            data = pickle.load(f)
+        right_arm_q = data["right_arm_q"]
+        left_arm_q = data["left_arm_q"]
+        assert right_arm_q.shape == left_arm_q.shape == (NUM_ARM_JOINTS,), (
+            f"Expected right_arm_q and left_arm_q to have shape (NUM_ARM_JOINTS,), got {right_arm_q.shape} and {left_arm_q.shape}"
+        )
+        orig_default_q_isaaclab = self.robot.data.default_joint_pos.clone()
+        assert orig_default_q_isaaclab.shape == (
+            self.num_envs,
+            NUM_BIMANUAL * NUM_ARM_HAND_JOINTS,
+        ), (
+            f"Expected default_joint_pos to have shape (NUM_BIMANUAL * NUM_ARM_HAND_JOINTS,), got {orig_default_q_isaaclab.shape}"
+        )
+        orig_default_q_viser = change_joint_order_torch(
+            orig_default_q_isaaclab,
+            from_order=ISAACLAB_JOINT_ORDER,
+            to_order=VISER_JOINT_ORDER,
+        )
+        new_default_q_viser = orig_default_q_viser.clone()
+        new_default_q_viser[:, :NUM_ARM_JOINTS] = right_arm_q
+        new_default_q_viser[:, NUM_ARM_HAND_JOINTS:NUM_ARM_HAND_JOINTS + NUM_ARM_JOINTS] = left_arm_q
+        new_default_q_isaaclab = change_joint_order_torch(
+            new_default_q_viser,
+            from_order=VISER_JOINT_ORDER,
+            to_order=ISAACLAB_JOINT_ORDER,
+        )
+        assert_equals(new_default_q_isaaclab.shape, orig_default_q_isaaclab.shape)
+        self.robot_custom_default_joint_pos = new_default_q_isaaclab
 
     def _setup_robot_idxs(self):
         # Robot joint idxs
@@ -1348,7 +1383,8 @@ class BimanualEnv(DirectRLEnv):
         # Arm
         ABSOLUTE_ARM_CONTROL = False
         if ABSOLUTE_ARM_CONTROL:
-            arm_action_offset = self.robot.data.default_joint_pos[:, self._joint_idxs][
+            # arm_action_offset = self.robot.data.default_joint_pos[:, self._joint_idxs][
+            arm_action_offset = self.robot_custom_default_joint_pos[:, self._joint_idxs][
                 :, : (NUM_ARM_JOINTS * NUM_BIMANUAL)
             ]
         else:
@@ -1366,7 +1402,8 @@ class BimanualEnv(DirectRLEnv):
         )
 
         # Hand
-        hand_action_offset = self.robot.data.default_joint_pos[:, self._joint_idxs][
+        # hand_action_offset = self.robot.data.default_joint_pos[:, self._joint_idxs][
+        hand_action_offset = self.robot_custom_default_joint_pos[:, self._joint_idxs][
             :, NUM_ARM_JOINTS * NUM_BIMANUAL :
         ]
         hand_position_targets = (
@@ -1944,7 +1981,8 @@ class BimanualEnv(DirectRLEnv):
         self._compute_intermediate_values()
 
     def _reset_robot(self, env_ids: torch.Tensor):
-        joint_pos = self.robot.data.default_joint_pos[env_ids].clone()
+        # joint_pos = self.robot.data.default_joint_pos[env_ids].clone()
+        joint_pos = self.robot_custom_default_joint_pos[env_ids].clone()
         joint_pos *= math_utils.sample_uniform(
             *(0.95, 1.05), joint_pos.shape, joint_pos.device
         )
