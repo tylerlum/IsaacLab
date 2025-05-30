@@ -676,6 +676,7 @@ class BimanualEnv(DirectRLEnv):
         self._setup_sanity_checks()
         self._setup_pytorch_kinematics()
         self._setup_demo_trajectory()
+        self._setup_default_joint_pos()
 
         # Taskmap is needed for FK, even if not using fabric
         # Must be done before _reset_state() because it uses the taskmap
@@ -752,8 +753,8 @@ class BimanualEnv(DirectRLEnv):
             to_order=VISER_JOINT_ORDER,
         )
         new_default_q_viser = orig_default_q_viser.clone()
-        new_default_q_viser[:, :NUM_ARM_JOINTS] = right_arm_q
-        new_default_q_viser[:, NUM_ARM_HAND_JOINTS:NUM_ARM_HAND_JOINTS + NUM_ARM_JOINTS] = left_arm_q
+        new_default_q_viser[:, :NUM_ARM_JOINTS] = torch.from_numpy(right_arm_q).to(self.device).float().unsqueeze(dim=0)
+        new_default_q_viser[:, NUM_ARM_HAND_JOINTS:NUM_ARM_HAND_JOINTS + NUM_ARM_JOINTS] = torch.from_numpy(left_arm_q).to(self.device).float().unsqueeze(dim=0)
         new_default_q_isaaclab = change_joint_order_torch(
             new_default_q_viser,
             from_order=VISER_JOINT_ORDER,
