@@ -84,8 +84,8 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.ik_utils import (
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
     ISAACLAB_JOINT_ORDER,
-    VISER_JOINT_ORDER,
     PYTORCH_KINEMATICS_JOINT_ORDER,
+    VISER_JOINT_ORDER,
     change_joint_order_torch,
     fabric_to_isaaclab_joint_order_torch,
     isaaclab_to_fabric_joint_order_torch,
@@ -93,6 +93,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
 from isaaclab_tasks.direct.tyler.bimanual.utils.object_constants import (
     NUM_OBJECT_KEYPOINTS,
     OBJECT_KEYPOINT_OFFSETS,
+    OBJECT_NUM_RIGID_BODIES,
     compute_keypoint_positions,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.robot_constants import (
@@ -753,8 +754,12 @@ class BimanualEnv(DirectRLEnv):
             to_order=VISER_JOINT_ORDER,
         )
         new_default_q_viser = orig_default_q_viser.clone()
-        new_default_q_viser[:, :NUM_ARM_JOINTS] = torch.from_numpy(right_arm_q).to(self.device).float().unsqueeze(dim=0)
-        new_default_q_viser[:, NUM_ARM_HAND_JOINTS:NUM_ARM_HAND_JOINTS + NUM_ARM_JOINTS] = torch.from_numpy(left_arm_q).to(self.device).float().unsqueeze(dim=0)
+        new_default_q_viser[:, :NUM_ARM_JOINTS] = (
+            torch.from_numpy(right_arm_q).to(self.device).float().unsqueeze(dim=0)
+        )
+        new_default_q_viser[
+            :, NUM_ARM_HAND_JOINTS : NUM_ARM_HAND_JOINTS + NUM_ARM_JOINTS
+        ] = torch.from_numpy(left_arm_q).to(self.device).float().unsqueeze(dim=0)
         new_default_q_isaaclab = change_joint_order_torch(
             new_default_q_viser,
             from_order=VISER_JOINT_ORDER,
@@ -1254,8 +1259,12 @@ class BimanualEnv(DirectRLEnv):
 
     def _apply_external_wrench(self):
         # NOTE: external forces are stateful and need to be reset after applying them
-        external_force_o = torch.zeros(self.num_envs, NUM_XYZ, device=self.device)
-        external_torque_o = torch.zeros(self.num_envs, NUM_XYZ, device=self.device)
+        external_force_o = torch.zeros(
+            self.num_envs, OBJECT_NUM_RIGID_BODIES, NUM_XYZ, device=self.device
+        )
+        external_torque_o = torch.zeros(
+            self.num_envs, OBJECT_NUM_RIGID_BODIES, NUM_XYZ, device=self.device
+        )
 
         # Keyboard force
         if (self.keyboard_external_force_w.abs() > 0.0).any():
@@ -1278,7 +1287,9 @@ class BimanualEnv(DirectRLEnv):
             # Reset keyboard external force after applying it
             self.keyboard_external_force_w[:] = 0.0
 
-            external_force_o += keyboard_external_force_o
+            external_force_o += keyboard_external_force_o.unsqueeze(
+                dim=1
+            ).repeat_interleave(OBJECT_NUM_RIGID_BODIES, dim=1)
 
         # Random force
         APPLY_RANDOM_FORCE = False
@@ -1286,7 +1297,9 @@ class BimanualEnv(DirectRLEnv):
             random_force_o = (
                 torch.randn(self.num_envs, NUM_XYZ, device=self.device) * FORCE_MAG
             )
-            external_force_o += random_force_o
+            external_force_o += random_force_o.repeat_interleave(
+                OBJECT_NUM_RIGID_BODIES, dim=1
+            )
 
         self.object.set_external_force_and_torque(
             forces=external_force_o,
@@ -1385,9 +1398,9 @@ class BimanualEnv(DirectRLEnv):
         ABSOLUTE_ARM_CONTROL = False
         if ABSOLUTE_ARM_CONTROL:
             # arm_action_offset = self.robot.data.default_joint_pos[:, self._joint_idxs][
-            arm_action_offset = self.robot_custom_default_joint_pos[:, self._joint_idxs][
-                :, : (NUM_ARM_JOINTS * NUM_BIMANUAL)
-            ]
+            arm_action_offset = self.robot_custom_default_joint_pos[
+                :, self._joint_idxs
+            ][:, : (NUM_ARM_JOINTS * NUM_BIMANUAL)]
         else:
             arm_action_offset = self.robot.data.joint_pos[:, self._joint_idxs][
                 :, : (NUM_ARM_JOINTS * NUM_BIMANUAL)
