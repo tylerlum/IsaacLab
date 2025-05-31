@@ -143,7 +143,7 @@ CONTACT_SENSOR_HISTORY_LENGTH = 6
 
 FORCE_MAG = 1.0
 
-INCLUDE_CONTACT_REWARD = False
+INCLUDE_CONTACT_REWARD = True
 
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
@@ -1809,7 +1809,7 @@ class BimanualEnv(DirectRLEnv):
                 }
                 if INCLUDE_CONTACT_REWARD:
                     self.individual_reward_weights["fingertip_contact"] = (
-                        0.01  # max = NUM_BIMANUAL * NUM_FINGERS * num_steps ~ 600
+                        0.05  # max = NUM_BIMANUAL * NUM_FINGERS * num_steps ~ 600
                     )
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
