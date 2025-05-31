@@ -1073,7 +1073,9 @@ class BimanualEnv(DirectRLEnv):
         if OVERWRITE_GO_TO_TARGET:
             if not hasattr(self, "CUSTOM_left_T_R_P"):
                 self.CUSTOM_left_T_R_P = self.left_T_R_Ps[
-                    self.reference_float_idx.long().clip(max=self.left_T_R_Ps.shape[0] - 1)
+                    self.reference_float_idx.long().clip(
+                        max=self.left_T_R_Ps.shape[0] - 1
+                    )
                 ]
             right_dpose = torch.zeros(
                 self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
@@ -1262,7 +1264,9 @@ class BimanualEnv(DirectRLEnv):
 
         self._apply_external_wrench()
 
-        T_R_Os = self.T_R_Os[self.reference_float_idx.long().clip(max=self.T_R_Os.shape[0] - 1)]
+        T_R_Os = self.T_R_Os[
+            self.reference_float_idx.long().clip(max=self.T_R_Os.shape[0] - 1)
+        ]
         goal_object_pos = T_R_Os[:, :3, 3] + self.scene.env_origins
         goal_object_quat_wxyz = matrix_to_quat_wxyz(T_R_Os[:, :3, :3])
         self.goal_object.write_root_pose_to_sim(
@@ -1519,8 +1523,8 @@ class BimanualEnv(DirectRLEnv):
     def _compute_intermediate_values(self):
         object_goal_keypoint_dist = self.object_goal_keypoint_distance
         small_object_goal_distance_ids = (
-            object_goal_keypoint_dist < 0.25
-        ).nonzero(as_tuple=False).squeeze(-1)
+            (object_goal_keypoint_dist < 0.25).nonzero(as_tuple=False).squeeze(-1)
+        )
         self.reference_float_idx[small_object_goal_distance_ids] += 1
 
     def _get_observations(self) -> dict:
@@ -2210,7 +2214,9 @@ class BimanualEnv(DirectRLEnv):
             self.keyboard_external_force_w[env_ids] = torch.zeros(
                 len(env_ids), NUM_XYZ, device=self.device
             )
-            self.reference_float_idx[env_ids] = torch.zeros(len(env_ids), device=self.device)
+            self.reference_float_idx[env_ids] = torch.zeros(
+                len(env_ids), device=self.device
+            )
 
     def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
