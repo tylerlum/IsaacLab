@@ -675,6 +675,13 @@ class BimanualEnv(DirectRLEnv):
             "cmd": [],
             "episode_length_counter": [],
         }
+        self.FORCE_LIFTING = False
+        self.FORCE_DOWN = False
+        if self.viewport_camera_controller is not None:
+            self.viewport_camera_controller.update_view_location(
+                eye=(3.0, 0.0, 2.0),
+                lookat=(0.0, 0.0, 0.0),
+            )
 
         self._setup_keyboard()
         self._setup_robot_idxs()
@@ -1178,12 +1185,45 @@ class BimanualEnv(DirectRLEnv):
             self.fabric_palm_target.copy_(new_fabric_palm_target)
             self.fabric_hand_target.copy_(new_fabric_hand_target)
 
+            if self.FORCE_LIFTING:
+                self.fabric_palm_target[:, 2] = 1.0
+                self.fabric_palm_target[:, 8] = 1.0
+            if self.FORCE_DOWN:
+                self.fabric_palm_target[:, 2] = 0.0
+                self.fabric_palm_target[:, 8] = 0.0
+
             check_nan_and_print_if_any(
                 self.fabric_palm_target, "self.fabric_palm_target (after copying)"
             )
             check_nan_and_print_if_any(
                 self.fabric_hand_target, "self.fabric_hand_target (after copying)"
             )
+
+        OVERWRITE_GO_TO_TARGET_2 = True
+        if OVERWRITE_GO_TO_TARGET_2:
+            right_T_R_P = self.right_T_R_Ps[
+                self.reference_float_idx.long().clip(max=self.right_T_R_Ps.shape[0] - 1)
+            ]
+            right_target_wrist_pos = right_T_R_P[:, :3, 3]
+            right_target_wrist_rot_matrix = right_T_R_P[:, :3, :3]
+            right_target_wrist_euler_ZYX = matrix_to_euler_angles(
+                right_target_wrist_rot_matrix,
+                "ZYX",
+            )
+
+            left_T_R_P = self.left_T_R_Ps[
+                self.reference_float_idx.long().clip(max=self.left_T_R_Ps.shape[0] - 1)
+            ]
+            left_target_wrist_pos = left_T_R_P[:, :3, 3]
+            left_target_wrist_rot_matrix = left_T_R_P[:, :3, :3]
+            left_target_wrist_euler_ZYX = matrix_to_euler_angles(
+                left_target_wrist_rot_matrix,
+                "ZYX",
+            )
+            self.fabric_palm_target[:, :3] = right_target_wrist_pos
+            self.fabric_palm_target[:, 3:6] = right_target_wrist_euler_ZYX
+            self.fabric_palm_target[:, 6:9] = left_target_wrist_pos
+            self.fabric_palm_target[:, 9:12] = left_target_wrist_euler_ZYX
 
         if USE_FABRIC:
             check_nan_and_print_if_any(
@@ -1256,6 +1296,50 @@ class BimanualEnv(DirectRLEnv):
         DISABLE_ACTIONS = False  # Set to True to debug actions
         if DISABLE_ACTIONS:
             position_targets[:] = 0.0
+
+        # HACK
+        # right_dpose = torch.zeros(
+        #     self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
+        # )
+        # right_wrist_pose_w = self.right_palm_pose_w()
+        # right_wrist_pos = right_wrist_pose_w[:, :3] - self.scene.env_origins
+        # right_wrist_quat_wxyz = right_wrist_pose_w[:, 3:]
+        # right_wrist_rot_matrix = quat_wxyz_to_matrix(right_wrist_quat_wxyz)
+
+        # right_T_R_P = self.right_T_R_Ps[
+        #     self.reference_float_idx.long().clip(max=self.right_T_R_Ps.shape[0] - 1)
+        # ]
+        # right_target_wrist_pos = right_T_R_P[:, :3, 3]
+        # right_target_wrist_rot_matrix = right_T_R_P[:, :3, :3]
+
+        # right_dpose[:, :NUM_XYZ] = right_target_wrist_pos - right_wrist_pos
+        # right_dpose[:, NUM_XYZ:] = matrix_to_axis_angle(
+        #     torch.bmm(
+        #         right_target_wrist_rot_matrix,
+        #         right_wrist_rot_matrix.transpose(1, 2),
+        #     )
+        # )
+        # left_dpose = right_dpose.clone()
+        # new_q = self.compute_ik(
+        #     right_dpose=right_dpose,
+        #     left_dpose=left_dpose,
+        # )
+        # new_q_viser = change_joint_order_torch(
+        #     new_q,
+        #     from_order=ISAACLAB_JOINT_ORDER,
+        #     to_order=VISER_JOINT_ORDER,
+        # )
+        # position_targets_viser = change_joint_order_torch(
+        #     position_targets,
+        #     from_order=ISAACLAB_JOINT_ORDER,
+        #     to_order=VISER_JOINT_ORDER,
+        # )
+        # position_targets_viser[:, :NUM_ARM_JOINTS] = new_q_viser[:, :NUM_ARM_JOINTS]
+        # position_targets = change_joint_order_torch(
+        #     position_targets_viser,
+        #     from_order=VISER_JOINT_ORDER,
+        #     to_order=ISAACLAB_JOINT_ORDER,
+        # )
 
         self.robot.set_joint_position_target(position_targets)
         if self.include_blue_robot:
@@ -1484,6 +1568,7 @@ class BimanualEnv(DirectRLEnv):
             check_nan_and_print_if_any(
                 self.fabric_qdd, "self.fabric_qdd (before set_features)"
             )
+
             # Set the targets
             self.fabric.set_features(
                 self.fabric_hand_target,
@@ -2017,6 +2102,13 @@ class BimanualEnv(DirectRLEnv):
         for fingertip_contact_sensor in self.fingertip_contact_sensors.values():
             fingertip_contact_sensor.reset(env_ids)
         super()._reset_idx(env_ids)
+
+        # self._modify_object_masses(scale=1.0, env_ids=env_ids)
+        self._modify_object_materials(
+            static_friction=10.0,
+            dynamic_friction=10.0,
+            env_ids=env_ids,
+        )
 
         # Reset robot
         self._reset_robot(env_ids)
@@ -2702,6 +2794,16 @@ class BimanualEnv(DirectRLEnv):
                         func=self._apply_external_force_neg_z,
                         args=[],
                     ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.U,
+                        func=self._toggle_force_lifting,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.J,
+                        func=self._toggle_force_down,
+                        args=[],
+                    ),
                 ]
             )
         except AttributeError as e:
@@ -2715,6 +2817,14 @@ class BimanualEnv(DirectRLEnv):
             )
             print(colored("~" * 100, "red"))
             return
+
+    def _toggle_force_lifting(self):
+        self.FORCE_LIFTING = not self.FORCE_LIFTING
+        print(colored(f"Toggling force lifting: {self.FORCE_LIFTING}", "green"))
+
+    def _toggle_force_down(self):
+        self.FORCE_DOWN = not self.FORCE_DOWN
+        print(colored(f"Toggling force down: {self.FORCE_DOWN}", "green"))
 
     def _reset_kbc(self):
         print(colored("In reset_kbc", "green"))
@@ -3224,6 +3334,81 @@ class BimanualEnv(DirectRLEnv):
         return new_q
 
     #### PYTORCH KINEMATICS END ####
+
+    #### CHANGE SIMULATION PROPERTIES START ####
+    def _modify_object_masses(
+        self, scale: float, env_ids: Optional[torch.Tensor] = None
+    ) -> None:
+        asset_cfg = SceneEntityCfg("object", body_names=".*")
+
+        # extract the used quantities (to enable type-hinting)
+        asset: RigidObject | Articulation = self.scene[asset_cfg.name]
+
+        # resolve environment ids
+        if env_ids is None:
+            env_ids = torch.arange(self.scene.num_envs, device="cpu")
+        else:
+            env_ids = env_ids.cpu()
+
+        # resolve body indices
+        if asset_cfg.body_ids == slice(None):
+            body_ids = torch.arange(asset.num_bodies, dtype=torch.int, device="cpu")
+        else:
+            body_ids = torch.tensor(asset_cfg.body_ids, dtype=torch.int, device="cpu")
+
+        # get the current masses of the bodies (num_assets, num_bodies)
+        masses = asset.root_physx_view.get_masses()
+        N_BODIES = masses.shape[1]
+        assert masses.shape == (self.num_envs, N_BODIES), (
+            f"masses.shape: {masses.shape}"
+        )
+
+        # apply randomization on default values
+        # this is to make sure when calling the function multiple times, the randomization is applied on the
+        # default values and not the previously randomized values
+        masses[env_ids[:, None], body_ids] = (
+            asset.data.default_mass[env_ids[:, None], body_ids].clone() * scale
+        )
+
+        # set the mass into the physics simulation
+        asset.root_physx_view.set_masses(masses, env_ids)
+
+    def _modify_object_materials(
+        self,
+        static_friction: Optional[float] = None,
+        dynamic_friction: Optional[float] = None,
+        restitution: Optional[float] = None,
+        env_ids: Optional[torch.Tensor] = None,
+    ) -> None:
+        asset_cfg = SceneEntityCfg("object", body_names=".*")
+        asset: RigidObject | Articulation = self.scene[asset_cfg.name]
+
+        # resolve environment ids
+        if env_ids is None:
+            env_ids = torch.arange(self.scene.num_envs, device="cpu")
+        else:
+            env_ids = env_ids.cpu()
+
+        # retrieve material buffer from the physics simulation
+        materials = asset.root_physx_view.get_material_properties()
+        N_BODIES = materials.shape[1]
+        assert materials.shape == (self.num_envs, N_BODIES, 3), (
+            f"materials.shape: {materials.shape}"
+        )
+
+        # update material buffer with new samples
+        STATIC_FRICTION_IDX, DYNAMIC_FRICTION_IDX, RESTITUTION_IDX = 0, 1, 2
+        if static_friction is not None:
+            materials[env_ids, :, STATIC_FRICTION_IDX] = static_friction
+        if dynamic_friction is not None:
+            materials[env_ids, :, DYNAMIC_FRICTION_IDX] = dynamic_friction
+        if restitution is not None:
+            materials[env_ids, :, RESTITUTION_IDX] = restitution
+
+        # apply to simulation
+        asset.root_physx_view.set_material_properties(materials, env_ids)
+
+    #### CHANGE SIMULATION PROPERTIES END ####
 
     #### OTHER PROPERTIES START ####
     @property
