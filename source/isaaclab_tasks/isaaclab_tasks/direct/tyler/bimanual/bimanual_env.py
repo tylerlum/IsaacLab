@@ -1796,7 +1796,6 @@ class BimanualEnv(DirectRLEnv):
                 object_tracking_reward,
                 0.1 * object_tracking_reward,
             )
-            print(f"object_goal_keypoint_dist: {object_goal_keypoint_dist}")
 
             self.individual_reward_bufs = {
                 "right_index_fingertip_to_object_dist": right_improvement,
