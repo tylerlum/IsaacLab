@@ -80,7 +80,7 @@ AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
 args_cli, hydra_args = parser.parse_known_args()
 # always enable cameras to record video
-if args_cli.video:
+if args_cli.video or args_cli.single_video:
     args_cli.enable_cameras = True
 
 # clear out sys.argv for Hydra
@@ -165,7 +165,9 @@ def main(
         log_root_path = os.path.join("logs", "simple_rl", args_cli.task)
         log_root_path = os.path.abspath(log_root_path)
         print(
-            colored(f"[INFO] Looking for checkpoint in directory: {log_root_path}", "green")
+            colored(
+                f"[INFO] Looking for checkpoint in directory: {log_root_path}", "green"
+            )
         )
         checkpoint_path = get_checkpoint_path(
             log_path=log_root_path, run_dir=".*", checkpoint=".*", other_dirs=["nn"]
@@ -178,7 +180,9 @@ def main(
 
     if checkpoint_path is not None:
         print(
-            colored(f"[INFO]: Loading model checkpoint from: {checkpoint_path}", "green")
+            colored(
+                f"[INFO]: Loading model checkpoint from: {checkpoint_path}", "green"
+            )
         )
 
     if args_cli.sigma is not None:
@@ -199,7 +203,9 @@ def main(
 
     # create isaac environment
     env = gym.make(
-        args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None
+        args_cli.task,
+        cfg=env_cfg,
+        render_mode="rgb_array" if args_cli.video or args_cli.single_video else None,
     )
 
     # convert to single-agent instance if required by the RL algorithm
@@ -207,7 +213,7 @@ def main(
         env = multi_agent_to_single_agent(env)
 
     # wrap for video recording
-    if args_cli.video:
+    if args_cli.video or args_cli.single_video:
         video_kwargs = {
             "video_folder": os.path.join(experiment_dir, "videos", "play"),
             "step_trigger": lambda step: step % args_cli.video_interval == 0,
@@ -297,14 +303,17 @@ def main(
                 if player.is_rnn and player.states is not None:
                     for s in player.states:
                         s[:, dones, :] = 0.0
-                print(colored(f"aggregated_rews[dones]: {aggregated_rews[dones]}", "green"))
+                print(
+                    colored(
+                        f"aggregated_rews[dones]: {aggregated_rews[dones]}", "green"
+                    )
+                )
                 aggregated_rews[dones] = 0.0
 
         timestep += 1
-        if args_cli.video:
+        if args_cli.single_video and timestep == args_cli.video_length:
             # Exit the play loop after recording one video
-            if timestep == args_cli.video_length and args_cli.single_video:
-                break
+            break
 
         # time delay for real-time evaluation
         actual_dt = time.time() - start_time
