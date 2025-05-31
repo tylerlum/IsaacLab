@@ -1073,7 +1073,7 @@ class BimanualEnv(DirectRLEnv):
         if OVERWRITE_GO_TO_TARGET:
             if not hasattr(self, "CUSTOM_left_T_R_P"):
                 self.CUSTOM_left_T_R_P = self.left_T_R_Ps[
-                    self.episode_length_buf.clip(max=self.left_T_R_Ps.shape[0] - 1)
+                    self.reference_float_idx.long().clip(max=self.left_T_R_Ps.shape[0] - 1)
                 ]
             right_dpose = torch.zeros(
                 self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
@@ -1084,7 +1084,7 @@ class BimanualEnv(DirectRLEnv):
             right_wrist_rot_matrix = quat_wxyz_to_matrix(right_wrist_quat_wxyz)
 
             right_T_R_P = self.right_T_R_Ps[
-                self.episode_length_buf.clip(max=self.right_T_R_Ps.shape[0] - 1)
+                self.reference_float_idx.long().clip(max=self.right_T_R_Ps.shape[0] - 1)
             ]
             right_target_wrist_pos = right_T_R_P[:, :3, 3]
             right_target_wrist_rot_matrix = right_T_R_P[:, :3, :3]
@@ -1115,7 +1115,7 @@ class BimanualEnv(DirectRLEnv):
             left_wrist_rot_matrix = quat_wxyz_to_matrix(left_wrist_quat_wxyz)
 
             left_T_R_P = self.left_T_R_Ps[
-                self.episode_length_buf.clip(max=self.left_T_R_Ps.shape[0] - 1)
+                self.reference_float_idx.long().clip(max=self.left_T_R_Ps.shape[0] - 1)
             ]
             left_target_wrist_pos = left_T_R_P[:, :3, 3]
             left_target_wrist_rot_matrix = left_T_R_P[:, :3, :3]
@@ -1262,7 +1262,7 @@ class BimanualEnv(DirectRLEnv):
 
         self._apply_external_wrench()
 
-        T_R_Os = self.T_R_Os[self.episode_length_buf.clip(max=self.T_R_Os.shape[0] - 1)]
+        T_R_Os = self.T_R_Os[self.reference_float_idx.long().clip(max=self.T_R_Os.shape[0] - 1)]
         goal_object_pos = T_R_Os[:, :3, 3] + self.scene.env_origins
         goal_object_quat_wxyz = matrix_to_quat_wxyz(T_R_Os[:, :3, :3])
         self.goal_object.write_root_pose_to_sim(
@@ -1517,7 +1517,11 @@ class BimanualEnv(DirectRLEnv):
             check_nan_and_print_if_any(self.fabric_qdd, "self.fabric_qdd (after step)")
 
     def _compute_intermediate_values(self):
-        pass
+        object_goal_keypoint_dist = self.object_goal_keypoint_distance
+        small_object_goal_distance_ids = (
+            object_goal_keypoint_dist < 0.25
+        ).nonzero(as_tuple=False).squeeze(-1)
+        self.reference_float_idx[small_object_goal_distance_ids] += 1
 
     def _get_observations(self) -> dict:
         right_palm_pose_w = self.right_palm_pose_w()
@@ -1763,6 +1767,7 @@ class BimanualEnv(DirectRLEnv):
             # ).float()
             num_contacts = object_contacts.float().sum(dim=-1)
 
+            # Increase reward if object is close to goal and fingertips are close to object
             object_goal_keypoint_dist = self.object_goal_keypoint_distance
             is_right_fingertips_object_close = (self.right_index_fingertip_position_w() - self.object_position_w).norm(dim=-1, p=2) < 0.3
             is_left_fingertips_object_close = (self.left_index_fingertip_position_w() - self.object_position_w).norm(dim=-1, p=2) < 0.3
@@ -1771,6 +1776,8 @@ class BimanualEnv(DirectRLEnv):
                 torch.exp(-object_goal_keypoint_dist * 10.0),
                 torch.zeros(self.num_envs, device=self.device),
             )
+
+            # Increase reward if object is lifted
             is_object_lifted = self.object_is_lifted
             is_goal_object_lifted = self.goal_object_is_lifted
             object_tracking_reward = torch.where(
@@ -1778,6 +1785,14 @@ class BimanualEnv(DirectRLEnv):
                 5 * object_tracking_reward,
                 object_tracking_reward,
             )
+
+            # Reduce reward if object is far from goal
+            object_tracking_reward = torch.where(
+                object_goal_keypoint_dist < 0.25,
+                object_tracking_reward,
+                0.1 * object_tracking_reward,
+            )
+            print(f"object_goal_keypoint_dist: {object_goal_keypoint_dist}")
 
             self.individual_reward_bufs = {
                 "right_index_fingertip_to_object_dist": right_improvement,
@@ -1842,7 +1857,8 @@ class BimanualEnv(DirectRLEnv):
         # 4. _compute_intermediate_values() (compute intermediate values)
         # 5. _get_dones() (compute done/time_out)
         # 6. _get_rewards() (compute rewards)
-        # 7. _get_observations() (compute observations)
+        # 7. _reset_idx() (reset envs)
+        # 8. _get_observations() (compute observations)
         # In this pipeline, we add _end_of_step() to update some internal state after each physics step, but before the observation step.
         self._end_of_step()
         return total_reward
@@ -2009,8 +2025,6 @@ class BimanualEnv(DirectRLEnv):
         # Since it uses the newly sampled initial robot and object and goal poses
         self._reset_state(env_ids)
 
-        self._compute_intermediate_values()
-
     def _reset_robot(self, env_ids: torch.Tensor):
         # joint_pos = self.robot.data.default_joint_pos[env_ids].clone()
         joint_pos = self.robot_custom_default_joint_pos[env_ids].clone()
@@ -2128,6 +2142,7 @@ class BimanualEnv(DirectRLEnv):
             self.keyboard_external_force_w = torch.zeros(
                 self.num_envs, NUM_XYZ, device=self.device
             )
+            self.reference_float_idx = torch.zeros(self.num_envs, device=self.device)
         else:
             self.raw_actions[env_ids] = torch.zeros(
                 len(env_ids), self.cfg.action_space, device=self.device
@@ -2195,6 +2210,7 @@ class BimanualEnv(DirectRLEnv):
             self.keyboard_external_force_w[env_ids] = torch.zeros(
                 len(env_ids), NUM_XYZ, device=self.device
             )
+            self.reference_float_idx[env_ids] = torch.zeros(len(env_ids), device=self.device)
 
     def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
@@ -2579,10 +2595,10 @@ class BimanualEnv(DirectRLEnv):
                     ),
                 )
         right_T_R_P = self.right_T_R_Ps[
-            self.episode_length_buf.clip(max=self.right_T_R_Ps.shape[0] - 1)
+            self.reference_float_idx.long().clip(max=self.right_T_R_Ps.shape[0] - 1)
         ]
         left_T_R_P = self.left_T_R_Ps[
-            self.episode_length_buf.clip(max=self.left_T_R_Ps.shape[0] - 1)
+            self.reference_float_idx.long().clip(max=self.left_T_R_Ps.shape[0] - 1)
         ]
         assert right_T_R_P.shape == (self.num_envs, 4, 4), (
             f"right_T_R_P shape: {right_T_R_P.shape}"
