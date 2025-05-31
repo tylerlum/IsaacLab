@@ -55,6 +55,9 @@ parser.add_argument(
 parser.add_argument(
     "--experiment_name", type=str, default=None, help="Name of the experiment."
 )
+parser.add_argument(
+    "--wandb_group", type=str, default=None, help="Name of the wandb group."
+)
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -206,7 +209,7 @@ def main(
             project=f"isaaclab_{args_cli.task}",
             entity="tylerlum",
             name=wandb_name,
-            group=None,
+            group=args_cli.wandb_group,
             config=wandb_config,
             sync_tensorboard=True,
             id=f"{wandb_name}_{generate_id()}",
