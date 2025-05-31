@@ -184,7 +184,7 @@ def compute_num_states():
         + 1  # episode_length_buf
         + 1  # object_is_lifted
         + 1  # object_has_been_lifted_this_episode
-        + (NUM_FINGERS * NUM_BIMANUAL)  # fingertip contacts
+        + (17 * NUM_BIMANUAL)  # fingertip contacts
     )
 
 
@@ -1632,30 +1632,30 @@ class BimanualEnv(DirectRLEnv):
             f"object_forces.shape: {object_forces.shape} != (self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS)): {(self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS))}"
         )
         object_contacts = object_forces > 0.01
-        right_index_tip_contact = object_contacts[
-            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_index_link_3")
-        ]
-        left_index_tip_contact = object_contacts[
-            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_index_link_3")
-        ]
-        right_middle_tip_contact = object_contacts[
-            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_middle_link_3")
-        ]
-        left_middle_tip_contact = object_contacts[
-            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_middle_link_3")
-        ]
-        right_ring_tip_contact = object_contacts[
-            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_ring_link_3")
-        ]
-        left_ring_tip_contact = object_contacts[
-            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_ring_link_3")
-        ]
-        right_thumb_tip_contact = object_contacts[
-            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_thumb_link_3")
-        ]
-        left_thumb_tip_contact = object_contacts[
-            :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_thumb_link_3")
-        ]
+        # right_index_tip_contact = object_contacts[
+        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_index_link_3")
+        # ]
+        # left_index_tip_contact = object_contacts[
+        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_index_link_3")
+        # ]
+        # right_middle_tip_contact = object_contacts[
+        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_middle_link_3")
+        # ]
+        # left_middle_tip_contact = object_contacts[
+        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_middle_link_3")
+        # ]
+        # right_ring_tip_contact = object_contacts[
+        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_ring_link_3")
+        # ]
+        # left_ring_tip_contact = object_contacts[
+        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_ring_link_3")
+        # ]
+        # right_thumb_tip_contact = object_contacts[
+        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_thumb_link_3")
+        # ]
+        # left_thumb_tip_contact = object_contacts[
+        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_thumb_link_3")
+        # ]
 
         # Add critic observations
         state_dict = {
@@ -1674,22 +1674,23 @@ class BimanualEnv(DirectRLEnv):
             "object_has_been_lifted_this_episode": self.object_has_been_lifted_this_episode.reshape(
                 self.num_envs, -1
             ),
-            "right_index_tip_contact": right_index_tip_contact.reshape(
-                self.num_envs, -1
-            ),
-            "left_index_tip_contact": left_index_tip_contact.reshape(self.num_envs, -1),
-            "right_middle_tip_contact": right_middle_tip_contact.reshape(
-                self.num_envs, -1
-            ),
-            "left_middle_tip_contact": left_middle_tip_contact.reshape(
-                self.num_envs, -1
-            ),
-            "right_ring_tip_contact": right_ring_tip_contact.reshape(self.num_envs, -1),
-            "left_ring_tip_contact": left_ring_tip_contact.reshape(self.num_envs, -1),
-            "right_thumb_tip_contact": right_thumb_tip_contact.reshape(
-                self.num_envs, -1
-            ),
-            "left_thumb_tip_contact": left_thumb_tip_contact.reshape(self.num_envs, -1),
+            "fingertip_contact": object_contacts.float().reshape(self.num_envs, -1),
+            # "right_index_tip_contact": right_index_tip_contact.reshape(
+            #     self.num_envs, -1
+            # ).float(),
+            # "left_index_tip_contact": left_index_tip_contact.reshape(self.num_envs, -1).float(),
+            # "right_middle_tip_contact": right_middle_tip_contact.reshape(
+            #     self.num_envs, -1
+            # ).float(),
+            # "left_middle_tip_contact": left_middle_tip_contact.reshape(
+            #     self.num_envs, -1
+            # ).float(),
+            # "right_ring_tip_contact": right_ring_tip_contact.reshape(self.num_envs, -1).float(),
+            # "left_ring_tip_contact": left_ring_tip_contact.reshape(self.num_envs, -1).float(),
+            # "right_thumb_tip_contact": right_thumb_tip_contact.reshape(
+            #     self.num_envs, -1
+            # ).float(),
+            # "left_thumb_tip_contact": left_thumb_tip_contact.reshape(self.num_envs, -1).float(),
         }
         for k, v in state_dict.items():
             if v.ndim != 2:
@@ -1742,24 +1743,25 @@ class BimanualEnv(DirectRLEnv):
                 f"object_forces.shape: {object_forces.shape} != (self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS)): {(self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS))}"
             )
             object_contacts = object_forces > 0.01
-            right_index_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_index_link_3")]
-            left_index_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_index_link_3")]
-            right_middle_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_middle_link_3")]
-            left_middle_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_middle_link_3")]
-            right_ring_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_ring_link_3")]
-            left_ring_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_ring_link_3")]
-            right_thumb_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_thumb_link_3")]
-            left_thumb_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_thumb_link_3")]
-            num_tip_contacts = (
-                right_index_tip_contact
-                + left_index_tip_contact
-                + right_middle_tip_contact
-                + left_middle_tip_contact
-                + right_ring_tip_contact
-                + left_ring_tip_contact
-                + right_thumb_tip_contact
-                + left_thumb_tip_contact
-            ).float()
+            # right_index_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_index_link_3")]
+            # left_index_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_index_link_3")]
+            # right_middle_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_middle_link_3")]
+            # left_middle_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_middle_link_3")]
+            # right_ring_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_ring_link_3")]
+            # left_ring_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_ring_link_3")]
+            # right_thumb_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_thumb_link_3")]
+            # left_thumb_tip_contact = object_contacts[:, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_thumb_link_3")]
+            # num_tip_contacts = (
+            #     right_index_tip_contact.float()
+            #     + left_index_tip_contact.float()
+            #     + right_middle_tip_contact.float()
+            #     + left_middle_tip_contact.float()
+            #     + right_ring_tip_contact.float()
+            #     + left_ring_tip_contact.float()
+            #     + right_thumb_tip_contact.float()
+            #     + left_thumb_tip_contact.float()
+            # ).float()
+            num_contacts = object_contacts.float().sum(dim=-1)
 
             object_goal_keypoint_dist = self.object_goal_keypoint_distance
             is_right_fingertips_object_close = (self.right_index_fingertip_position_w() - self.object_position_w).norm(dim=-1, p=2) < 0.3
@@ -1786,7 +1788,7 @@ class BimanualEnv(DirectRLEnv):
                 "object_tracking_reward": object_tracking_reward,
             }
             if INCLUDE_CONTACT_REWARD:
-                self.individual_reward_bufs["fingertip_contact"] = num_tip_contacts
+                self.individual_reward_bufs["fingertip_contact"] = num_contacts
         # fmt: on
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
             f"Individual reward buffers and reward names do not match: {self.individual_reward_bufs.keys()} vs {REWARD_NAMES}\nOnly in individual reward buffers: {set(self.individual_reward_bufs.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_bufs.keys())}"
@@ -1809,7 +1811,7 @@ class BimanualEnv(DirectRLEnv):
                 }
                 if INCLUDE_CONTACT_REWARD:
                     self.individual_reward_weights["fingertip_contact"] = (
-                        0.05  # max = NUM_BIMANUAL * NUM_FINGERS * num_steps ~ 600
+                        0.01  # max = NUM_BIMANUAL * 17 * num_steps ~ 2500
                     )
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
