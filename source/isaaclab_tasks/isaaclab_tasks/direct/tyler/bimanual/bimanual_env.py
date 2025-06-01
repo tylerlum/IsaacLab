@@ -154,7 +154,7 @@ def compute_num_actions():
 def compute_num_observations():
     return (
         (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # q
-        # + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # qd
+        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # qd
         + (NUM_XYZ * NUM_FINGERS * NUM_BIMANUAL)  # fingertip positions
         + ((NUM_XYZ + NUM_QUAT) * NUM_BIMANUAL)  # palm poses
         + (NUM_XYZ + NUM_QUAT)  # object position and orientation
@@ -163,21 +163,22 @@ def compute_num_observations():
         + (
             NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0
         )  # filtered arm actions
-        # + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)  # fabric state
-    )
-
-
-def compute_num_states():
-    return (
-        compute_num_observations()
+        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)  # fabric state
+        + (NUM_XYZ * NUM_BIMANUAL)  # palm linvels
+        + (NUM_XYZ * NUM_FINGERS * NUM_BIMANUAL)  # fingertip linvels
+        + (NUM_XYZ * 2)  # object linvel and angvel
         + 1  # smallest_this_episode_right_index_fingertip_to_object_dist
         + 1  # smallest_this_episode_left_index_fingertip_to_object_dist
         + 1  # smallest_this_episode_object_to_goal_dist
         + 1  # episode_length_buf
         + 1  # object_is_lifted
         + 1  # object_has_been_lifted_this_episode
-        + (17 * NUM_BIMANUAL)  # fingertip contacts
+        + (17 * NUM_BIMANUAL)  # object contacts
     )
+
+
+def compute_num_states():
+    return compute_num_observations()
 
 
 NUM_ACTIONS = compute_num_actions()
@@ -1477,9 +1478,44 @@ class BimanualEnv(DirectRLEnv):
     def _get_observations(self) -> dict:
         right_palm_pose_w = self.right_palm_pose_w()
         left_palm_pose_w = self.left_palm_pose_w()
+
+        table_forces = self.table_contact_sensor.data.force_matrix_w
+        assert table_forces.shape == (
+            self.num_envs,
+            1,
+            len(TABLE_CONTACT_SENSOR_ROBOT_LINKS),
+            NUM_XYZ,
+        ), (
+            f"table_forces.shape: {table_forces.shape} != (self.num_envs, 1, len(TABLE_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ): {(self.num_envs, 1, len(TABLE_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ)}"
+        )
+        max_table_force = (
+            table_forces.squeeze(dim=1).norm(dim=-1, p=2).max(dim=-1).values
+        )
+        assert max_table_force.shape == (self.num_envs,), (
+            f"max_table_force.shape: {max_table_force.shape} != (self.num_envs,): {(self.num_envs,)}"
+        )
+
+        object_forces = self.object_contact_sensor.data.force_matrix_w
+        assert object_forces.shape == (
+            self.num_envs,
+            1,
+            len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS),
+            NUM_XYZ,
+        ), (
+            f"object_forces.shape: {object_forces.shape} != (self.num_envs, 1, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ): {(self.num_envs, 1, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ)}"
+        )
+        object_forces = object_forces.squeeze(dim=1).norm(dim=-1, p=2)
+        assert object_forces.shape == (
+            self.num_envs,
+            len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS),
+        ), (
+            f"object_forces.shape: {object_forces.shape} != (self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS)): {(self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS))}"
+        )
+        object_contacts = object_forces > 0.01
+
         obs_dict = {
             "q": self.robot.data.joint_pos,
-            # "qd": self.robot.data.joint_vel,
+            "qd": self.robot.data.joint_vel,
             "right_fingertip_positions": (
                 self.right_fingertip_positions_w()
                 - self.scene.env_origins.unsqueeze(dim=1)
@@ -1497,6 +1533,31 @@ class BimanualEnv(DirectRLEnv):
             - self.scene.env_origins,
             "object_orientation": self.object_orientation,
             "goal_object_orientation": self.goal_object_orientation,
+            "right_palm_linvel": self.right_palm_linvel(),
+            "left_palm_linvel": self.left_palm_linvel(),
+            "right_fingertip_linvels": self.right_fingertip_linvels().reshape(
+                self.num_envs, -1
+            ),
+            "left_fingertip_linvels": self.left_fingertip_linvels().reshape(
+                self.num_envs, -1
+            ),
+            "object_linvel": self.object_linvel,
+            "object_angvel": self.object_angvel,
+            "smallest_this_episode_right_index_fingertip_to_object_dist": self.smallest_this_episode_right_index_fingertip_to_object_dist.reshape(
+                self.num_envs, -1
+            ),
+            "smallest_this_episode_left_index_fingertip_to_object_dist": self.smallest_this_episode_left_index_fingertip_to_object_dist.reshape(
+                self.num_envs, -1
+            ),
+            "smallest_this_episode_object_to_goal_dist": self.smallest_this_episode_object_to_goal_dist.reshape(
+                self.num_envs, -1
+            ),
+            "episode_length_buf": self.episode_length_buf.reshape(self.num_envs, -1),
+            "object_is_lifted": self.object_is_lifted.reshape(self.num_envs, -1),
+            "object_has_been_lifted_this_episode": self.object_has_been_lifted_this_episode.reshape(
+                self.num_envs, -1
+            ),
+            "object_contacts": object_contacts.float().reshape(self.num_envs, -1),
         }
         if FINGER_GOALS:
             obs_dict["right_goal_position"] = (
@@ -1510,9 +1571,9 @@ class BimanualEnv(DirectRLEnv):
                 self.filtered_arm_position_targets
             )
 
-        # if USE_FABRIC:
-        #     obs_dict["fabric_q"] = self.fabric_q
-        #     obs_dict["fabric_qd"] = self.fabric_qd
+        if USE_FABRIC:
+            obs_dict["fabric_q"] = self.fabric_q
+            obs_dict["fabric_qd"] = self.fabric_qd
 
         for k, v in obs_dict.items():
             if v.ndim != 2:
@@ -1554,98 +1615,9 @@ class BimanualEnv(DirectRLEnv):
             f"obs.shape: {obs.shape} != (self.num_envs, self.cfg.observation_space): {(self.num_envs, self.cfg.observation_space)}"
         )
 
-        table_forces = self.table_contact_sensor.data.force_matrix_w
-        assert table_forces.shape == (
-            self.num_envs,
-            1,
-            len(TABLE_CONTACT_SENSOR_ROBOT_LINKS),
-            NUM_XYZ,
-        ), (
-            f"table_forces.shape: {table_forces.shape} != (self.num_envs, 1, len(TABLE_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ): {(self.num_envs, 1, len(TABLE_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ)}"
-        )
-        max_table_force = (
-            table_forces.squeeze(dim=1).norm(dim=-1, p=2).max(dim=-1).values
-        )
-        assert max_table_force.shape == (self.num_envs,), (
-            f"max_table_force.shape: {max_table_force.shape} != (self.num_envs,): {(self.num_envs,)}"
-        )
-
-        object_forces = self.object_contact_sensor.data.force_matrix_w
-        assert object_forces.shape == (
-            self.num_envs,
-            1,
-            len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS),
-            NUM_XYZ,
-        ), (
-            f"object_forces.shape: {object_forces.shape} != (self.num_envs, 1, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ): {(self.num_envs, 1, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ)}"
-        )
-        object_forces = object_forces.squeeze(dim=1).norm(dim=-1, p=2)
-        assert object_forces.shape == (
-            self.num_envs,
-            len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS),
-        ), (
-            f"object_forces.shape: {object_forces.shape} != (self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS)): {(self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS))}"
-        )
-        object_contacts = object_forces > 0.01
-        # right_index_tip_contact = object_contacts[
-        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_index_link_3")
-        # ]
-        # left_index_tip_contact = object_contacts[
-        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_index_link_3")
-        # ]
-        # right_middle_tip_contact = object_contacts[
-        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_middle_link_3")
-        # ]
-        # left_middle_tip_contact = object_contacts[
-        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_middle_link_3")
-        # ]
-        # right_ring_tip_contact = object_contacts[
-        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_ring_link_3")
-        # ]
-        # left_ring_tip_contact = object_contacts[
-        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_ring_link_3")
-        # ]
-        # right_thumb_tip_contact = object_contacts[
-        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("right_thumb_link_3")
-        # ]
-        # left_thumb_tip_contact = object_contacts[
-        #     :, OBJECT_CONTACT_SENSOR_ROBOT_LINKS.index("left_thumb_link_3")
-        # ]
-
         # Add critic observations
         state_dict = {
             "obs": obs,
-            "smallest_this_episode_right_index_fingertip_to_object_dist": self.smallest_this_episode_right_index_fingertip_to_object_dist.reshape(
-                self.num_envs, -1
-            ),
-            "smallest_this_episode_left_index_fingertip_to_object_dist": self.smallest_this_episode_left_index_fingertip_to_object_dist.reshape(
-                self.num_envs, -1
-            ),
-            "smallest_this_episode_object_to_goal_dist": self.smallest_this_episode_object_to_goal_dist.reshape(
-                self.num_envs, -1
-            ),
-            "episode_length_buf": self.episode_length_buf.reshape(self.num_envs, -1),
-            "object_is_lifted": self.object_is_lifted.reshape(self.num_envs, -1),
-            "object_has_been_lifted_this_episode": self.object_has_been_lifted_this_episode.reshape(
-                self.num_envs, -1
-            ),
-            "fingertip_contact": object_contacts.float().reshape(self.num_envs, -1),
-            # "right_index_tip_contact": right_index_tip_contact.reshape(
-            #     self.num_envs, -1
-            # ).float(),
-            # "left_index_tip_contact": left_index_tip_contact.reshape(self.num_envs, -1).float(),
-            # "right_middle_tip_contact": right_middle_tip_contact.reshape(
-            #     self.num_envs, -1
-            # ).float(),
-            # "left_middle_tip_contact": left_middle_tip_contact.reshape(
-            #     self.num_envs, -1
-            # ).float(),
-            # "right_ring_tip_contact": right_ring_tip_contact.reshape(self.num_envs, -1).float(),
-            # "left_ring_tip_contact": left_ring_tip_contact.reshape(self.num_envs, -1).float(),
-            # "right_thumb_tip_contact": right_thumb_tip_contact.reshape(
-            #     self.num_envs, -1
-            # ).float(),
-            # "left_thumb_tip_contact": left_thumb_tip_contact.reshape(self.num_envs, -1).float(),
         }
         for k, v in state_dict.items():
             if v.ndim != 2:
@@ -2768,6 +2740,20 @@ class BimanualEnv(DirectRLEnv):
         return self.object.data.body_quat_w[:, 0]
 
     @property
+    def object_linvel(self) -> torch.Tensor:
+        assert self.object.data.body_vel_w.shape == (self.num_envs, 1, NUM_XYZ * 2), (
+            f"Object linvel shape: {self.object.data.body_vel_w.shape}"
+        )
+        return self.object.data.body_vel_w[:, 0, :NUM_XYZ]
+
+    @property
+    def object_angvel(self) -> torch.Tensor:
+        assert self.object.data.body_vel_w.shape == (self.num_envs, 1, NUM_XYZ * 2), (
+            f"Object angvel shape: {self.object.data.body_vel_w.shape}"
+        )
+        return self.object.data.body_vel_w[:, 0, NUM_XYZ:]
+
+    @property
     def goal_object_position_w(self) -> torch.Tensor:
         assert self.goal_object.data.body_pos_w.shape == (self.num_envs, 1, NUM_XYZ), (
             f"Goal object position shape: {self.goal_object.data.body_pos_w.shape}"
@@ -3030,6 +3016,36 @@ class BimanualEnv(DirectRLEnv):
         palm_pose = torch.cat([palm_pos_w, palm_quat_wxyz], dim=-1)
         return palm_pose
 
+    def right_palm_linvel(
+        self, q: Optional[torch.Tensor] = None, qd: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        if q is None:
+            q = self.robot.data.joint_pos
+        if qd is None:
+            qd = self.robot.data.joint_vel
+
+        _, xd, _ = self.right_taskmap_helper(
+            q=q,
+            qd=qd,
+        )
+        palm_linvel = xd[:, RIGHT_PALM_LINK_IDX]
+        return palm_linvel
+
+    def left_palm_linvel(
+        self, q: Optional[torch.Tensor] = None, qd: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        if q is None:
+            q = self.robot.data.joint_pos
+        if qd is None:
+            qd = self.robot.data.joint_vel
+
+        _, xd, _ = self.left_taskmap_helper(
+            q=q,
+            qd=qd,
+        )
+        palm_linvel = xd[:, LEFT_PALM_LINK_IDX]
+        return palm_linvel
+
     def right_fingertip_positions_w(
         self, q: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
@@ -3072,6 +3088,62 @@ class BimanualEnv(DirectRLEnv):
         # World frame
         positions_w = positions + self.scene.env_origins.unsqueeze(dim=1)
         return positions_w
+
+    def right_fingertip_linvels(
+        self, q: Optional[torch.Tensor] = None, qd: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        if q is None:
+            q = self.robot.data.joint_pos
+        if qd is None:
+            qd = self.robot.data.joint_vel
+
+        _, xd, _ = self.right_taskmap_helper(
+            q=q,
+            qd=qd,
+        )
+        right_index_linvel = xd[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
+        right_middle_linvel = xd[:, RIGHT_MIDDLE_FINGERTIP_LINK_IDX]
+        right_ring_linvel = xd[:, RIGHT_RING_FINGERTIP_LINK_IDX]
+        right_thumb_linvel = xd[:, RIGHT_THUMB_FINGERTIP_LINK_IDX]
+
+        linvels = torch.stack(
+            [
+                right_index_linvel,
+                right_middle_linvel,
+                right_ring_linvel,
+                right_thumb_linvel,
+            ],
+            dim=1,
+        )
+        return linvels
+
+    def left_fingertip_linvels(
+        self, q: Optional[torch.Tensor] = None, qd: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        if q is None:
+            q = self.robot.data.joint_pos
+        if qd is None:
+            qd = self.robot.data.joint_vel
+
+        _, xd, _ = self.left_taskmap_helper(
+            q=q,
+            qd=qd,
+        )
+        left_index_linvel = xd[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
+        left_middle_linvel = xd[:, LEFT_MIDDLE_FINGERTIP_LINK_IDX]
+        left_ring_linvel = xd[:, LEFT_RING_FINGERTIP_LINK_IDX]
+        left_thumb_linvel = xd[:, LEFT_THUMB_FINGERTIP_LINK_IDX]
+
+        linvels = torch.stack(
+            [
+                left_index_linvel,
+                left_middle_linvel,
+                left_ring_linvel,
+                left_thumb_linvel,
+            ],
+            dim=1,
+        )
+        return linvels
 
     def right_index_fingertip_position_w(
         self, q: Optional[torch.Tensor] = None
