@@ -14,7 +14,6 @@ import isaaclab.envs.mdp as mdp
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
 import numpy as np
-import pytorch_kinematics as pk
 import torch
 import yaml
 from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObjectCfg
@@ -679,7 +678,6 @@ class BimanualEnv(DirectRLEnv):
         self._setup_keyboard()
         self._setup_robot_idxs()
         self._setup_sanity_checks()
-        self._setup_pytorch_kinematics()
         self._setup_demo_trajectory()
         self._setup_default_joint_pos()
 
@@ -704,18 +702,6 @@ class BimanualEnv(DirectRLEnv):
 
     def _setup_sanity_checks(self):
         pass
-
-    def _setup_pytorch_kinematics(self):
-        with open(URDF_PATH, "rb") as f:
-            urdf_str = f.read()
-        self.right_arm_pk_chain = pk.build_serial_chain_from_urdf(
-            urdf_str,
-            end_link_name="right_palm_link",
-        ).to(device=self.device)
-        self.left_arm_pk_chain = pk.build_serial_chain_from_urdf(
-            urdf_str,
-            end_link_name="left_palm_link",
-        ).to(device=self.device)
 
     def _setup_demo_trajectory(self):
         ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
@@ -1069,92 +1055,6 @@ class BimanualEnv(DirectRLEnv):
             self.raw_actions, "self.raw_actions (start of pre_physics_step)"
         )
 
-        OVERWRITE_GO_TO_TARGET = False
-        if OVERWRITE_GO_TO_TARGET:
-            if not hasattr(self, "CUSTOM_left_T_R_P"):
-                self.CUSTOM_left_T_R_P = self.left_T_R_Ps[
-                    self.reference_float_idx.long().clip(
-                        max=self.left_T_R_Ps.shape[0] - 1
-                    )
-                ]
-            right_dpose = torch.zeros(
-                self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
-            )
-            right_wrist_pose_w = self.right_palm_pose_w()
-            right_wrist_pos = right_wrist_pose_w[:, :3] - self.scene.env_origins
-            right_wrist_quat_wxyz = right_wrist_pose_w[:, 3:]
-            right_wrist_rot_matrix = quat_wxyz_to_matrix(right_wrist_quat_wxyz)
-
-            right_T_R_P = self.right_T_R_Ps[
-                self.reference_float_idx.long().clip(max=self.right_T_R_Ps.shape[0] - 1)
-            ]
-            right_target_wrist_pos = right_T_R_P[:, :3, 3]
-            right_target_wrist_rot_matrix = right_T_R_P[:, :3, :3]
-
-            right_dpose[:, :NUM_XYZ] = right_target_wrist_pos - right_wrist_pos
-            right_dpose[:, NUM_XYZ:] = matrix_to_axis_angle(
-                torch.bmm(
-                    right_target_wrist_rot_matrix,
-                    right_wrist_rot_matrix.transpose(1, 2),
-                )
-            )
-
-            # right_dpose[:, 2] = -0.05
-            # right_dpose[:, :NUM_XYZ] = (
-            #     torch.nn.functional.normalize(
-            #         self.object_position_w - self.right_index_fingertip_position_w(),
-            #         p=2,
-            #         dim=-1,
-            #     )
-            #     * 0.05
-            # )
-            left_dpose = torch.zeros(
-                self.num_envs, NUM_XYZ + NUM_RPY, device=self.device
-            )
-            left_wrist_pose_w = self.left_palm_pose_w()
-            left_wrist_pos = left_wrist_pose_w[:, :3] - self.scene.env_origins
-            left_wrist_quat_wxyz = left_wrist_pose_w[:, 3:]
-            left_wrist_rot_matrix = quat_wxyz_to_matrix(left_wrist_quat_wxyz)
-
-            left_T_R_P = self.left_T_R_Ps[
-                self.reference_float_idx.long().clip(max=self.left_T_R_Ps.shape[0] - 1)
-            ]
-            left_target_wrist_pos = left_T_R_P[:, :3, 3]
-            left_target_wrist_rot_matrix = left_T_R_P[:, :3, :3]
-
-            OVERWRITE_LEFT_PALM_POSE = False
-            if OVERWRITE_LEFT_PALM_POSE:
-                left_target_wrist_pos = right_target_wrist_pos.clone()
-                # left_target_wrist_pos[:, 1] *= -1
-                left_target_wrist_pos[:, 1] += 0.3
-                left_target_wrist_rot_matrix = self.CUSTOM_left_T_R_P[:, :3, :3]
-
-            left_dpose[:, :NUM_XYZ] = left_target_wrist_pos - left_wrist_pos
-            left_dpose[:, NUM_XYZ:] = matrix_to_axis_angle(
-                torch.bmm(
-                    left_target_wrist_rot_matrix,
-                    left_wrist_rot_matrix.transpose(1, 2),
-                )
-            )
-
-            # left_dpose[:, 2] = -0.05
-            # left_dpose[:, :NUM_XYZ] = (
-            #     torch.nn.functional.normalize(
-            #         self.object_position_w - self.left_index_fingertip_position_w(),
-            #         p=2,
-            #         dim=-1,
-            #     )
-            #     * 0.05
-            # )
-            new_q = self.compute_ik(
-                right_dpose=right_dpose,
-                left_dpose=left_dpose,
-            )
-            self.robot.set_joint_position_target(new_q)
-            if self.include_blue_robot:
-                self.blue_robot.write_joint_position_to_sim(new_q)
-            return
-
         if USE_FABRIC:
             check_nan_and_print_if_any(
                 self.fabric_palm_target,
@@ -1184,6 +1084,49 @@ class BimanualEnv(DirectRLEnv):
             check_nan_and_print_if_any(
                 self.fabric_hand_target, "self.fabric_hand_target (after copying)"
             )
+
+        OVERWRITE_GO_TO_TARGET = False
+        if OVERWRITE_GO_TO_TARGET:
+            if not hasattr(self, "CUSTOM_left_T_R_P"):
+                self.CUSTOM_left_T_R_P = self.left_T_R_Ps[
+                    self.reference_float_idx.long().clip(
+                        max=self.left_T_R_Ps.shape[0] - 1
+                    )
+                ]
+            right_T_R_P = self.right_T_R_Ps[
+                self.reference_float_idx.long().clip(max=self.right_T_R_Ps.shape[0] - 1)
+            ]
+            right_target_wrist_pos = right_T_R_P[:, :3, 3]
+            right_target_wrist_rot_matrix = right_T_R_P[:, :3, :3]
+            right_target_wrist_euler_ZYX = matrix_to_euler_angles(
+                right_target_wrist_rot_matrix, "ZYX"
+            )
+
+            left_T_R_P = self.left_T_R_Ps[
+                self.reference_float_idx.long().clip(max=self.left_T_R_Ps.shape[0] - 1)
+            ]
+            left_target_wrist_pos = left_T_R_P[:, :3, 3]
+            left_target_wrist_rot_matrix = left_T_R_P[:, :3, :3]
+            left_target_wrist_euler_ZYX = matrix_to_euler_angles(
+                left_target_wrist_rot_matrix, "ZYX"
+            )
+
+            self.fabric_palm_target[:, :3] = right_target_wrist_pos
+            self.fabric_palm_target[:, 3:6] = right_target_wrist_euler_ZYX
+            self.fabric_palm_target[:, 6:9] = left_target_wrist_pos
+            self.fabric_palm_target[:, 9:12] = left_target_wrist_euler_ZYX
+
+            OVERWRITE_LEFT_PALM_POSE = False
+            if OVERWRITE_LEFT_PALM_POSE:
+                left_target_wrist_pos = right_target_wrist_pos.clone()
+                # left_target_wrist_pos[:, 1] *= -1
+                left_target_wrist_pos[:, 1] += 0.3
+                left_target_wrist_rot_matrix = self.CUSTOM_left_T_R_P[:, :3, :3]
+                left_target_wrist_euler_ZYX = matrix_to_euler_angles(
+                    left_target_wrist_rot_matrix, "ZYX"
+                )
+                self.fabric_palm_target[:, 6:9] = left_target_wrist_pos
+                self.fabric_palm_target[:, 9:12] = left_target_wrist_euler_ZYX
 
         if USE_FABRIC:
             check_nan_and_print_if_any(
@@ -3151,79 +3094,6 @@ class BimanualEnv(DirectRLEnv):
         )
 
     #### TENSOR SLICE PROPERTIES END ####
-
-    #### PYTORCH KINEMATICS START ####
-    def compute_ik(
-        self,
-        right_dpose: torch.Tensor,
-        left_dpose: torch.Tensor,
-        q: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        if q is None:
-            q = self.robot.data.joint_pos
-
-        assert right_dpose.shape == (self.num_envs, NUM_XYZ + NUM_RPY), (
-            f"right_dpose.shape: {right_dpose.shape}"
-        )
-        assert left_dpose.shape == (self.num_envs, NUM_XYZ + NUM_RPY), (
-            f"left_dpose.shape: {left_dpose.shape}"
-        )
-
-        # Convert joint order
-        pk_q = change_joint_order_torch(
-            q,
-            from_order=ISAACLAB_JOINT_ORDER,
-            to_order=PYTORCH_KINEMATICS_JOINT_ORDER,
-        )
-        right_arm_pk_q = pk_q[:, :NUM_ARM_JOINTS]
-        left_arm_pk_q = pk_q[:, NUM_ARM_JOINTS : NUM_ARM_JOINTS * NUM_BIMANUAL]
-
-        # Compute Jacobians
-        right_jacobian = self.right_arm_pk_chain.jacobian(right_arm_pk_q)
-        left_jacobian = self.left_arm_pk_chain.jacobian(left_arm_pk_q)
-        assert isinstance(right_jacobian, torch.Tensor), (
-            f"right_jacobian: {type(right_jacobian)}"
-        )
-        assert isinstance(left_jacobian, torch.Tensor), (
-            f"left_jacobian: {type(left_jacobian)}"
-        )
-        assert right_jacobian.shape == (
-            self.num_envs,
-            NUM_XYZ + NUM_RPY,
-            NUM_ARM_JOINTS,
-        ), f"right_jacobian.shape: {right_jacobian.shape}"
-        assert left_jacobian.shape == (
-            self.num_envs,
-            NUM_XYZ + NUM_RPY,
-            NUM_ARM_JOINTS,
-        ), f"left_jacobian.shape: {left_jacobian.shape}"
-
-        right_arm_delta_q = compute_ik(
-            j_eef=right_jacobian,
-            dpose=right_dpose,
-        )
-        left_arm_delta_q = compute_ik(
-            j_eef=left_jacobian,
-            dpose=left_dpose,
-        )
-        new_pk_q = pk_q + torch.cat(
-            [
-                right_arm_delta_q,
-                left_arm_delta_q,
-                torch.zeros(
-                    self.num_envs, NUM_HAND_JOINTS * NUM_BIMANUAL, device=self.device
-                ),
-            ],
-            dim=1,
-        )
-        new_q = change_joint_order_torch(
-            new_pk_q,
-            from_order=PYTORCH_KINEMATICS_JOINT_ORDER,
-            to_order=ISAACLAB_JOINT_ORDER,
-        )
-        return new_q
-
-    #### PYTORCH KINEMATICS END ####
 
     #### OTHER PROPERTIES START ####
     @property
