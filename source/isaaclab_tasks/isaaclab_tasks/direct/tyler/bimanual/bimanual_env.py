@@ -143,8 +143,8 @@ RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filteri
 INCLUDE_CONTACT_REWARD = True
 INCLUDE_HAND_TRACKING_REWARD = False
 
-OBJECT_NAME = "box"  # "box", "pitcher", "basket"
-OBJECT_TRAJECTORY_IDX = 0  # 0, 1, 2
+OBJECT_NAME = "basket"  # "box", "pitcher", "basket"
+OBJECT_TRAJECTORY_IDX = 2  # 0, 1, 2
 
 if "box" in OBJECT_NAME:
     OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/box/usd/box.usd"
@@ -154,12 +154,16 @@ if "box" in OBJECT_NAME:
     # OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/white_box/usd/white_box.usd"
     # GREEN_OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_white_box/usd/white_box.usd"
 elif "pitcher" in OBJECT_NAME:
-    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/pitcher/usd/pitcher.usd"
+    OBJECT_USD_PATH = (
+        f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/pitcher/usd_convex_decomp/pitcher.usd"
+    )
     GREEN_OBJECT_USD_PATH = (
         f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_pitcher/usd/pitcher.usd"
     )
 elif "basket" in OBJECT_NAME:
-    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/basket/usd/basket.usd"
+    OBJECT_USD_PATH = (
+        f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/basket/usd_convex_decomp/basket.usd"
+    )
     GREEN_OBJECT_USD_PATH = (
         f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_basket/usd/basket.usd"
     )
@@ -411,11 +415,6 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         prim_path=f"{ENV_REGEX_NS}/Object",
         spawn=sim_utils.UsdFileCfg(
             activate_contact_sensors=True,
-            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/starbucks_bottle/usd/starbucks_bottle.usd",
-            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/basket/usd_convex_decomp/basket.usd",
-            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/pitcher/usd_convex_decomp/pitcher.usd",
-            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/white_box/usd/white_box.usd",
-            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/box/usd/box.usd",
             usd_path=OBJECT_USD_PATH,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
@@ -444,11 +443,6 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     goal_object: RigidObjectCfg = RigidObjectCfg(
         prim_path=f"{ENV_REGEX_NS}/GoalObject",
         spawn=sim_utils.UsdFileCfg(
-            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_starbucks_bottle/usd/starbucks_bottle.usd",
-            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_basket/usd/basket.usd",
-            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_pitcher/usd/pitcher.usd",
-            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_white_box/usd/white_box.usd",
-            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/green_box/usd/box.usd",
             usd_path=GREEN_OBJECT_USD_PATH,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,
@@ -2055,6 +2049,7 @@ class BimanualEnv(DirectRLEnv):
             self.episode_length_buf[env_ids].clip(max=self.T_R_Os.shape[0] - 1)
         ]
         object_pos = T_R_Os[:, :3, 3] + self.scene.env_origins[env_ids]
+        object_pos[:, 2] += 0.02  # Buffer to avoid collision with table
         object_quat_wxyz = matrix_to_quat_wxyz(T_R_Os[:, :3, :3])
         object_pose = torch.cat([object_pos, object_quat_wxyz], dim=-1)
         goal_object_pos = T_R_Os[:, :3, 3] + self.scene.env_origins[env_ids]
