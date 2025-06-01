@@ -766,6 +766,15 @@ class BimanualEnv(DirectRLEnv):
         self.T_R_Os = torch.from_numpy(T_R_Os).to(self.device).float()
 
     def _setup_default_joint_pos(self):
+        USE_ORIGINAL_DEFAULT_JOINT_POS = (
+            True  # Set to True to debug using default joint pos
+        )
+        if USE_ORIGINAL_DEFAULT_JOINT_POS:
+            self.robot_custom_default_joint_pos = (
+                self.robot.data.default_joint_pos.clone()
+            )
+            return
+
         ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
         DEMO_ARM_PATH = (
             ROOT_DIR
