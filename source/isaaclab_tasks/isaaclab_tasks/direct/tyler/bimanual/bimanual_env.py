@@ -138,7 +138,7 @@ CONTACT_SENSOR_HISTORY_LENGTH = 6
 FORCE_MAG = 1.0
 
 INCLUDE_CONTACT_REWARD = True
-INCLUDE_HAND_TRACKING_REWARD = True
+INCLUDE_HAND_TRACKING_REWARD = False
 
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
