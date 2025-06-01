@@ -142,6 +142,8 @@ RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filteri
 
 INCLUDE_CONTACT_REWARD = True
 INCLUDE_HAND_TRACKING_REWARD = False
+INCLUDE_QD_OBS = True
+INCLUDE_FABRIC_OBS = True
 
 OBJECT_NAME = "basket"  # "box", "pitcher", "basket"
 OBJECT_TRAJECTORY_IDX = 2  # 0, 1, 2
@@ -185,7 +187,7 @@ def compute_num_actions():
 def compute_num_observations():
     return (
         (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # q
-        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # qd
+        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if INCLUDE_QD_OBS else 0)  # qd
         + (NUM_XYZ * NUM_FINGERS * NUM_BIMANUAL)  # fingertip positions
         + ((NUM_XYZ + NUM_QUAT) * NUM_BIMANUAL)  # palm poses
         + (NUM_XYZ + NUM_QUAT)  # object position and orientation
@@ -194,7 +196,11 @@ def compute_num_observations():
         + (
             NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0
         )  # filtered arm actions
-        + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)  # fabric state
+        + (
+            NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2
+            if USE_FABRIC and INCLUDE_FABRIC_OBS
+            else 0
+        )  # fabric state
         + (
             NUM_XYZ * NUM_BIMANUAL if INCLUDE_HAND_TRACKING_REWARD else 0
         )  # palm target positions
@@ -1563,7 +1569,11 @@ class BimanualEnv(DirectRLEnv):
 
         obs_dict = {
             "q": self.robot.data.joint_pos,
-            "qd": self.robot.data.joint_vel,
+            "qd": (
+                self.robot.data.joint_vel
+                if INCLUDE_QD_OBS
+                else torch.zeros(self.num_envs, 0, device=self.device)
+            ),
             "right_fingertip_positions": (
                 self.right_fingertip_positions_w()
                 - self.scene.env_origins.unsqueeze(dim=1)
@@ -1643,7 +1653,7 @@ class BimanualEnv(DirectRLEnv):
                 self.filtered_arm_position_targets
             )
 
-        if USE_FABRIC:
+        if USE_FABRIC and INCLUDE_FABRIC_OBS:
             obs_dict["fabric_q"] = self.fabric_q
             obs_dict["fabric_qd"] = self.fabric_qd
 
