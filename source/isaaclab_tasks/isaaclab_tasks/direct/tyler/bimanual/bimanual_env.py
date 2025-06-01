@@ -332,6 +332,9 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         physx=PhysxCfg(
             gpu_max_rigid_patch_count=10 * 2**15,
         ),
+        render=sim_utils.RenderCfg(
+            rendering_mode="quality",
+        ),
     )
 
     # terrain
@@ -502,7 +505,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
 
     # light
     light: LightCfg = DomeLightCfg(
-        intensity=750.0,
+        intensity=500.0,
         texture_file=f"{ISAAC_NUCLEUS_DIR}/Materials/Textures/Skies/PolyHaven/kloofendal_43d_clear_puresky_4k.hdr",
     )
 
@@ -668,6 +671,7 @@ class BimanualEnv(DirectRLEnv):
             "episode_length_counter": [],
         }
 
+        self._setup_viewer_camera()
         self._setup_keyboard()
         self._setup_robot_idxs()
         self._setup_sanity_checks()
@@ -750,6 +754,13 @@ class BimanualEnv(DirectRLEnv):
         )
         assert_equals(new_default_q_isaaclab.shape, orig_default_q_isaaclab.shape)
         self.robot_custom_default_joint_pos = new_default_q_isaaclab
+
+    def _setup_viewer_camera(self):
+        if self.viewport_camera_controller is not None:
+            self.viewport_camera_controller.update_view_location(
+                eye=(2.5, 0.0, 1.2),
+                lookat=(0.0, 0.0, 0.2),
+            )
 
     def _setup_robot_idxs(self):
         # Robot joint idxs

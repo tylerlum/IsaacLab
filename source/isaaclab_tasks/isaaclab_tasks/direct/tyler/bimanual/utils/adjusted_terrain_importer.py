@@ -50,4 +50,4 @@ class AdjustedTerrainImporter(TerrainImporter):
         ground_plane_cfg = sim_utils.GroundPlaneCfg(
             physics_material=self.cfg.physics_material, size=size, color=color
         )
-        ground_plane_cfg.func(prim_path, ground_plane_cfg, translation=(0.0, 0.0, -1.0))
+        ground_plane_cfg.func(prim_path, ground_plane_cfg, translation=(0.0, 0.0, -0.5))
