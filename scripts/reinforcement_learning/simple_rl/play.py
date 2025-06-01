@@ -23,8 +23,8 @@ parser.add_argument(
 parser.add_argument(
     "--video_length",
     type=int,
-    default=200,
-    help="Length of the recorded video (in steps).",
+    default=None,
+    help="Length of the recorded video (in steps). Defaults to the length of the episode.",
 )
 parser.add_argument(
     "--video_interval",
@@ -214,10 +214,13 @@ def main(
 
     # wrap for video recording
     if args_cli.video or args_cli.single_video:
+        video_length = args_cli.video_length
+        if video_length is None:
+            video_length = env.unwrapped.max_episode_length
         video_kwargs = {
             "video_folder": os.path.join(experiment_dir, "videos", "play"),
             "step_trigger": lambda step: step % args_cli.video_interval == 0,
-            "video_length": args_cli.video_length,
+            "video_length": video_length,
             "disable_logger": True,
         }
         print(colored("[INFO] Recording videos during playing.", "green"))
@@ -311,7 +314,8 @@ def main(
                 aggregated_rews[dones] = 0.0
 
         timestep += 1
-        if args_cli.single_video and timestep == args_cli.video_length:
+        if args_cli.single_video and timestep == video_length:
+            print(colored("[INFO] DONE: Captured one video.", "green"))
             # Exit the play loop after recording one video
             break
 
