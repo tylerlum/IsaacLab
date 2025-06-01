@@ -128,6 +128,7 @@ USE_FABRIC_CUDA_GRAPH = False  # Leave this False almost all the time, CUDA grap
 
 SAVE_OBS_HISTORY = False
 
+NUM_FUTURE_GOAL_OBS = 4
 OBJECT_LENGTH_Z = 0.22
 
 SIM_DT = 1 / 60
@@ -164,6 +165,9 @@ def compute_num_observations():
             NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0
         )  # filtered arm actions
         + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2 if USE_FABRIC else 0)  # fabric state
+        + (
+            (NUM_XYZ + NUM_QUAT) * NUM_FUTURE_GOAL_OBS
+        )  # goal object position and orientation
         + (NUM_XYZ * NUM_BIMANUAL)  # palm linvels
         + (NUM_XYZ * NUM_FINGERS * NUM_BIMANUAL)  # fingertip linvels
         + (NUM_XYZ * 2)  # object linvel and angvel
@@ -1533,6 +1537,7 @@ class BimanualEnv(DirectRLEnv):
             - self.scene.env_origins,
             "object_orientation": self.object_orientation,
             "goal_object_orientation": self.goal_object_orientation,
+            "future_goal_object_poses": self.future_goal_object_poses.reshape(self.num_envs, -1),
             "right_palm_linvel": self.right_palm_linvel(),
             "left_palm_linvel": self.left_palm_linvel(),
             "right_fingertip_linvels": self.right_fingertip_linvels().reshape(
@@ -2768,6 +2773,46 @@ class BimanualEnv(DirectRLEnv):
             NUM_QUAT,
         ), f"Goal object orientation shape: {self.goal_object.data.body_quat_w.shape}"
         return self.goal_object.data.body_quat_w[:, 0]
+
+    @property
+    def future_goal_object_poses(self) -> torch.Tensor:
+        TIME_BETWEEN_GOALS_SECONDS = 0.5
+        CONTROL_DT = self.cfg.sim.dt * self.cfg.decimation
+        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / CONTROL_DT
+        relative_idxs = (
+            torch.arange(1, NUM_FUTURE_GOAL_OBS + 1, device=self.device).float()
+            * IDXS_BETWEEN_GOALS
+        )
+        current_idx = self.reference_float_idx
+        assert relative_idxs.shape == (NUM_FUTURE_GOAL_OBS,), (
+            f"relative_idxs shape: {relative_idxs.shape}"
+        )
+        assert current_idx.shape == (self.num_envs,), (
+            f"current_idx shape: {current_idx.shape}"
+        )
+        N_TIMESTEPS = self.T_R_Os.shape[0]
+        new_idxs = (
+            (current_idx.unsqueeze(dim=1) + relative_idxs.unsqueeze(dim=0))
+            .long()
+            .clip(max=N_TIMESTEPS - 1)
+        )
+        assert new_idxs.shape == (self.num_envs, NUM_FUTURE_GOAL_OBS), (
+            f"new_idxs shape: {new_idxs.shape}"
+        )
+        assert self.T_R_Os.shape == (N_TIMESTEPS, 4, 4), (
+            f"T_R_Os shape: {self.T_R_Os.shape}"
+        )
+        future_T_R_Os = self.T_R_Os[new_idxs]
+        assert future_T_R_Os.shape == (self.num_envs, NUM_FUTURE_GOAL_OBS, 4, 4), (
+            f"future_T_R_Os shape: {future_T_R_Os.shape}"
+        )
+        future_goal_object_positions = future_T_R_Os[:, :, :3, 3]
+        future_goal_object_orientations = matrix_to_quat_wxyz(future_T_R_Os[:, :, :3, :3])
+        future_goal_object_poses = torch.cat([future_goal_object_positions, future_goal_object_orientations], dim=-1)
+        assert future_goal_object_poses.shape == (self.num_envs, NUM_FUTURE_GOAL_OBS, 7), (
+            f"future_goal_object_poses shape: {future_goal_object_poses.shape}"
+        )
+        return future_goal_object_poses
 
     @property
     def object_goal_keypoint_distance(self) -> torch.Tensor:
