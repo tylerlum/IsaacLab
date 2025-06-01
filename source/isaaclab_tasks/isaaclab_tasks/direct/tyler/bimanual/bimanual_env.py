@@ -382,7 +382,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/starbucks_bottle/usd/starbucks_bottle.usd",
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/basket/usd_convex_decomp/basket.usd",
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/pitcher/usd_convex_decomp/pitcher.usd",
-            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/white_box/usd/white_box.usd",
+            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/white_box/usd/white_box.usd",
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/box/usd/box.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=False,
@@ -413,7 +414,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_starbucks_bottle/usd/starbucks_bottle.usd",
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_basket/usd/basket.usd",
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_pitcher/usd/pitcher.usd",
-            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_white_box/usd/white_box.usd",
+            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_white_box/usd/white_box.usd",
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/green_box/usd/box.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,
                 disable_gravity=False,
