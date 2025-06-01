@@ -96,3 +96,6 @@ LEFT_RING_FINGERTIP_LINK_IDX = LEFT_TASKMAP_LINK_NAMES.index(
 LEFT_THUMB_FINGERTIP_LINK_IDX = LEFT_TASKMAP_LINK_NAMES.index(
     LEFT_THUMB_FINGERTIP_LINK_NAME
 )
+
+
+USE_FABRIC_CUDA_GRAPH = False  # Leave this False almost all the time, CUDA graphs don't offer any speedup (actually slows down) with large batch size

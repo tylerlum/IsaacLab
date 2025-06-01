@@ -7,6 +7,8 @@ def assert_equals(a, b):
     assert a == b, f"{a} != {b}"
 
 
+OBJECT_LENGTH_Z = 0.22
+
 OBJECT_NUM_RIGID_BODIES = 1
 NUM_OBJECT_KEYPOINTS = 3
 

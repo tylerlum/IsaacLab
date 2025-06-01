@@ -51,6 +51,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.color_constants import (
     RED_RGB,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.constants import (
+    ENV_REGEX_NS,
     NUM_QUAT,
     NUM_XYZ,
 )
@@ -76,6 +77,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_robot_constants import (
     RIGHT_TASKMAP_LINK_NAMES,
     RIGHT_THUMB_FINGERTIP_LINK_IDX,
     URDF_PATH,
+    USE_FABRIC_CUDA_GRAPH,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
     ISAACLAB_JOINT_ORDER,
@@ -87,6 +89,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
 from isaaclab_tasks.direct.tyler.bimanual.utils.object_constants import (
     NUM_OBJECT_KEYPOINTS,
     OBJECT_KEYPOINT_OFFSETS,
+    OBJECT_LENGTH_Z,
     OBJECT_NUM_RIGID_BODIES,
     compute_keypoint_positions,
 )
@@ -120,25 +123,48 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
 
-FINGER_GOALS = False
-FILTER_ARM_ACTIONS = False
+FINGER_GOALS = False  # Use finger goals as the task (fingers go to goal positions)
+FILTER_ARM_ACTIONS = False  # Filter arm actions over time to be smoother
 
-USE_FABRIC = True
-USE_FABRIC_CUDA_GRAPH = False  # Leave this False almost all the time, CUDA graphs don't offer any speedup (actually slows down) with large batch size
+USE_FABRIC = True  # Use fabric action space or direct action space
 
-SAVE_OBS_HISTORY = False
+SAVE_OBS_HISTORY = False  # Store observation history over time for debugging
 
-NUM_FUTURE_GOAL_OBS = 4
-NUM_FUTURE_PALM_TARGET_OBS = 4
-OBJECT_LENGTH_Z = 0.22
+NUM_FUTURE_GOAL_OBS = 4  # Number of future goal observations
+NUM_FUTURE_PALM_TARGET_OBS = 4  # Number of future palm target observations
 
-SIM_DT = 1 / 60
-CONTACT_SENSOR_HISTORY_LENGTH = 6
+SIM_DT = 1 / 60  # Simulation time step
+CONTACT_SENSOR_HISTORY_LENGTH = 1  # Number of contact sensor history steps to use
 
-FORCE_MAG = 1.0
+FORCE_MAG = 1.0  # Magnitude of force to apply to object
+
+RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filtering
 
 INCLUDE_CONTACT_REWARD = True
 INCLUDE_HAND_TRACKING_REWARD = False
+
+OBJECT_NAME = "box"  # "box", "pitcher", "basket"
+OBJECT_TRAJECTORY_IDX = 0  # 0, 1, 2
+
+if "box" in OBJECT_NAME:
+    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/box/usd/box.usd"
+    GREEN_OBJECT_USD_PATH = (
+        f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/green_box/usd/box.usd"
+    )
+    # OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/white_box/usd/white_box.usd"
+    # GREEN_OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_white_box/usd/white_box.usd"
+elif "pitcher" in OBJECT_NAME:
+    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/pitcher/usd/pitcher.usd"
+    GREEN_OBJECT_USD_PATH = (
+        f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_pitcher/usd/pitcher.usd"
+    )
+elif "basket" in OBJECT_NAME:
+    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/basket/usd/basket.usd"
+    GREEN_OBJECT_USD_PATH = (
+        f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_basket/usd/basket.usd"
+    )
+else:
+    raise ValueError(f"Invalid object name: {OBJECT_NAME}")
 
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
@@ -146,8 +172,6 @@ physics_material = sim_utils.RigidBodyMaterialCfg(
     static_friction=1.0,
     dynamic_friction=1.0,
 )
-
-ENV_REGEX_NS = "/World/envs/env_.*"
 
 
 def compute_num_actions():
@@ -199,8 +223,6 @@ def compute_num_states():
 NUM_ACTIONS = compute_num_actions()
 NUM_OBSERVATIONS = compute_num_observations()
 NUM_STATES = compute_num_states()
-
-RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filtering
 
 
 def do_nothing(
@@ -393,7 +415,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/basket/usd_convex_decomp/basket.usd",
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/pitcher/usd_convex_decomp/pitcher.usd",
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/white_box/usd/white_box.usd",
-            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/box/usd/box.usd",
+            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/box/usd/box.usd",
+            usd_path=OBJECT_USD_PATH,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=False,
@@ -425,7 +448,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_basket/usd/basket.usd",
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_pitcher/usd/pitcher.usd",
             # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_white_box/usd/white_box.usd",
-            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/green_box/usd/box.usd",
+            # usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/green_box/usd/box.usd",
+            usd_path=GREEN_OBJECT_USD_PATH,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,
                 disable_gravity=False,
@@ -723,7 +747,9 @@ class BimanualEnv(DirectRLEnv):
 
     def _setup_demo_trajectory(self):
         ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
-        DEMO_TRAJECTORY_PATH = ROOT_DIR / "2025-05-29_outputs/box_0.pkl"
+        DEMO_TRAJECTORY_PATH = (
+            ROOT_DIR / f"2025-05-29_outputs/{OBJECT_NAME}_{OBJECT_TRAJECTORY_IDX}.pkl"
+        )
         assert DEMO_TRAJECTORY_PATH.exists(), f"{DEMO_TRAJECTORY_PATH} does not exist"
         with open(DEMO_TRAJECTORY_PATH, "rb") as f:
             data = pickle.load(f)
@@ -740,7 +766,10 @@ class BimanualEnv(DirectRLEnv):
 
     def _setup_default_joint_pos(self):
         ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
-        DEMO_ARM_PATH = ROOT_DIR / "2025-05-29_outputs/box_0_arm.pkl"
+        DEMO_ARM_PATH = (
+            ROOT_DIR
+            / f"2025-05-29_outputs/{OBJECT_NAME}_{OBJECT_TRAJECTORY_IDX}_arm.pkl"
+        )
         assert DEMO_ARM_PATH.exists(), f"{DEMO_ARM_PATH} does not exist"
         with open(DEMO_ARM_PATH, "rb") as f:
             data = pickle.load(f)
