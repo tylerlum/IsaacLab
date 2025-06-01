@@ -142,8 +142,9 @@ RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filteri
 
 INCLUDE_CONTACT_REWARD = True
 INCLUDE_HAND_TRACKING_REWARD = False
-INCLUDE_QD_OBS = True
-INCLUDE_FABRIC_OBS = True
+INCLUDE_Q_OBS = False
+INCLUDE_QD_OBS = False
+INCLUDE_FABRIC_OBS = False
 
 OBJECT_NAME = "basket"  # "box", "pitcher", "basket"
 OBJECT_TRAJECTORY_IDX = 2  # 0, 1, 2
@@ -186,7 +187,7 @@ def compute_num_actions():
 
 def compute_num_observations():
     return (
-        (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL)  # q
+        (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if INCLUDE_Q_OBS else 0)  # q
         + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if INCLUDE_QD_OBS else 0)  # qd
         + (NUM_XYZ * NUM_FINGERS * NUM_BIMANUAL)  # fingertip positions
         + ((NUM_XYZ + NUM_QUAT) * NUM_BIMANUAL)  # palm poses
@@ -1568,7 +1569,11 @@ class BimanualEnv(DirectRLEnv):
         object_contacts = object_forces > 0.01
 
         obs_dict = {
-            "q": self.robot.data.joint_pos,
+            "q": (
+                self.robot.data.joint_pos
+                if INCLUDE_Q_OBS
+                else torch.zeros(self.num_envs, 0, device=self.device)
+            ),
             "qd": (
                 self.robot.data.joint_vel
                 if INCLUDE_QD_OBS
