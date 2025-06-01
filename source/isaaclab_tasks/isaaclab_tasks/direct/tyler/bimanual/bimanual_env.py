@@ -140,14 +140,14 @@ FORCE_MAG = 1.0  # Magnitude of force to apply to object
 
 RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filtering
 
-INCLUDE_CONTACT_REWARD = True
+INCLUDE_CONTACT_REWARD = False
 INCLUDE_HAND_TRACKING_REWARD = False
-INCLUDE_Q_OBS = False
+INCLUDE_Q_OBS = True
 INCLUDE_QD_OBS = False
 INCLUDE_FABRIC_OBS = False
 
-OBJECT_NAME = "basket"  # "box", "pitcher", "basket"
-OBJECT_TRAJECTORY_IDX = 2  # 0, 1, 2
+OBJECT_NAME = "pitcher"  # "box", "pitcher", "basket"
+OBJECT_TRAJECTORY_IDX = 1  # 0, 1, 2
 
 if "box" in OBJECT_NAME:
     OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/box/usd/box.usd"
