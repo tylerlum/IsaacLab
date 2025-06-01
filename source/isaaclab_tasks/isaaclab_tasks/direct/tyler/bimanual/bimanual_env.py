@@ -168,6 +168,7 @@ def compute_num_observations():
         + (
             (NUM_XYZ + NUM_QUAT) * NUM_FUTURE_GOAL_OBS
         )  # goal object position and orientation
+        + compute_num_actions()  # prev actions
         + (NUM_XYZ * NUM_BIMANUAL)  # palm linvels
         + (NUM_XYZ * NUM_FINGERS * NUM_BIMANUAL)  # fingertip linvels
         + (NUM_XYZ * 2)  # object linvel and angvel
@@ -1538,6 +1539,7 @@ class BimanualEnv(DirectRLEnv):
             "object_orientation": self.object_orientation,
             "goal_object_orientation": self.goal_object_orientation,
             "future_goal_object_poses": self.future_goal_object_poses.reshape(self.num_envs, -1),
+            "prev_actions": self.prev_raw_actions.reshape(self.num_envs, -1),
             "right_palm_linvel": self.right_palm_linvel(),
             "left_palm_linvel": self.left_palm_linvel(),
             "right_fingertip_linvels": self.right_fingertip_linvels().reshape(
