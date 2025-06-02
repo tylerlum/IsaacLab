@@ -2142,6 +2142,9 @@ class BimanualEnv(DirectRLEnv):
             }
 
             if FILTER_ARM_ACTIONS:
+                # NOTE: This actually doesn't quite work on the first run
+                # Because the robot is not initialized yet
+                # Probably not too big of a deal though
                 self.filtered_arm_position_targets = self.robot.data.joint_pos[
                     :, : NUM_ARM_JOINTS * NUM_BIMANUAL
                 ]
@@ -2164,6 +2167,9 @@ class BimanualEnv(DirectRLEnv):
             )
 
             if USE_FABRIC:
+                # NOTE: This actually doesn't quite work on the first run
+                # Because the robot is not initialized yet
+                # Probably not too big of a deal though
                 self.fabric_q = isaaclab_to_fabric_joint_order_torch(
                     self.robot.data.joint_pos.clone().float()
                 )
