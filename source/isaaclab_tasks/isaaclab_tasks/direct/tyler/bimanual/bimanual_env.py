@@ -143,9 +143,9 @@ RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filteri
 INCLUDE_CONTACT_REWARD = False
 INCLUDE_HAND_TRACKING_REWARD = False
 INCLUDE_Q_OBS = True
-INCLUDE_QD_OBS = False
-INCLUDE_FABRIC_OBS = False
-CONTACT_OBS_TYPE = "forces"  # "forces", "contacts"
+INCLUDE_QD_OBS = True
+INCLUDE_FABRIC_OBS = True
+CONTACT_OBS_TYPE = "contacts"  # "forces", "contacts"
 assert CONTACT_OBS_TYPE in ["forces", "contacts"], f"Invalid contact obs type: {CONTACT_OBS_TYPE}"
 
 OBJECT_NAME = "pitcher"  # "box", "pitcher", "basket"
