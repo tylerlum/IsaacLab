@@ -220,7 +220,7 @@ def compute_num_observations():
         )  # future palm goal positions
         + (
             (NUM_XYZ + NUM_QUAT) * NUM_FUTURE_GOAL_OBS
-        )  # goal object position and orientation
+        )  # future goal object poses
         + compute_num_actions()  # prev actions
         + (NUM_XYZ * NUM_BIMANUAL)  # palm linvels
         + (NUM_XYZ * NUM_FINGERS * NUM_BIMANUAL)  # fingertip linvels
