@@ -149,7 +149,7 @@ CONTACT_OBS_TYPE = "forces"  # "forces", "contacts"
 assert CONTACT_OBS_TYPE in ["forces", "contacts"], f"Invalid contact obs type: {CONTACT_OBS_TYPE}"
 
 OBJECT_NAME = "pitcher"  # "box", "pitcher", "basket"
-OBJECT_TRAJECTORY_IDX = 1  # 0, 1, 2
+OBJECT_TRAJECTORY_IDX = 0  # 0, 1, 2
 
 if "box" in OBJECT_NAME:
     OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/box/usd/box.usd"
@@ -769,7 +769,7 @@ class BimanualEnv(DirectRLEnv):
 
     def _setup_default_joint_pos(self):
         USE_ORIGINAL_DEFAULT_JOINT_POS = (
-            True  # Set to True to debug using default joint pos
+            False  # Set to True to debug using default joint pos
         )
         if USE_ORIGINAL_DEFAULT_JOINT_POS:
             self.robot_custom_default_joint_pos = (
