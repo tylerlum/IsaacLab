@@ -1833,14 +1833,14 @@ class BimanualEnv(DirectRLEnv):
                 }
                 if INCLUDE_CONTACT_REWARD:
                     self.individual_reward_weights["fingertip_contact"] = (
-                        0.01  # max = NUM_BIMANUAL * 17 * num_steps ~ 2500
+                        0.002  # max = NUM_BIMANUAL * 17 * num_steps ~ 2500
                     )
                 if INCLUDE_HAND_TRACKING_REWARD:
                     self.individual_reward_weights["right_hand_tracking_reward"] = (
-                        0.1  # max = num_steps ~ 75
+                        0.02  # max = num_steps ~ 75
                     )
                     self.individual_reward_weights["left_hand_tracking_reward"] = (
-                        0.1  # max = num_steps ~ 75
+                        0.02  # max = num_steps ~ 75
                     )
 
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
