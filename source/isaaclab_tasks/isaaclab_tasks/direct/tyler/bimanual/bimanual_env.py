@@ -54,6 +54,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.constants import (
     ENV_REGEX_NS,
     NUM_QUAT,
     NUM_XYZ,
+    NUM_RPY,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_robot_constants import (
     LEFT_INDEX_FINGERTIP_LINK_IDX,
@@ -146,7 +147,9 @@ INCLUDE_Q_OBS = True
 INCLUDE_QD_OBS = True
 INCLUDE_FABRIC_OBS = True
 CONTACT_OBS_TYPE = "contacts"  # "forces", "contacts"
-assert CONTACT_OBS_TYPE in ["forces", "contacts"], f"Invalid contact obs type: {CONTACT_OBS_TYPE}"
+assert CONTACT_OBS_TYPE in ["forces", "contacts"], (
+    f"Invalid contact obs type: {CONTACT_OBS_TYPE}"
+)
 
 OBJECT_NAME = "pitcher"  # "box", "pitcher", "basket"
 OBJECT_TRAJECTORY_IDX = 0  # 0, 1, 2
@@ -197,7 +200,11 @@ def compute_num_observations():
         + (NUM_XYZ + NUM_QUAT)  # goal object position and orientation
         + (NUM_XYZ * NUM_BIMANUAL if FINGER_GOALS else 0)  # fingertip goal positions
         + (
-            NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if FILTER_ARM_ACTIONS else 0
+            (NUM_ARM_JOINTS * NUM_BIMANUAL)
+            if FILTER_ARM_ACTIONS and not USE_FABRIC
+            else ((NUM_XYZ + NUM_RPY) * NUM_BIMANUAL)
+            if FILTER_ARM_ACTIONS and USE_FABRIC
+            else 0
         )  # filtered arm actions
         + (
             NUM_ARM_HAND_JOINTS * NUM_BIMANUAL * 2
@@ -225,7 +232,9 @@ def compute_num_observations():
         + 1  # episode_length_buf
         + 1  # object_is_lifted
         + 1  # object_has_been_lifted_this_episode
-        + (17 * NUM_BIMANUAL) * (1 if CONTACT_OBS_TYPE == "contacts" else 3)  # object contacts
+        + (
+            (17 * NUM_BIMANUAL) * (1 if CONTACT_OBS_TYPE == "contacts" else 3)
+        )  # object contacts
     )
 
 
@@ -1140,6 +1149,12 @@ class BimanualEnv(DirectRLEnv):
             check_nan_and_print_if_any(
                 new_fabric_hand_target, "new_fabric_hand_target (after computing)"
             )
+            if FILTER_ARM_ACTIONS:
+                ALPHA = 0.1  # 1 means no filtering, 0 means never update
+                new_fabric_palm_target = (
+                    ALPHA * new_fabric_palm_target
+                    + (1 - ALPHA) * self.fabric_palm_target
+                )
 
             self.fabric_palm_target.copy_(new_fabric_palm_target)
             self.fabric_hand_target.copy_(new_fabric_hand_target)
@@ -1458,10 +1473,10 @@ class BimanualEnv(DirectRLEnv):
         )
 
         if FILTER_ARM_ACTIONS:
-            ALPHA = 0.9
+            ALPHA = 0.1  # 1 means no filtering, 0 means never update
             self.filtered_arm_position_targets = (
-                ALPHA * self.filtered_arm_position_targets
-                + (1 - ALPHA) * arm_position_targets
+                ALPHA * arm_position_targets
+                + (1 - ALPHA) * self.filtered_arm_position_targets
             )
             arm_position_targets = self.filtered_arm_position_targets
 
@@ -1670,9 +1685,12 @@ class BimanualEnv(DirectRLEnv):
                 self.left_goal_position_w - self.scene.env_origins
             )
         if FILTER_ARM_ACTIONS:
-            obs_dict["filtered_arm_position_targets"] = (
-                self.filtered_arm_position_targets
-            )
+            if USE_FABRIC:
+                obs_dict["fabric_palm_target"] = self.fabric_palm_target
+            else:
+                obs_dict["filtered_arm_position_targets"] = (
+                    self.filtered_arm_position_targets
+                )
 
         if USE_FABRIC and INCLUDE_FABRIC_OBS:
             obs_dict["fabric_q"] = self.fabric_q
@@ -2121,9 +2139,10 @@ class BimanualEnv(DirectRLEnv):
                 for reward_name in REWARD_NAMES
             }
 
-            self.filtered_arm_position_targets = torch.zeros_like(
-                self.robot.data.joint_pos[:, : NUM_ARM_JOINTS * NUM_BIMANUAL]
-            )
+            if FILTER_ARM_ACTIONS:
+                self.filtered_arm_position_targets = self.robot.data.joint_pos[
+                    :, : NUM_ARM_JOINTS * NUM_BIMANUAL
+                ]
             self.sampled_raw_actions = sample_uniform_tensor(
                 low=torch.tensor([-1.0] * self.cfg.action_space, device=self.device),
                 high=torch.tensor([1.0] * self.cfg.action_space, device=self.device),
@@ -2145,7 +2164,13 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_qd = torch.zeros_like(self.fabric_q)
                 self.fabric_qdd = torch.zeros_like(self.fabric_q)
 
-                self.fabric_palm_target = self.default_fabric_palm_target().clone()
+                self.fabric_palm_target = torch.cat(
+                    [
+                        self.pose_w_to_fabric_xyzZYX(self.right_palm_pose_w()),
+                        self.pose_w_to_fabric_xyzZYX(self.left_palm_pose_w()),
+                    ],
+                    dim=1,
+                )
             if SAVE_OBS_HISTORY:
                 self.obs_history = torch.zeros(
                     self.num_envs,
@@ -2182,9 +2207,10 @@ class BimanualEnv(DirectRLEnv):
                     env_ids
                 ] = 0
 
-            self.filtered_arm_position_targets[env_ids] = self.robot.data.joint_pos[
-                env_ids, : NUM_ARM_JOINTS * NUM_BIMANUAL
-            ]
+            if FILTER_ARM_ACTIONS:
+                self.filtered_arm_position_targets[env_ids] = self.robot.data.joint_pos[
+                    env_ids, : NUM_ARM_JOINTS * NUM_BIMANUAL
+                ]
             self.sampled_raw_actions[env_ids] = sample_uniform_tensor(
                 low=torch.tensor([-1.0] * self.cfg.action_space, device=self.device),
                 high=torch.tensor([1.0] * self.cfg.action_space, device=self.device),
@@ -2209,9 +2235,13 @@ class BimanualEnv(DirectRLEnv):
                 )
                 self.fabric_qd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
                 self.fabric_qdd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
-                self.fabric_palm_target[env_ids] = self.default_fabric_palm_target()[
-                    env_ids
-                ].clone()
+                self.fabric_palm_target[env_ids] = torch.cat(
+                    [
+                        self.pose_w_to_fabric_xyzZYX(self.right_palm_pose_w()[env_ids]),
+                        self.pose_w_to_fabric_xyzZYX(self.left_palm_pose_w()[env_ids]),
+                    ],
+                    dim=1,
+                )
             if SAVE_OBS_HISTORY:
                 self.obs_history[env_ids] = torch.zeros(
                     len(env_ids),
@@ -2487,14 +2517,18 @@ class BimanualEnv(DirectRLEnv):
             self.right_palm_target_pose_visualizer.visualize(
                 translations=right_palm_target_pose[:, :3],
                 orientations=right_palm_target_pose[:, 3:],
-                scales=torch.tensor(POSE_SCALE, device=self.device)
+                scales=torch.tensor(
+                    (np.array(POSE_SCALE) * 0.3).tolist(), device=self.device
+                )
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
             self.left_palm_target_pose_visualizer.visualize(
                 translations=left_palm_target_pose[:, :3],
                 orientations=left_palm_target_pose[:, 3:],
-                scales=torch.tensor(POSE_SCALE, device=self.device)
+                scales=torch.tensor(
+                    (np.array(POSE_SCALE) * 0.3).tolist(), device=self.device
+                )
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
@@ -3431,19 +3465,12 @@ class BimanualEnv(DirectRLEnv):
     ) -> torch.Tensor:
         return self.left_fingertip_positions_w(q)[:, 0]
 
-    def default_fabric_palm_target(self) -> torch.Tensor:
-        # Compute palm poses at default joint positions
-        default_palm_target = np.array(
-            [0.7298, -0.2469, 0.5738, 2.25930292, 0.86978541, 1.86671697]
-            + [0.7298, 0.2469, 0.5738, -2.25930299, 0.86978536, -1.86671716],
-        )
-        return (
-            torch.from_numpy(default_palm_target)
-            .float()
-            .to(self.device)
-            .unsqueeze(dim=0)
-            .repeat_interleave(self.num_envs, dim=0)
-        )
+    def pose_w_to_fabric_xyzZYX(self, pose_w: torch.Tensor) -> torch.Tensor:
+        xyz = pose_w[:, :3] - self.scene.env_origins
+        quat_wxyz = pose_w[:, 3:]
+        matrix = quat_wxyz_to_matrix(quat_wxyz)
+        euler_ZYX = matrix_to_euler_angles(matrix, "ZYX")
+        return torch.cat([xyz, euler_ZYX], dim=1)
 
     #### TENSOR SLICE PROPERTIES END ####
 

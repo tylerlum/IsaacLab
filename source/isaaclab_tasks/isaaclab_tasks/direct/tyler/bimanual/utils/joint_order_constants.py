@@ -3,7 +3,7 @@ from typing import List
 import numpy as np
 import torch
 
-# [LEFT, RIGHT, LEFT, RIGHT, ...]
+# [LEFT ARM 1, RIGHT ARM 1, LEFT ARM 2, RIGHT ARM 2, ...]
 ISAACLAB_JOINT_ORDER = [
     "left_iiwa14_joint_1",
     "right_iiwa14_joint_1",
