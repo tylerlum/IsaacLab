@@ -37,7 +37,6 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelWithAdditiveBiasCfg
 from isaaclab_assets import ISAACLAB_ASSETS_DATA_DIR
 from isaaclab_assets.robots.bimanual import BIMANUAL_CFG, BLUE_BIMANUAL_CFG
-from scipy.spatial.transform import Rotation as R
 from termcolor import colored
 
 import wandb
@@ -53,8 +52,8 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.color_constants import (
 from isaaclab_tasks.direct.tyler.bimanual.utils.constants import (
     ENV_REGEX_NS,
     NUM_QUAT,
-    NUM_XYZ,
     NUM_RPY,
+    NUM_XYZ,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.fabric_robot_constants import (
     LEFT_INDEX_FINGERTIP_LINK_IDX,
@@ -716,6 +715,20 @@ def check_nan_and_print_if_any(x: torch.Tensor, name: str):
 
 
 class BimanualEnv(DirectRLEnv):
+    """
+    Conventions:
+    * _w means in world frame (each env is different, need to subtract env origin to get in env frame)
+    * pose means [xyz, quat_wxyz]
+    * pose_w means [xyz_w, quat_wxyz]
+    * xyzZYX means [xyz, euler_ZYX]
+
+    Goal:
+    * Refers to object or hand poses that are from the human demo (usually read from a file), often used to compute rewards
+
+    Target:
+    * Refers to actions taken by the agent (e.g., joint position targets, palm pose targets)
+    """
+
     cfg: BimanualEnvCfg
 
     def __init__(self, cfg: BimanualEnvCfg, render_mode: str | None = None, **kwargs):
@@ -768,13 +781,13 @@ class BimanualEnv(DirectRLEnv):
         right_T_R_Ps = data["right_T_R_Ps"]
         left_T_R_Ps = data["left_T_R_Ps"]
         T_R_Os = data["T_R_Os"]
-        NUM_TIMESTEPS = right_T_R_Ps.shape[0]
-        assert_equals(right_T_R_Ps.shape, (NUM_TIMESTEPS, 4, 4))
-        assert_equals(left_T_R_Ps.shape, (NUM_TIMESTEPS, 4, 4))
-        assert_equals(T_R_Os.shape, (NUM_TIMESTEPS, 4, 4))
-        self.right_T_R_Ps = torch.from_numpy(right_T_R_Ps).to(self.device).float()
-        self.left_T_R_Ps = torch.from_numpy(left_T_R_Ps).to(self.device).float()
-        self.T_R_Os = torch.from_numpy(T_R_Os).to(self.device).float()
+        NUM_GOAL_TIMESTEPS = right_T_R_Ps.shape[0]
+        assert_equals(right_T_R_Ps.shape, (NUM_GOAL_TIMESTEPS, 4, 4))
+        assert_equals(left_T_R_Ps.shape, (NUM_GOAL_TIMESTEPS, 4, 4))
+        assert_equals(T_R_Os.shape, (NUM_GOAL_TIMESTEPS, 4, 4))
+        self.goal_right_T_R_Ps = torch.from_numpy(right_T_R_Ps).to(self.device).float()
+        self.goal_left_T_R_Ps = torch.from_numpy(left_T_R_Ps).to(self.device).float()
+        self.goal_T_R_Os = torch.from_numpy(T_R_Os).to(self.device).float()
 
     def _setup_default_joint_pos(self):
         USE_ORIGINAL_DEFAULT_JOINT_POS = (
@@ -1169,13 +1182,13 @@ class BimanualEnv(DirectRLEnv):
         OVERWRITE_GO_TO_TARGET = False
         if OVERWRITE_GO_TO_TARGET:
             if not hasattr(self, "CUSTOM_left_T_R_P"):
-                self.CUSTOM_left_T_R_P = self.left_T_R_Ps[
-                    self.reference_float_idx.long().clip(
-                        max=self.left_T_R_Ps.shape[0] - 1
+                self.CUSTOM_left_T_R_P = self.goal_left_T_R_Ps[
+                    self.goal_float_idx.long().clip(
+                        max=self.goal_left_T_R_Ps.shape[0] - 1
                     )
                 ]
 
-            right_target_wrist_pose_w = self.right_palm_target_pose_w()
+            right_target_wrist_pose_w = self.goal_right_palm_pose_w()
             right_target_wrist_pos = (
                 right_target_wrist_pose_w[:, :3] - self.scene.env_origins
             )
@@ -1186,7 +1199,7 @@ class BimanualEnv(DirectRLEnv):
                 right_target_wrist_rot_matrix, "ZYX"
             )
 
-            left_target_wrist_pose_w = self.left_palm_target_pose_w()
+            left_target_wrist_pose_w = self.goal_left_palm_pose_w()
             left_target_wrist_pos = (
                 left_target_wrist_pose_w[:, :3] - self.scene.env_origins
             )
@@ -1293,11 +1306,11 @@ class BimanualEnv(DirectRLEnv):
 
         self._apply_external_wrench()
 
-        T_R_Os = self.T_R_Os[
-            self.reference_float_idx.long().clip(max=self.T_R_Os.shape[0] - 1)
+        goal_T_R_Os = self.goal_T_R_Os[
+            self.goal_float_idx.long().clip(max=self.goal_T_R_Os.shape[0] - 1)
         ]
-        goal_object_pos = T_R_Os[:, :3, 3] + self.scene.env_origins
-        goal_object_quat_wxyz = matrix_to_quat_wxyz(T_R_Os[:, :3, :3])
+        goal_object_pos = goal_T_R_Os[:, :3, 3] + self.scene.env_origins
+        goal_object_quat_wxyz = matrix_to_quat_wxyz(goal_T_R_Os[:, :3, :3])
         self.goal_object.write_root_pose_to_sim(
             torch.cat([goal_object_pos, goal_object_quat_wxyz], dim=-1)
         )
@@ -1388,7 +1401,11 @@ class BimanualEnv(DirectRLEnv):
             )
         else:
             current_fabric_palm = torch.cat(
-                [self.right_fabric_palm, self.left_fabric_palm], dim=1
+                [
+                    self.pose_w_to_xyzZYX(self.right_palm_pose_w()),
+                    self.pose_w_to_xyzZYX(self.left_palm_pose_w()),
+                ],
+                dim=1,
             )
             POS_DELTA = 0.2
             ANG_DELTA = np.deg2rad(45)
@@ -1554,7 +1571,7 @@ class BimanualEnv(DirectRLEnv):
         small_object_goal_distance_ids = (
             (object_goal_keypoint_dist < 0.25).nonzero(as_tuple=False).squeeze(-1)
         )
-        self.reference_float_idx[small_object_goal_distance_ids] += 1
+        self.goal_float_idx[small_object_goal_distance_ids] += 1
 
     def _get_observations(self) -> dict:
         right_palm_pose_w = self.right_palm_pose_w()
@@ -1624,12 +1641,12 @@ class BimanualEnv(DirectRLEnv):
             "object_orientation": self.object_orientation,
             "goal_object_orientation": self.goal_object_orientation,
             "right_palm_target_position": (
-                self.right_palm_target_pose_w()[:, :3] - self.scene.env_origins
+                self.goal_right_palm_pose_w()[:, :3] - self.scene.env_origins
                 if INCLUDE_HAND_TRACKING_REWARD
                 else torch.zeros(self.num_envs, 0, device=self.device)
             ),
             "left_palm_target_position": (
-                self.left_palm_target_pose_w()[:, :3] - self.scene.env_origins
+                self.goal_left_palm_pose_w()[:, :3] - self.scene.env_origins
                 if INCLUDE_HAND_TRACKING_REWARD
                 else torch.zeros(self.num_envs, 0, device=self.device)
             ),
@@ -1831,8 +1848,8 @@ class BimanualEnv(DirectRLEnv):
             if INCLUDE_CONTACT_REWARD:
                 self.individual_reward_bufs["fingertip_contact"] = num_contacts
             if INCLUDE_HAND_TRACKING_REWARD:
-                right_palm_to_target_dist = (self.right_palm_pose_w()[:, :3] - self.right_palm_target_pose_w()[:, :3]).norm(dim=-1, p=2)
-                left_palm_to_target_dist = (self.left_palm_pose_w()[:, :3] - self.left_palm_target_pose_w()[:, :3]).norm(dim=-1, p=2)
+                right_palm_to_target_dist = (self.right_palm_pose_w()[:, :3] - self.goal_right_palm_pose_w()[:, :3]).norm(dim=-1, p=2)
+                left_palm_to_target_dist = (self.left_palm_pose_w()[:, :3] - self.goal_left_palm_pose_w()[:, :3]).norm(dim=-1, p=2)
                 right_hand_tracking_reward = torch.exp(-right_palm_to_target_dist * 10.0)
                 left_hand_tracking_reward = torch.exp(-left_palm_to_target_dist * 10.0)
                 self.individual_reward_bufs["right_hand_tracking_reward"] = right_hand_tracking_reward
@@ -2095,15 +2112,15 @@ class BimanualEnv(DirectRLEnv):
     def _reset_object(self, env_ids: torch.Tensor):
         # object_pose = self._sample_initial_object_pose(env_ids)
         # final_object_pose = self._sample_final_object_pose(env_ids)
-        T_R_Os = self.T_R_Os[
-            self.episode_length_buf[env_ids].clip(max=self.T_R_Os.shape[0] - 1)
+        goal_T_R_Os = self.goal_T_R_Os[
+            self.episode_length_buf[env_ids].clip(max=self.goal_T_R_Os.shape[0] - 1)
         ]
-        object_pos = T_R_Os[:, :3, 3] + self.scene.env_origins[env_ids]
+        object_pos = goal_T_R_Os[:, :3, 3] + self.scene.env_origins[env_ids]
         object_pos[:, 2] += 0.02  # Buffer to avoid collision with table
-        object_quat_wxyz = matrix_to_quat_wxyz(T_R_Os[:, :3, :3])
+        object_quat_wxyz = matrix_to_quat_wxyz(goal_T_R_Os[:, :3, :3])
         object_pose = torch.cat([object_pos, object_quat_wxyz], dim=-1)
-        goal_object_pos = T_R_Os[:, :3, 3] + self.scene.env_origins[env_ids]
-        goal_object_quat_wxyz = matrix_to_quat_wxyz(T_R_Os[:, :3, :3])
+        goal_object_pos = goal_T_R_Os[:, :3, 3] + self.scene.env_origins[env_ids]
+        goal_object_quat_wxyz = matrix_to_quat_wxyz(goal_T_R_Os[:, :3, :3])
         goal_object_pose = torch.cat([goal_object_pos, goal_object_quat_wxyz], dim=-1)
         self.object.write_root_pose_to_sim(object_pose, env_ids=env_ids)
 
@@ -2166,8 +2183,8 @@ class BimanualEnv(DirectRLEnv):
 
                 self.fabric_palm_target = torch.cat(
                     [
-                        self.pose_w_to_fabric_xyzZYX(self.right_palm_pose_w()),
-                        self.pose_w_to_fabric_xyzZYX(self.left_palm_pose_w()),
+                        self.pose_w_to_xyzZYX(self.right_palm_pose_w()),
+                        self.pose_w_to_xyzZYX(self.left_palm_pose_w()),
                     ],
                     dim=1,
                 )
@@ -2191,7 +2208,7 @@ class BimanualEnv(DirectRLEnv):
             self.keyboard_external_force_w = torch.zeros(
                 self.num_envs, NUM_XYZ, device=self.device
             )
-            self.reference_float_idx = torch.zeros(self.num_envs, device=self.device)
+            self.goal_float_idx = torch.zeros(self.num_envs, device=self.device)
         else:
             self.raw_actions[env_ids] = torch.zeros(
                 len(env_ids), self.cfg.action_space, device=self.device
@@ -2237,8 +2254,8 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_qdd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
                 self.fabric_palm_target[env_ids] = torch.cat(
                     [
-                        self.pose_w_to_fabric_xyzZYX(self.right_palm_pose_w()[env_ids]),
-                        self.pose_w_to_fabric_xyzZYX(self.left_palm_pose_w()[env_ids]),
+                        self.pose_w_to_xyzZYX(self.right_palm_pose_w()[env_ids]),
+                        self.pose_w_to_xyzZYX(self.left_palm_pose_w()[env_ids]),
                     ],
                     dim=1,
                 )
@@ -2264,9 +2281,7 @@ class BimanualEnv(DirectRLEnv):
             self.keyboard_external_force_w[env_ids] = torch.zeros(
                 len(env_ids), NUM_XYZ, device=self.device
             )
-            self.reference_float_idx[env_ids] = torch.zeros(
-                len(env_ids), device=self.device
-            )
+            self.goal_float_idx[env_ids] = torch.zeros(len(env_ids), device=self.device)
 
     def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
@@ -2512,8 +2527,14 @@ class BimanualEnv(DirectRLEnv):
             .repeat_interleave(self.num_envs, dim=0),
         )
         if USE_FABRIC:
-            right_palm_target_pose = self.right_fabric_palm_target_pose_w
-            left_palm_target_pose = self.left_fabric_palm_target_pose_w
+            # Actions are in robot frame
+            # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
+            right_palm_target_pose = self.xyzZYX_to_pose_w(
+                self.fabric_palm_target[:, :6]
+            )
+            left_palm_target_pose = self.xyzZYX_to_pose_w(
+                self.fabric_palm_target[:, 6:12]
+            )
             self.right_palm_target_pose_visualizer.visualize(
                 translations=right_palm_target_pose[:, :3],
                 orientations=right_palm_target_pose[:, 3:],
@@ -2654,8 +2675,8 @@ class BimanualEnv(DirectRLEnv):
                         self.num_envs, dim=0
                     ),
                 )
-        right_target_wrist_pose_w = self.right_palm_target_pose_w()
-        left_target_wrist_pose_w = self.left_palm_target_pose_w()
+        right_target_wrist_pose_w = self.goal_right_palm_pose_w()
+        left_target_wrist_pose_w = self.goal_left_palm_pose_w()
         right_target_wrist_pos_w = right_target_wrist_pose_w[:, :3]
         right_target_wrist_quat_wxyz = right_target_wrist_pose_w[:, 3:]
         left_target_wrist_pos_w = left_target_wrist_pose_w[:, :3]
@@ -2896,151 +2917,14 @@ class BimanualEnv(DirectRLEnv):
         return self.goal_object.data.body_quat_w[:, 0]
 
     @property
-    def future_goal_object_poses(self) -> torch.Tensor:
-        TIME_BETWEEN_GOALS_SECONDS = 0.5
-        CONTROL_DT = self.cfg.sim.dt * self.cfg.decimation
-        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / CONTROL_DT
-        relative_idxs = (
-            torch.arange(1, NUM_FUTURE_GOAL_OBS + 1, device=self.device).float()
-            * IDXS_BETWEEN_GOALS
-        )
-        current_idx = self.reference_float_idx
-        assert relative_idxs.shape == (NUM_FUTURE_GOAL_OBS,), (
-            f"relative_idxs shape: {relative_idxs.shape}"
-        )
-        assert current_idx.shape == (self.num_envs,), (
-            f"current_idx shape: {current_idx.shape}"
-        )
-        N_TIMESTEPS = self.T_R_Os.shape[0]
-        new_idxs = (
-            (current_idx.unsqueeze(dim=1) + relative_idxs.unsqueeze(dim=0))
-            .long()
-            .clip(max=N_TIMESTEPS - 1)
-        )
-        assert new_idxs.shape == (self.num_envs, NUM_FUTURE_GOAL_OBS), (
-            f"new_idxs shape: {new_idxs.shape}"
-        )
-        assert self.T_R_Os.shape == (N_TIMESTEPS, 4, 4), (
-            f"T_R_Os shape: {self.T_R_Os.shape}"
-        )
-        future_T_R_Os = self.T_R_Os[new_idxs]
-        assert future_T_R_Os.shape == (self.num_envs, NUM_FUTURE_GOAL_OBS, 4, 4), (
-            f"future_T_R_Os shape: {future_T_R_Os.shape}"
-        )
-        future_goal_object_positions = future_T_R_Os[:, :, :3, 3]
-        future_goal_object_orientations = matrix_to_quat_wxyz(
-            future_T_R_Os[:, :, :3, :3]
-        )
-        future_goal_object_poses = torch.cat(
-            [future_goal_object_positions, future_goal_object_orientations], dim=-1
-        )
-        assert future_goal_object_poses.shape == (
-            self.num_envs,
-            NUM_FUTURE_GOAL_OBS,
-            7,
-        ), f"future_goal_object_poses shape: {future_goal_object_poses.shape}"
-        return future_goal_object_poses
+    def robot_position_w(self) -> torch.Tensor:
+        return self.robot.data.body_pos_w[:, 0]
 
-    @property
-    def future_right_palm_target_poses(self) -> torch.Tensor:
-        TIME_BETWEEN_TARGETS_SECONDS = 0.5
-        CONTROL_DT = self.cfg.sim.dt * self.cfg.decimation
-        IDXS_BETWEEN_TARGETS = TIME_BETWEEN_TARGETS_SECONDS / CONTROL_DT
-        relative_idxs = (
-            torch.arange(1, NUM_FUTURE_PALM_TARGET_OBS + 1, device=self.device).float()
-            * IDXS_BETWEEN_TARGETS
-        )
-        current_idx = self.reference_float_idx
-        assert relative_idxs.shape == (NUM_FUTURE_PALM_TARGET_OBS,), (
-            f"relative_idxs shape: {relative_idxs.shape}"
-        )
-        assert current_idx.shape == (self.num_envs,), (
-            f"current_idx shape: {current_idx.shape}"
-        )
-        N_TIMESTEPS = self.right_T_R_Ps.shape[0]
-        new_idxs = (
-            (current_idx.unsqueeze(dim=1) + relative_idxs.unsqueeze(dim=0))
-            .long()
-            .clip(max=N_TIMESTEPS - 1)
-        )
-        assert new_idxs.shape == (self.num_envs, NUM_FUTURE_PALM_TARGET_OBS), (
-            f"new_idxs shape: {new_idxs.shape}"
-        )
-        assert self.right_T_R_Ps.shape == (N_TIMESTEPS, 4, 4), (
-            f"right_T_R_Ps shape: {self.right_T_R_Ps.shape}"
-        )
-        future_right_T_R_Ps = self.right_T_R_Ps[new_idxs]
-        assert future_right_T_R_Ps.shape == (
-            self.num_envs,
-            NUM_FUTURE_PALM_TARGET_OBS,
-            4,
-            4,
-        ), f"future_right_T_R_Ps shape: {future_right_T_R_Ps.shape}"
-        future_right_palm_positions = future_right_T_R_Ps[:, :, :3, 3]
-        future_right_palm_orientations = matrix_to_quat_wxyz(
-            future_right_T_R_Ps[:, :, :3, :3]
-        )
-        future_right_palm_poses = torch.cat(
-            [future_right_palm_positions, future_right_palm_orientations], dim=-1
-        )
-        assert future_right_palm_poses.shape == (
-            self.num_envs,
-            NUM_FUTURE_PALM_TARGET_OBS,
-            7,
-        ), f"future_right_palm_poses shape: {future_right_palm_poses.shape}"
-        return future_right_palm_poses
+    #### TENSOR SLICE PROPERTIES END ####
 
+    #### OBJECT COMPUTATIONS START ####
     @property
-    def future_left_palm_target_poses(self) -> torch.Tensor:
-        TIME_BETWEEN_TARGETS_SECONDS = 0.5
-        CONTROL_DT = self.cfg.sim.dt * self.cfg.decimation
-        IDXS_BETWEEN_TARGETS = TIME_BETWEEN_TARGETS_SECONDS / CONTROL_DT
-        relative_idxs = (
-            torch.arange(1, NUM_FUTURE_PALM_TARGET_OBS + 1, device=self.device).float()
-            * IDXS_BETWEEN_TARGETS
-        )
-        current_idx = self.reference_float_idx
-        assert relative_idxs.shape == (NUM_FUTURE_PALM_TARGET_OBS,), (
-            f"relative_idxs shape: {relative_idxs.shape}"
-        )
-        assert current_idx.shape == (self.num_envs,), (
-            f"current_idx shape: {current_idx.shape}"
-        )
-        N_TIMESTEPS = self.left_T_R_Ps.shape[0]
-        new_idxs = (
-            (current_idx.unsqueeze(dim=1) + relative_idxs.unsqueeze(dim=0))
-            .long()
-            .clip(max=N_TIMESTEPS - 1)
-        )
-        assert new_idxs.shape == (self.num_envs, NUM_FUTURE_PALM_TARGET_OBS), (
-            f"new_idxs shape: {new_idxs.shape}"
-        )
-        assert self.left_T_R_Ps.shape == (N_TIMESTEPS, 4, 4), (
-            f"left_T_R_Ps shape: {self.left_T_R_Ps.shape}"
-        )
-        future_left_T_R_Ps = self.left_T_R_Ps[new_idxs]
-        assert future_left_T_R_Ps.shape == (
-            self.num_envs,
-            NUM_FUTURE_PALM_TARGET_OBS,
-            4,
-            4,
-        ), f"future_left_T_R_Ps shape: {future_left_T_R_Ps.shape}"
-        future_left_palm_positions = future_left_T_R_Ps[:, :, :3, 3]
-        future_left_palm_orientations = matrix_to_quat_wxyz(
-            future_left_T_R_Ps[:, :, :3, :3]
-        )
-        future_left_palm_poses = torch.cat(
-            [future_left_palm_positions, future_left_palm_orientations], dim=-1
-        )
-        assert future_left_palm_poses.shape == (
-            self.num_envs,
-            NUM_FUTURE_PALM_TARGET_OBS,
-            7,
-        ), f"future_left_palm_poses shape: {future_left_palm_poses.shape}"
-        return future_left_palm_poses
-
-    @property
-    def object_goal_keypoint_distance(self) -> torch.Tensor:
+    def object_keypoint_positions_w(self) -> torch.Tensor:
         object_keypoint_offsets = (
             torch.tensor(
                 OBJECT_KEYPOINT_OFFSETS,
@@ -3057,25 +2941,44 @@ class BimanualEnv(DirectRLEnv):
         ), (
             f"Expected object_keypoint_offsets to have shape (self.num_envs, NUM_OBJECT_KEYPOINTS, 3), got {object_keypoint_offsets.shape}"
         )
-
-        keypoint_positions = compute_keypoint_positions(
+        return compute_keypoint_positions(
             pos=self.object_position_w,
             quat_xyzw=self.object_orientation,
             keypoint_offsets=object_keypoint_offsets,
         )
-        goal_keypoint_positions = compute_keypoint_positions(
+
+    @property
+    def goal_object_keypoint_positions_w(self) -> torch.Tensor:
+        object_keypoint_offsets = (
+            torch.tensor(
+                OBJECT_KEYPOINT_OFFSETS,
+                device=self.device,
+                dtype=self.object_position_w.dtype,
+            )
+            .unsqueeze(dim=0)
+            .repeat_interleave(self.num_envs, dim=0)
+        )
+        assert object_keypoint_offsets.shape == (
+            self.num_envs,
+            NUM_OBJECT_KEYPOINTS,
+            3,
+        ), (
+            f"Expected object_keypoint_offsets to have shape (self.num_envs, NUM_OBJECT_KEYPOINTS, 3), got {object_keypoint_offsets.shape}"
+        )
+        return compute_keypoint_positions(
             pos=self.goal_object_position_w,
             quat_xyzw=self.goal_object_orientation,
             keypoint_offsets=object_keypoint_offsets,
         )
-        distance = (
-            (keypoint_positions - goal_keypoint_positions).norm(dim=-1).mean(dim=-1)
-        )
-        return distance
 
     @property
-    def robot_position_w(self) -> torch.Tensor:
-        return self.robot.data.body_pos_w[:, 0]
+    def object_goal_keypoint_distance(self) -> torch.Tensor:
+        distance = (
+            (self.object_keypoint_positions_w - self.goal_object_keypoint_positions_w)
+            .norm(dim=-1)
+            .mean(dim=-1)
+        )
+        return distance
 
     @property
     def object_is_lifted(self) -> torch.Tensor:
@@ -3096,112 +2999,194 @@ class BimanualEnv(DirectRLEnv):
             self.object_position_w[:, 2] < self.table_position[:, 2] - OBJECT_LENGTH_Z
         )
 
+    #### OBJECT COMPUTATIONS END ####
+
+    #### GOAL COMPUTATIONS START ####
     @property
-    def right_fabric_palm_target_pose_w(self) -> torch.Tensor:
-        # Actions are in robot frame
-        # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
-        assert self.fabric_palm_target.shape == (self.num_envs, 6 * NUM_BIMANUAL), (
-            f"Fabric palm target shape: {self.fabric_palm_target.shape}"
+    def future_goal_object_poses(self) -> torch.Tensor:
+        # Compute future idxs we want
+        TIME_BETWEEN_GOALS_SECONDS = 0.5
+        CONTROL_DT = self.cfg.sim.dt * self.cfg.decimation
+        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / CONTROL_DT
+        relative_idxs = (
+            torch.arange(1, NUM_FUTURE_GOAL_OBS + 1, device=self.device).float()
+            * IDXS_BETWEEN_GOALS
         )
-        right_pos = self.fabric_palm_target[:, :3]
-
-        right_euler_ZYX = self.fabric_palm_target[:, 3:6]
-        right_matrix = euler_angles_to_matrix(right_euler_ZYX, "ZYX")
-        right_quat_wxyz = matrix_to_quat_wxyz(right_matrix)
-        assert right_quat_wxyz.shape == (self.num_envs, 4), (
-            f"Quat shape: {right_quat_wxyz.shape}"
+        current_idx = self.goal_float_idx
+        assert relative_idxs.shape == (NUM_FUTURE_GOAL_OBS,), (
+            f"relative_idxs shape: {relative_idxs.shape}"
+        )
+        assert current_idx.shape == (self.num_envs,), (
+            f"current_idx shape: {current_idx.shape}"
+        )
+        NUM_GOAL_TIMESTEPS = self.goal_T_R_Os.shape[0]
+        new_idxs = (
+            (current_idx.unsqueeze(dim=1) + relative_idxs.unsqueeze(dim=0))
+            .long()
+            .clip(max=NUM_GOAL_TIMESTEPS - 1)
+        )
+        assert new_idxs.shape == (self.num_envs, NUM_FUTURE_GOAL_OBS), (
+            f"new_idxs shape: {new_idxs.shape}"
         )
 
-        # World frame
-        right_pos_w = right_pos + self.scene.env_origins
-        right_pose = torch.cat([right_pos_w, right_quat_wxyz], dim=-1)
+        # Extract future poses
+        assert self.goal_T_R_Os.shape == (NUM_GOAL_TIMESTEPS, 4, 4), (
+            f"goal_T_R_Os shape: {self.goal_T_R_Os.shape}"
+        )
+        future_T_R_Os = self.goal_T_R_Os[new_idxs]
+        assert future_T_R_Os.shape == (self.num_envs, NUM_FUTURE_GOAL_OBS, 4, 4), (
+            f"future_T_R_Os shape: {future_T_R_Os.shape}"
+        )
 
-        return right_pose
+        # Convert to poses
+        future_positions = future_T_R_Os[:, :, :3, 3]
+        future_orientations = matrix_to_quat_wxyz(future_T_R_Os[:, :, :3, :3])
+        future_poses = torch.cat([future_positions, future_orientations], dim=-1)
+        assert future_poses.shape == (
+            self.num_envs,
+            NUM_FUTURE_GOAL_OBS,
+            7,
+        ), f"future_poses shape: {future_poses.shape}"
+        return future_poses
 
     @property
-    def left_fabric_palm_target_pose_w(self) -> torch.Tensor:
-        # Actions are in robot frame
-        # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
-        assert self.fabric_palm_target.shape == (self.num_envs, 6 * NUM_BIMANUAL), (
-            f"Fabric palm target shape: {self.fabric_palm_target.shape}"
+    def future_right_palm_target_poses(self) -> torch.Tensor:
+        # Compute future idxs we want
+        TIME_BETWEEN_TARGETS_SECONDS = 0.5
+        CONTROL_DT = self.cfg.sim.dt * self.cfg.decimation
+        IDXS_BETWEEN_TARGETS = TIME_BETWEEN_TARGETS_SECONDS / CONTROL_DT
+        relative_idxs = (
+            torch.arange(1, NUM_FUTURE_PALM_TARGET_OBS + 1, device=self.device).float()
+            * IDXS_BETWEEN_TARGETS
         )
-        left_pos = self.fabric_palm_target[:, 6:9]
-
-        left_euler_ZYX_np = self.fabric_palm_target[:, 9:12].detach().cpu().numpy()
-        left_quat_xyzw_np = R.from_euler(
-            "ZYX", left_euler_ZYX_np, degrees=False
-        ).as_quat()
-        left_quat_wxyz_np = np.concatenate(
-            [left_quat_xyzw_np[..., 3:], left_quat_xyzw_np[..., :3]], axis=-1
+        current_idx = self.goal_float_idx
+        assert relative_idxs.shape == (NUM_FUTURE_PALM_TARGET_OBS,), (
+            f"relative_idxs shape: {relative_idxs.shape}"
         )
-        assert left_quat_wxyz_np.shape == (self.num_envs, 4), (
-            f"Quat shape: {left_quat_wxyz_np.shape}"
+        assert current_idx.shape == (self.num_envs,), (
+            f"current_idx shape: {current_idx.shape}"
         )
-        left_quat_wxyz = torch.from_numpy(left_quat_wxyz_np).to(self.device).float()
+        NUM_GOAL_TIMESTEPS = self.goal_right_T_R_Ps.shape[0]
+        new_idxs = (
+            (current_idx.unsqueeze(dim=1) + relative_idxs.unsqueeze(dim=0))
+            .long()
+            .clip(max=NUM_GOAL_TIMESTEPS - 1)
+        )
+        assert new_idxs.shape == (self.num_envs, NUM_FUTURE_PALM_TARGET_OBS), (
+            f"new_idxs shape: {new_idxs.shape}"
+        )
 
-        # World frame
-        left_pos_w = left_pos + self.scene.env_origins
-        left_pose_w = torch.cat([left_pos_w, left_quat_wxyz], dim=-1)
-        return left_pose_w
+        # Extract future poses
+        assert self.goal_right_T_R_Ps.shape == (NUM_GOAL_TIMESTEPS, 4, 4), (
+            f"goal_right_T_R_Ps shape: {self.goal_right_T_R_Ps.shape}"
+        )
+        future_right_T_R_Ps = self.goal_right_T_R_Ps[new_idxs]
+        assert future_right_T_R_Ps.shape == (
+            self.num_envs,
+            NUM_FUTURE_PALM_TARGET_OBS,
+            4,
+            4,
+        ), f"future_right_T_R_Ps shape: {future_right_T_R_Ps.shape}"
 
-    def right_palm_target_pose_w(self) -> torch.Tensor:
-        right_T_R_P = self.right_T_R_Ps[
-            self.reference_float_idx.long().clip(max=self.right_T_R_Ps.shape[0] - 1)
+        # Convert to poses
+        future_positions = future_right_T_R_Ps[:, :, :3, 3]
+        future_orientations = matrix_to_quat_wxyz(future_right_T_R_Ps[:, :, :3, :3])
+        future_poses = torch.cat([future_positions, future_orientations], dim=-1)
+        assert future_poses.shape == (
+            self.num_envs,
+            NUM_FUTURE_PALM_TARGET_OBS,
+            7,
+        ), f"future_poses shape: {future_poses.shape}"
+        return future_poses
+
+    @property
+    def future_left_palm_target_poses(self) -> torch.Tensor:
+        # Compute future idxs we want
+        TIME_BETWEEN_TARGETS_SECONDS = 0.5
+        CONTROL_DT = self.cfg.sim.dt * self.cfg.decimation
+        IDXS_BETWEEN_TARGETS = TIME_BETWEEN_TARGETS_SECONDS / CONTROL_DT
+
+        relative_idxs = (
+            torch.arange(1, NUM_FUTURE_PALM_TARGET_OBS + 1, device=self.device).float()
+            * IDXS_BETWEEN_TARGETS
+        )
+        current_idx = self.goal_float_idx
+        assert relative_idxs.shape == (NUM_FUTURE_PALM_TARGET_OBS,), (
+            f"relative_idxs shape: {relative_idxs.shape}"
+        )
+        assert current_idx.shape == (self.num_envs,), (
+            f"current_idx shape: {current_idx.shape}"
+        )
+        NUM_GOAL_TIMESTEPS = self.goal_left_T_R_Ps.shape[0]
+        new_idxs = (
+            (current_idx.unsqueeze(dim=1) + relative_idxs.unsqueeze(dim=0))
+            .long()
+            .clip(max=NUM_GOAL_TIMESTEPS - 1)
+        )
+        assert new_idxs.shape == (self.num_envs, NUM_FUTURE_PALM_TARGET_OBS), (
+            f"new_idxs shape: {new_idxs.shape}"
+        )
+
+        # Extract future poses
+        assert self.goal_left_T_R_Ps.shape == (NUM_GOAL_TIMESTEPS, 4, 4), (
+            f"goal_left_T_R_Ps shape: {self.goal_left_T_R_Ps.shape}"
+        )
+        future_left_T_R_Ps = self.goal_left_T_R_Ps[new_idxs]
+        assert future_left_T_R_Ps.shape == (
+            self.num_envs,
+            NUM_FUTURE_PALM_TARGET_OBS,
+            4,
+            4,
+        ), f"future_left_T_R_Ps shape: {future_left_T_R_Ps.shape}"
+
+        # Convert to poses
+        future_positions = future_left_T_R_Ps[:, :, :3, 3]
+        future_orientations = matrix_to_quat_wxyz(future_left_T_R_Ps[:, :, :3, :3])
+        future_poses = torch.cat([future_positions, future_orientations], dim=-1)
+        assert future_poses.shape == (
+            self.num_envs,
+            NUM_FUTURE_PALM_TARGET_OBS,
+            7,
+        ), f"future_left_palm_poses shape: {future_poses.shape}"
+        return future_poses
+
+    def goal_right_palm_pose_w(self) -> torch.Tensor:
+        right_T_R_P = self.goal_right_T_R_Ps[
+            self.goal_float_idx.long().clip(max=self.goal_right_T_R_Ps.shape[0] - 1)
         ]
         assert right_T_R_P.shape == (self.num_envs, 4, 4), (
             f"right_T_R_P shape: {right_T_R_P.shape}"
         )
 
-        right_target_wrist_pos = right_T_R_P[:, :3, 3]
-        right_target_wrist_rot_matrix = right_T_R_P[:, :3, :3]
-        right_target_wrist_quat_wxyz = matrix_to_quat_wxyz(
-            right_target_wrist_rot_matrix
-        )
+        pos = right_T_R_P[:, :3, 3]
+        rot_matrix = right_T_R_P[:, :3, :3]
+        quat_wxyz = matrix_to_quat_wxyz(rot_matrix)
 
         # World frame
-        right_target_wrist_pos_w = right_target_wrist_pos + self.scene.env_origins
-        right_target_wrist_pose_w = torch.cat(
-            [right_target_wrist_pos_w, right_target_wrist_quat_wxyz], dim=-1
-        )
-        return right_target_wrist_pose_w
+        pos_w = pos + self.scene.env_origins
+        pose_w = torch.cat([pos_w, quat_wxyz], dim=-1)
+        return pose_w
 
-    def left_palm_target_pose_w(self) -> torch.Tensor:
-        left_T_R_P = self.left_T_R_Ps[
-            self.reference_float_idx.long().clip(max=self.left_T_R_Ps.shape[0] - 1)
+    def goal_left_palm_pose_w(self) -> torch.Tensor:
+        left_T_R_P = self.goal_left_T_R_Ps[
+            self.goal_float_idx.long().clip(max=self.goal_left_T_R_Ps.shape[0] - 1)
         ]
         assert left_T_R_P.shape == (self.num_envs, 4, 4), (
             f"left_T_R_P shape: {left_T_R_P.shape}"
         )
 
-        left_target_wrist_pos = left_T_R_P[:, :3, 3]
-        left_target_wrist_rot_matrix = left_T_R_P[:, :3, :3]
-        left_target_wrist_quat_wxyz = matrix_to_quat_wxyz(left_target_wrist_rot_matrix)
+        pos = left_T_R_P[:, :3, 3]
+        rot_matrix = left_T_R_P[:, :3, :3]
+        quat_wxyz = matrix_to_quat_wxyz(rot_matrix)
 
         # World frame
-        left_target_wrist_pos_w = left_target_wrist_pos + self.scene.env_origins
-        left_target_wrist_pose_w = torch.cat(
-            [left_target_wrist_pos_w, left_target_wrist_quat_wxyz], dim=-1
-        )
-        return left_target_wrist_pose_w
+        pos_w = pos + self.scene.env_origins
+        pose_w = torch.cat([pos_w, quat_wxyz], dim=-1)
+        return pose_w
 
-    @property
-    def right_fabric_palm(self) -> torch.Tensor:
-        pose_w = self.right_palm_pose_w()
-        pos = pose_w[:, :3] - self.scene.env_origins
-        quat_wxyz = pose_w[:, 3:]
-        matrix = quat_wxyz_to_matrix(quat_wxyz)
-        euler_ZYX = matrix_to_euler_angles(matrix, "ZYX")
-        return torch.cat([pos, euler_ZYX], dim=-1)
+    #### GOAL COMPUTATIONS END ####
 
-    @property
-    def left_fabric_palm(self) -> torch.Tensor:
-        pose_w = self.left_palm_pose_w()
-        pos = pose_w[:, :3] - self.scene.env_origins
-        quat_wxyz = pose_w[:, 3:]
-        matrix = quat_wxyz_to_matrix(quat_wxyz)
-        euler_ZYX = matrix_to_euler_angles(matrix, "ZYX")
-        return torch.cat([pos, euler_ZYX], dim=-1)
-
+    #### FABRIC TASKMAP FORWARD KINEMATICS START ####
     def right_taskmap_helper(
         self, q: torch.Tensor, qd: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -3365,13 +3350,13 @@ class BimanualEnv(DirectRLEnv):
         x, _, _ = self.right_taskmap_helper(
             q=q,
         )
-        right_index_pos = x[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
-        right_middle_pos = x[:, RIGHT_MIDDLE_FINGERTIP_LINK_IDX]
-        right_ring_pos = x[:, RIGHT_RING_FINGERTIP_LINK_IDX]
-        right_thumb_pos = x[:, RIGHT_THUMB_FINGERTIP_LINK_IDX]
+        index_pos = x[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
+        middle_pos = x[:, RIGHT_MIDDLE_FINGERTIP_LINK_IDX]
+        ring_pos = x[:, RIGHT_RING_FINGERTIP_LINK_IDX]
+        thumb_pos = x[:, RIGHT_THUMB_FINGERTIP_LINK_IDX]
 
         positions = torch.stack(
-            [right_index_pos, right_middle_pos, right_ring_pos, right_thumb_pos],
+            [index_pos, middle_pos, ring_pos, thumb_pos],
             dim=1,
         )
         # World frame
@@ -3387,13 +3372,14 @@ class BimanualEnv(DirectRLEnv):
         x, _, _ = self.left_taskmap_helper(
             q=q,
         )
-        left_index_pos = x[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
-        left_middle_pos = x[:, LEFT_MIDDLE_FINGERTIP_LINK_IDX]
-        left_ring_pos = x[:, LEFT_RING_FINGERTIP_LINK_IDX]
-        left_thumb_pos = x[:, LEFT_THUMB_FINGERTIP_LINK_IDX]
+        index_pos = x[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
+        middle_pos = x[:, LEFT_MIDDLE_FINGERTIP_LINK_IDX]
+        ring_pos = x[:, LEFT_RING_FINGERTIP_LINK_IDX]
+        thumb_pos = x[:, LEFT_THUMB_FINGERTIP_LINK_IDX]
 
         positions = torch.stack(
-            [left_index_pos, left_middle_pos, left_ring_pos, left_thumb_pos], dim=1
+            [index_pos, middle_pos, ring_pos, thumb_pos],
+            dim=1,
         )
         # World frame
         positions_w = positions + self.scene.env_origins.unsqueeze(dim=1)
@@ -3411,17 +3397,17 @@ class BimanualEnv(DirectRLEnv):
             q=q,
             qd=qd,
         )
-        right_index_linvel = xd[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
-        right_middle_linvel = xd[:, RIGHT_MIDDLE_FINGERTIP_LINK_IDX]
-        right_ring_linvel = xd[:, RIGHT_RING_FINGERTIP_LINK_IDX]
-        right_thumb_linvel = xd[:, RIGHT_THUMB_FINGERTIP_LINK_IDX]
+        index_linvel = xd[:, RIGHT_INDEX_FINGERTIP_LINK_IDX]
+        middle_linvel = xd[:, RIGHT_MIDDLE_FINGERTIP_LINK_IDX]
+        ring_linvel = xd[:, RIGHT_RING_FINGERTIP_LINK_IDX]
+        thumb_linvel = xd[:, RIGHT_THUMB_FINGERTIP_LINK_IDX]
 
         linvels = torch.stack(
             [
-                right_index_linvel,
-                right_middle_linvel,
-                right_ring_linvel,
-                right_thumb_linvel,
+                index_linvel,
+                middle_linvel,
+                ring_linvel,
+                thumb_linvel,
             ],
             dim=1,
         )
@@ -3439,17 +3425,17 @@ class BimanualEnv(DirectRLEnv):
             q=q,
             qd=qd,
         )
-        left_index_linvel = xd[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
-        left_middle_linvel = xd[:, LEFT_MIDDLE_FINGERTIP_LINK_IDX]
-        left_ring_linvel = xd[:, LEFT_RING_FINGERTIP_LINK_IDX]
-        left_thumb_linvel = xd[:, LEFT_THUMB_FINGERTIP_LINK_IDX]
+        index_linvel = xd[:, LEFT_INDEX_FINGERTIP_LINK_IDX]
+        middle_linvel = xd[:, LEFT_MIDDLE_FINGERTIP_LINK_IDX]
+        ring_linvel = xd[:, LEFT_RING_FINGERTIP_LINK_IDX]
+        thumb_linvel = xd[:, LEFT_THUMB_FINGERTIP_LINK_IDX]
 
         linvels = torch.stack(
             [
-                left_index_linvel,
-                left_middle_linvel,
-                left_ring_linvel,
-                left_thumb_linvel,
+                index_linvel,
+                middle_linvel,
+                ring_linvel,
+                thumb_linvel,
             ],
             dim=1,
         )
@@ -3465,20 +3451,35 @@ class BimanualEnv(DirectRLEnv):
     ) -> torch.Tensor:
         return self.left_fingertip_positions_w(q)[:, 0]
 
-    def pose_w_to_fabric_xyzZYX(self, pose_w: torch.Tensor) -> torch.Tensor:
+    #### FABRIC TASKMAP FORWARD KINEMATICS END ####
+
+    #### CONVERSION FUNCTIONS START ####
+    def xyzZYX_to_pose_w(self, xyzZYX: torch.Tensor) -> torch.Tensor:
+        N = xyzZYX.shape[0]
+        assert xyzZYX.shape == (N, 6), f"xyzZYX shape: {xyzZYX.shape}"
+        pos = xyzZYX[:, :3]
+        pos_w = pos + self.scene.env_origins
+        euler_ZYX = xyzZYX[:, 3:]
+        matrix = euler_angles_to_matrix(euler_ZYX, "ZYX")
+        quat_wxyz = matrix_to_quat_wxyz(matrix)
+        pose_w = torch.cat([pos_w, quat_wxyz], dim=1)
+        assert pose_w.shape == (N, 7), f"Pose shape: {pose_w.shape}"
+        return pose_w
+
+    def pose_w_to_xyzZYX(self, pose_w: torch.Tensor) -> torch.Tensor:
+        N = pose_w.shape[0]
+        assert pose_w.shape == (N, 7), f"Pose shape: {pose_w.shape}"
         xyz = pose_w[:, :3] - self.scene.env_origins
         quat_wxyz = pose_w[:, 3:]
         matrix = quat_wxyz_to_matrix(quat_wxyz)
         euler_ZYX = matrix_to_euler_angles(matrix, "ZYX")
-        return torch.cat([xyz, euler_ZYX], dim=1)
+        xyzZYX = torch.cat([xyz, euler_ZYX], dim=1)
+        assert xyzZYX.shape == (N, 6), f"xyzZYX shape: {xyzZYX.shape}"
+        return xyzZYX
 
-    #### TENSOR SLICE PROPERTIES END ####
+    #### CONVERSION FUNCTIONS END ####
 
-    #### OTHER PROPERTIES START ####
-    @property
-    def include_blue_robot(self) -> bool:
-        return self.cfg.debug_vis and self.num_envs < 10
-
+    #### MODIFIABLE PROPERTIES START ####
     @property
     def VISUALIZE_FABRIC_SPHERES(self) -> bool:
         if not hasattr(self, "_VISUALIZE_FABRIC_SPHERES"):
@@ -3509,12 +3510,21 @@ class BimanualEnv(DirectRLEnv):
     def DEBUG_VIS(self, value: bool):
         self._DEBUG_VIS = value
 
+    #### MODIFIABLE PROPERTIES END ####
+
+    #### CONSTANT PROPERTIES START ####
+    @property
+    def include_blue_robot(self) -> bool:
+        return self.cfg.debug_vis and self.num_envs < 10
+
     @property
     def fabric_dt(self) -> float:
+        # Use same as simulator for now
         return self.cfg.sim.dt
 
     @property
     def fabric_decimation(self) -> int:
+        # Use same as simulator for now
         return self.cfg.decimation
 
-    #### OTHER PROPERTIES END ####
+    #### CONSTANT PROPERTIES END ####
