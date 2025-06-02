@@ -131,7 +131,7 @@ USE_FABRIC = True  # Use fabric action space or direct action space
 SAVE_OBS_HISTORY = False  # Store observation history over time for debugging
 
 NUM_FUTURE_GOAL_OBS = 4  # Number of future goal observations
-NUM_FUTURE_PALM_TARGET_OBS = 4  # Number of future palm target observations
+NUM_FUTURE_PALM_GOAL_OBS = 4  # Number of future palm goal observations
 
 SIM_DT = 1 / 60  # Simulation time step
 CONTACT_SENSOR_HISTORY_LENGTH = 1  # Number of contact sensor history steps to use
@@ -212,12 +212,12 @@ def compute_num_observations():
         )  # fabric state
         + (
             NUM_XYZ * NUM_BIMANUAL if INCLUDE_HAND_TRACKING_REWARD else 0
-        )  # palm target positions
+        )  # palm goal positions
         + (
-            NUM_XYZ * NUM_BIMANUAL * NUM_FUTURE_PALM_TARGET_OBS
+            NUM_XYZ * NUM_BIMANUAL * NUM_FUTURE_PALM_GOAL_OBS
             if INCLUDE_HAND_TRACKING_REWARD
             else 0
-        )  # future palm target positions
+        )  # future palm goal positions
         + (
             (NUM_XYZ + NUM_QUAT) * NUM_FUTURE_GOAL_OBS
         )  # goal object position and orientation
@@ -595,25 +595,29 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     )
     left_palm_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
 
-    right_palm_target_pose_visualizer: VisualizationMarkersCfg = (
-        FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/right_palm_target_pose")
+    right_fabric_palm_target_pose_visualizer: VisualizationMarkersCfg = (
+        FRAME_MARKER_CFG.replace(
+            prim_path="/Visuals/Command/right_fabric_palm_target_pose"
+        )
     )
-    right_palm_target_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
-    left_palm_target_pose_visualizer: VisualizationMarkersCfg = (
-        FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/left_palm_target_pose")
+    right_fabric_palm_target_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+    left_fabric_palm_target_pose_visualizer: VisualizationMarkersCfg = (
+        FRAME_MARKER_CFG.replace(
+            prim_path="/Visuals/Command/left_fabric_palm_target_pose"
+        )
     )
-    left_palm_target_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+    left_fabric_palm_target_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
 
-    right_goal_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
-        prim_path="/Visuals/Command/right_goal"
+    right_finger_goal_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/right_finger_goal"
     )
-    right_goal_visualizer.markers[
+    right_finger_goal_visualizer.markers[
         "sphere"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
-    left_goal_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
-        prim_path="/Visuals/Command/left_goal"
+    left_finger_goal_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/left_finger_goal"
     )
-    left_goal_visualizer.markers[
+    left_finger_goal_visualizer.markers[
         "sphere"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
 
@@ -669,14 +673,14 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     )  # NOTE: Opacity not working
     fabric_world_visualizer.markers["cuboid"].size = (1.0, 1.0, 1.0)
 
-    right_target_wrist_pose_visualizer: VisualizationMarkersCfg = (
-        FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/right_target_wrist_pose")
+    goal_right_palm_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/goal_right_palm_pose"
     )
-    right_target_wrist_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
-    left_target_wrist_pose_visualizer: VisualizationMarkersCfg = (
-        FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/left_target_wrist_pose")
+    goal_right_palm_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+    goal_left_palm_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/goal_left_palm_pose"
     )
-    left_target_wrist_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+    goal_left_palm_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
 
 
 if FINGER_GOALS:
@@ -1179,53 +1183,34 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_hand_target, "self.fabric_hand_target (after copying)"
             )
 
-        OVERWRITE_GO_TO_TARGET = False
-        if OVERWRITE_GO_TO_TARGET:
-            if not hasattr(self, "CUSTOM_left_T_R_P"):
-                self.CUSTOM_left_T_R_P = self.goal_left_T_R_Ps[
-                    self.goal_float_idx.long().clip(
-                        max=self.goal_left_T_R_Ps.shape[0] - 1
-                    )
-                ]
+        OVERWRITE_GO_TO_GOAL = False
+        if OVERWRITE_GO_TO_GOAL:
+            goal_right_palm_xyzZYX = self.pose_w_to_xyzZYX(
+                self.goal_right_palm_pose_w()
+            )
+            goal_left_palm_xyzZYX = self.pose_w_to_xyzZYX(self.goal_left_palm_pose_w())
 
-            right_target_wrist_pose_w = self.goal_right_palm_pose_w()
-            right_target_wrist_pos = (
-                right_target_wrist_pose_w[:, :3] - self.scene.env_origins
-            )
-            right_target_wrist_rot_matrix = quat_wxyz_to_matrix(
-                right_target_wrist_pose_w[:, 3:]
-            )
-            right_target_wrist_euler_ZYX = matrix_to_euler_angles(
-                right_target_wrist_rot_matrix, "ZYX"
-            )
-
-            left_target_wrist_pose_w = self.goal_left_palm_pose_w()
-            left_target_wrist_pos = (
-                left_target_wrist_pose_w[:, :3] - self.scene.env_origins
-            )
-            left_target_wrist_rot_matrix = quat_wxyz_to_matrix(
-                left_target_wrist_pose_w[:, 3:]
-            )
-            left_target_wrist_euler_ZYX = matrix_to_euler_angles(
-                left_target_wrist_rot_matrix, "ZYX"
-            )
-
-            self.fabric_palm_target[:, :3] = right_target_wrist_pos
-            self.fabric_palm_target[:, 3:6] = right_target_wrist_euler_ZYX
-            self.fabric_palm_target[:, 6:9] = left_target_wrist_pos
-            self.fabric_palm_target[:, 9:12] = left_target_wrist_euler_ZYX
+            # Actions
+            self.fabric_palm_target[:, :3] = goal_right_palm_xyzZYX[:, :3]
+            self.fabric_palm_target[:, 3:6] = goal_right_palm_xyzZYX[:, 3:6]
+            self.fabric_palm_target[:, 6:9] = goal_left_palm_xyzZYX[:, :3]
+            self.fabric_palm_target[:, 9:12] = goal_left_palm_xyzZYX[:, 3:6]
 
             OVERWRITE_LEFT_PALM_POSE = False
             if OVERWRITE_LEFT_PALM_POSE:
-                left_target_wrist_pos = right_target_wrist_pos.clone()
-                # left_target_wrist_pos[:, 1] *= -1
-                left_target_wrist_pos[:, 1] += 0.3
-                left_target_wrist_rot_matrix = self.CUSTOM_left_T_R_P[:, :3, :3]
-                left_target_wrist_euler_ZYX = matrix_to_euler_angles(
-                    left_target_wrist_rot_matrix, "ZYX"
-                )
-                self.fabric_palm_target[:, 6:9] = left_target_wrist_pos
-                self.fabric_palm_target[:, 9:12] = left_target_wrist_euler_ZYX
+                if not hasattr(self, "first_goal_left_palm_xyzZYX"):
+                    self.first_goal_left_palm_xyzZYX = goal_left_palm_xyzZYX.clone()
+
+                # Adjust position manually
+                new_goal_left_palm_xyz = goal_right_palm_xyzZYX[:, :3].clone()
+                # adjusted_left_palm_xyz[:, 1] *= -1
+                new_goal_left_palm_xyz[:, 1] += 0.3
+
+                # Keep same orientation as the start
+                new_goal_left_palm_ZYX = goal_left_palm_xyzZYX[:, 3:6].clone()
+
+                self.fabric_palm_target[:, 6:9] = new_goal_left_palm_xyz
+                self.fabric_palm_target[:, 9:12] = new_goal_left_palm_ZYX
 
         if USE_FABRIC:
             check_nan_and_print_if_any(
@@ -1640,23 +1625,23 @@ class BimanualEnv(DirectRLEnv):
             - self.scene.env_origins,
             "object_orientation": self.object_orientation,
             "goal_object_orientation": self.goal_object_orientation,
-            "right_palm_target_position": (
+            "goal_right_palm_position": (
                 self.goal_right_palm_pose_w()[:, :3] - self.scene.env_origins
                 if INCLUDE_HAND_TRACKING_REWARD
                 else torch.zeros(self.num_envs, 0, device=self.device)
             ),
-            "left_palm_target_position": (
+            "goal_left_palm_position": (
                 self.goal_left_palm_pose_w()[:, :3] - self.scene.env_origins
                 if INCLUDE_HAND_TRACKING_REWARD
                 else torch.zeros(self.num_envs, 0, device=self.device)
             ),
-            "future_right_palm_target_positions": (
-                self.future_right_palm_target_poses[:, :, :3].reshape(self.num_envs, -1)
+            "future_goal_right_palm_positions": (
+                self.future_goal_right_palm_poses[:, :, :3].reshape(self.num_envs, -1)
                 if INCLUDE_HAND_TRACKING_REWARD
                 else torch.zeros(self.num_envs, 0, device=self.device)
             ),
-            "future_left_palm_target_positions": (
-                self.future_left_palm_target_poses[:, :, :3].reshape(self.num_envs, -1)
+            "future_goal_left_palm_positions": (
+                self.future_goal_left_palm_poses[:, :, :3].reshape(self.num_envs, -1)
                 if INCLUDE_HAND_TRACKING_REWARD
                 else torch.zeros(self.num_envs, 0, device=self.device)
             ),
@@ -1695,11 +1680,11 @@ class BimanualEnv(DirectRLEnv):
             ),
         }
         if FINGER_GOALS:
-            obs_dict["right_goal_position"] = (
-                self.right_goal_position_w - self.scene.env_origins
+            obs_dict["right_finger_goal_position"] = (
+                self.right_finger_goal_position_w - self.scene.env_origins
             )
-            obs_dict["left_goal_position"] = (
-                self.left_goal_position_w - self.scene.env_origins
+            obs_dict["left_finger_goal_position"] = (
+                self.left_finger_goal_position_w - self.scene.env_origins
             )
         if FILTER_ARM_ACTIONS:
             if USE_FABRIC:
@@ -1775,8 +1760,8 @@ class BimanualEnv(DirectRLEnv):
         # fmt: off
         if FINGER_GOALS:
             self.individual_reward_bufs = {
-                "right_index_fingertip_to_goal_dist": -(self.right_index_fingertip_position_w() - self.right_goal_position_w).norm(dim=-1, p=2),
-                "left_index_fingertip_to_goal_dist": -(self.left_index_fingertip_position_w() - self.left_goal_position_w).norm(dim=-1, p=2),
+                "right_index_fingertip_to_goal_dist": -(self.right_index_fingertip_position_w() - self.right_finger_goal_position_w).norm(dim=-1, p=2),
+                "left_index_fingertip_to_goal_dist": -(self.left_index_fingertip_position_w() - self.left_finger_goal_position_w).norm(dim=-1, p=2),
             }
         else:
             right_index_fingertip_to_object_dist = (
@@ -2167,8 +2152,12 @@ class BimanualEnv(DirectRLEnv):
             )
 
             if FINGER_GOALS:
-                self.right_goal_position_w = self._sample_right_goal_position(env_ids)
-                self.left_goal_position_w = self._sample_left_goal_position(env_ids)
+                self.right_finger_goal_position_w = (
+                    self._sample_right_finger_goal_position(env_ids)
+                )
+                self.left_finger_goal_position_w = (
+                    self._sample_left_finger_goal_position(env_ids)
+                )
 
             self.object_has_been_lifted_this_episode = torch.zeros_like(
                 self.object_is_lifted
@@ -2235,11 +2224,11 @@ class BimanualEnv(DirectRLEnv):
             )
 
             if FINGER_GOALS:
-                self.right_goal_position_w[env_ids] = self._sample_right_goal_position(
-                    env_ids
+                self.right_finger_goal_position_w[env_ids] = (
+                    self._sample_right_finger_goal_position(env_ids)
                 )
-                self.left_goal_position_w[env_ids] = self._sample_left_goal_position(
-                    env_ids
+                self.left_finger_goal_position_w[env_ids] = (
+                    self._sample_left_finger_goal_position(env_ids)
                 )
 
             self.object_has_been_lifted_this_episode[env_ids] = torch.zeros_like(
@@ -2283,14 +2272,14 @@ class BimanualEnv(DirectRLEnv):
             )
             self.goal_float_idx[env_ids] = torch.zeros(len(env_ids), device=self.device)
 
-    def _sample_right_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
+    def _sample_right_finger_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
             low=torch.tensor([-0.2, -0.5, 0.05], device=self.device),
             high=torch.tensor([0.5, -0.1, 0.5], device=self.device),
             N=len(env_ids),
         )
 
-    def _sample_left_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
+    def _sample_left_finger_goal_position(self, env_ids: torch.Tensor) -> torch.Tensor:
         return self.table_position[env_ids] + sample_uniform_tensor(
             low=torch.tensor([-0.2, 0.1, 0.05], device=self.device),
             high=torch.tensor([0.5, 0.5, 0.5], device=self.device),
@@ -2350,23 +2339,25 @@ class BimanualEnv(DirectRLEnv):
                     self.cfg.left_palm_pose_visualizer
                 )
             if USE_FABRIC:
-                if not hasattr(self, "right_palm_target_pose_visualizer"):
-                    self.right_palm_target_pose_visualizer = VisualizationMarkers(
-                        self.cfg.right_palm_target_pose_visualizer
+                if not hasattr(self, "right_fabric_palm_target_pose_visualizer"):
+                    self.right_fabric_palm_target_pose_visualizer = (
+                        VisualizationMarkers(
+                            self.cfg.right_fabric_palm_target_pose_visualizer
+                        )
                     )
-                if not hasattr(self, "left_palm_target_pose_visualizer"):
-                    self.left_palm_target_pose_visualizer = VisualizationMarkers(
-                        self.cfg.left_palm_target_pose_visualizer
+                if not hasattr(self, "left_fabric_palm_target_pose_visualizer"):
+                    self.left_fabric_palm_target_pose_visualizer = VisualizationMarkers(
+                        self.cfg.left_fabric_palm_target_pose_visualizer
                     )
 
             if FINGER_GOALS:
-                if not hasattr(self, "right_goal_visualizer"):
-                    self.right_goal_visualizer = VisualizationMarkers(
-                        self.cfg.right_goal_visualizer
+                if not hasattr(self, "right_finger_goal_visualizer"):
+                    self.right_finger_goal_visualizer = VisualizationMarkers(
+                        self.cfg.right_finger_goal_visualizer
                     )
-                if not hasattr(self, "left_goal_visualizer"):
-                    self.left_goal_visualizer = VisualizationMarkers(
-                        self.cfg.left_goal_visualizer
+                if not hasattr(self, "left_finger_goal_visualizer"):
+                    self.left_finger_goal_visualizer = VisualizationMarkers(
+                        self.cfg.left_finger_goal_visualizer
                     )
 
             if not hasattr(self, "object_pose_visualizer"):
@@ -2413,13 +2404,13 @@ class BimanualEnv(DirectRLEnv):
                         )
                         for i in range(NUM_FABRIC_WORLD_CUBES)
                     ]
-            if not hasattr(self, "right_target_wrist_pose_visualizer"):
-                self.right_target_wrist_pose_visualizer = VisualizationMarkers(
-                    self.cfg.right_target_wrist_pose_visualizer
+            if not hasattr(self, "goal_right_palm_pose_visualizer"):
+                self.goal_right_palm_pose_visualizer = VisualizationMarkers(
+                    self.cfg.goal_right_palm_pose_visualizer
                 )
-            if not hasattr(self, "left_target_wrist_pose_visualizer"):
-                self.left_target_wrist_pose_visualizer = VisualizationMarkers(
-                    self.cfg.left_target_wrist_pose_visualizer
+            if not hasattr(self, "goal_left_palm_pose_visualizer"):
+                self.goal_left_palm_pose_visualizer = VisualizationMarkers(
+                    self.cfg.goal_left_palm_pose_visualizer
                 )
 
             # set their visibility to true
@@ -2427,11 +2418,11 @@ class BimanualEnv(DirectRLEnv):
             self.right_palm_pose_visualizer.set_visibility(True)
             self.left_palm_pose_visualizer.set_visibility(True)
             if USE_FABRIC:
-                self.right_palm_target_pose_visualizer.set_visibility(True)
-                self.left_palm_target_pose_visualizer.set_visibility(True)
+                self.right_fabric_palm_target_pose_visualizer.set_visibility(True)
+                self.left_fabric_palm_target_pose_visualizer.set_visibility(True)
             if FINGER_GOALS:
-                self.right_goal_visualizer.set_visibility(True)
-                self.left_goal_visualizer.set_visibility(True)
+                self.right_finger_goal_visualizer.set_visibility(True)
+                self.left_finger_goal_visualizer.set_visibility(True)
             self.object_pose_visualizer.set_visibility(True)
             self.goal_object_pose_visualizer.set_visibility(True)
             self.right_fingertip_visualizer.set_visibility(True)
@@ -2450,8 +2441,8 @@ class BimanualEnv(DirectRLEnv):
             elif hasattr(self, "fabric_world_visualizers"):
                 for visualizer in self.fabric_world_visualizers:
                     visualizer.set_visibility(False)
-            self.right_target_wrist_pose_visualizer.set_visibility(True)
-            self.left_target_wrist_pose_visualizer.set_visibility(True)
+            self.goal_right_palm_pose_visualizer.set_visibility(True)
+            self.goal_left_palm_pose_visualizer.set_visibility(True)
         else:
             if hasattr(self, "origin_pose_visualizer"):
                 self.origin_pose_visualizer.set_visibility(False)
@@ -2460,15 +2451,15 @@ class BimanualEnv(DirectRLEnv):
             if hasattr(self, "left_palm_pose_visualizer"):
                 self.left_palm_pose_visualizer.set_visibility(False)
             if USE_FABRIC:
-                if hasattr(self, "right_palm_target_pose_visualizer"):
-                    self.right_palm_target_pose_visualizer.set_visibility(False)
-                if hasattr(self, "left_palm_target_pose_visualizer"):
-                    self.left_palm_target_pose_visualizer.set_visibility(False)
+                if hasattr(self, "right_fabric_palm_target_pose_visualizer"):
+                    self.right_fabric_palm_target_pose_visualizer.set_visibility(False)
+                if hasattr(self, "left_fabric_palm_target_pose_visualizer"):
+                    self.left_fabric_palm_target_pose_visualizer.set_visibility(False)
             if FINGER_GOALS:
-                if hasattr(self, "right_goal_visualizer"):
-                    self.right_goal_visualizer.set_visibility(False)
-                if hasattr(self, "left_goal_visualizer"):
-                    self.left_goal_visualizer.set_visibility(False)
+                if hasattr(self, "right_finger_goal_visualizer"):
+                    self.right_finger_goal_visualizer.set_visibility(False)
+                if hasattr(self, "left_finger_goal_visualizer"):
+                    self.left_finger_goal_visualizer.set_visibility(False)
             if hasattr(self, "object_pose_visualizer"):
                 self.object_pose_visualizer.set_visibility(False)
             if hasattr(self, "goal_object_pose_visualizer"):
@@ -2489,10 +2480,10 @@ class BimanualEnv(DirectRLEnv):
                 if hasattr(self, "fabric_world_visualizers"):
                     for visualizer in self.fabric_world_visualizers:
                         visualizer.set_visibility(False)
-            if hasattr(self, "right_target_wrist_pose_visualizer"):
-                self.right_target_wrist_pose_visualizer.set_visibility(False)
-            if hasattr(self, "left_target_wrist_pose_visualizer"):
-                self.left_target_wrist_pose_visualizer.set_visibility(False)
+            if hasattr(self, "goal_right_palm_pose_visualizer"):
+                self.goal_right_palm_pose_visualizer.set_visibility(False)
+            if hasattr(self, "goal_left_palm_pose_visualizer"):
+                self.goal_left_palm_pose_visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
         # Make sure the robot is initialized
@@ -2529,24 +2520,24 @@ class BimanualEnv(DirectRLEnv):
         if USE_FABRIC:
             # Actions are in robot frame
             # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
-            right_palm_target_pose = self.xyzZYX_to_pose_w(
+            right_fabric_palm_target_pose_w = self.xyzZYX_to_pose_w(
                 self.fabric_palm_target[:, :6]
             )
-            left_palm_target_pose = self.xyzZYX_to_pose_w(
+            left_fabric_palm_target_pose_w = self.xyzZYX_to_pose_w(
                 self.fabric_palm_target[:, 6:12]
             )
-            self.right_palm_target_pose_visualizer.visualize(
-                translations=right_palm_target_pose[:, :3],
-                orientations=right_palm_target_pose[:, 3:],
+            self.right_fabric_palm_target_pose_visualizer.visualize(
+                translations=right_fabric_palm_target_pose_w[:, :3],
+                orientations=right_fabric_palm_target_pose_w[:, 3:],
                 scales=torch.tensor(
                     (np.array(POSE_SCALE) * 0.3).tolist(), device=self.device
                 )
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
-            self.left_palm_target_pose_visualizer.visualize(
-                translations=left_palm_target_pose[:, :3],
-                orientations=left_palm_target_pose[:, 3:],
+            self.left_fabric_palm_target_pose_visualizer.visualize(
+                translations=left_fabric_palm_target_pose_w[:, :3],
+                orientations=left_fabric_palm_target_pose_w[:, 3:],
                 scales=torch.tensor(
                     (np.array(POSE_SCALE) * 0.3).tolist(), device=self.device
                 )
@@ -2554,14 +2545,14 @@ class BimanualEnv(DirectRLEnv):
                 .repeat_interleave(self.num_envs, dim=0),
             )
         if FINGER_GOALS:
-            self.right_goal_visualizer.visualize(
-                translations=self.right_goal_position_w,
+            self.right_finger_goal_visualizer.visualize(
+                translations=self.right_finger_goal_position_w,
                 scales=torch.tensor(SPHERE_SCALE, device=self.device)
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
-            self.left_goal_visualizer.visualize(
-                translations=self.left_goal_position_w,
+            self.left_finger_goal_visualizer.visualize(
+                translations=self.left_finger_goal_position_w,
                 scales=torch.tensor(SPHERE_SCALE, device=self.device)
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
@@ -2675,22 +2666,18 @@ class BimanualEnv(DirectRLEnv):
                         self.num_envs, dim=0
                     ),
                 )
-        right_target_wrist_pose_w = self.goal_right_palm_pose_w()
-        left_target_wrist_pose_w = self.goal_left_palm_pose_w()
-        right_target_wrist_pos_w = right_target_wrist_pose_w[:, :3]
-        right_target_wrist_quat_wxyz = right_target_wrist_pose_w[:, 3:]
-        left_target_wrist_pos_w = left_target_wrist_pose_w[:, :3]
-        left_target_wrist_quat_wxyz = left_target_wrist_pose_w[:, 3:]
-        self.right_target_wrist_pose_visualizer.visualize(
-            translations=right_target_wrist_pos_w,
-            orientations=right_target_wrist_quat_wxyz,
+        goal_right_palm_pose_w = self.goal_right_palm_pose_w()
+        goal_left_palm_pose_w = self.goal_left_palm_pose_w()
+        self.goal_right_palm_pose_visualizer.visualize(
+            translations=goal_right_palm_pose_w[:, :3],
+            orientations=goal_right_palm_pose_w[:, 3:],
             scales=torch.tensor(POSE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
-        self.left_target_wrist_pose_visualizer.visualize(
-            translations=left_target_wrist_pos_w,
-            orientations=left_target_wrist_quat_wxyz,
+        self.goal_left_palm_pose_visualizer.visualize(
+            translations=goal_left_palm_pose_w[:, :3],
+            orientations=goal_left_palm_pose_w[:, 3:],
             scales=torch.tensor(POSE_SCALE, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
@@ -3050,17 +3037,17 @@ class BimanualEnv(DirectRLEnv):
         return future_poses
 
     @property
-    def future_right_palm_target_poses(self) -> torch.Tensor:
+    def future_goal_right_palm_poses(self) -> torch.Tensor:
         # Compute future idxs we want
-        TIME_BETWEEN_TARGETS_SECONDS = 0.5
+        TIME_BETWEEN_GOALS_SECONDS = 0.5
         CONTROL_DT = self.cfg.sim.dt * self.cfg.decimation
-        IDXS_BETWEEN_TARGETS = TIME_BETWEEN_TARGETS_SECONDS / CONTROL_DT
+        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / CONTROL_DT
         relative_idxs = (
-            torch.arange(1, NUM_FUTURE_PALM_TARGET_OBS + 1, device=self.device).float()
-            * IDXS_BETWEEN_TARGETS
+            torch.arange(1, NUM_FUTURE_PALM_GOAL_OBS + 1, device=self.device).float()
+            * IDXS_BETWEEN_GOALS
         )
         current_idx = self.goal_float_idx
-        assert relative_idxs.shape == (NUM_FUTURE_PALM_TARGET_OBS,), (
+        assert relative_idxs.shape == (NUM_FUTURE_PALM_GOAL_OBS,), (
             f"relative_idxs shape: {relative_idxs.shape}"
         )
         assert current_idx.shape == (self.num_envs,), (
@@ -3072,7 +3059,7 @@ class BimanualEnv(DirectRLEnv):
             .long()
             .clip(max=NUM_GOAL_TIMESTEPS - 1)
         )
-        assert new_idxs.shape == (self.num_envs, NUM_FUTURE_PALM_TARGET_OBS), (
+        assert new_idxs.shape == (self.num_envs, NUM_FUTURE_PALM_GOAL_OBS), (
             f"new_idxs shape: {new_idxs.shape}"
         )
 
@@ -3083,7 +3070,7 @@ class BimanualEnv(DirectRLEnv):
         future_right_T_R_Ps = self.goal_right_T_R_Ps[new_idxs]
         assert future_right_T_R_Ps.shape == (
             self.num_envs,
-            NUM_FUTURE_PALM_TARGET_OBS,
+            NUM_FUTURE_PALM_GOAL_OBS,
             4,
             4,
         ), f"future_right_T_R_Ps shape: {future_right_T_R_Ps.shape}"
@@ -3094,24 +3081,24 @@ class BimanualEnv(DirectRLEnv):
         future_poses = torch.cat([future_positions, future_orientations], dim=-1)
         assert future_poses.shape == (
             self.num_envs,
-            NUM_FUTURE_PALM_TARGET_OBS,
+            NUM_FUTURE_PALM_GOAL_OBS,
             7,
         ), f"future_poses shape: {future_poses.shape}"
         return future_poses
 
     @property
-    def future_left_palm_target_poses(self) -> torch.Tensor:
+    def future_goal_left_palm_poses(self) -> torch.Tensor:
         # Compute future idxs we want
-        TIME_BETWEEN_TARGETS_SECONDS = 0.5
+        TIME_BETWEEN_GOALS_SECONDS = 0.5
         CONTROL_DT = self.cfg.sim.dt * self.cfg.decimation
-        IDXS_BETWEEN_TARGETS = TIME_BETWEEN_TARGETS_SECONDS / CONTROL_DT
+        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / CONTROL_DT
 
         relative_idxs = (
-            torch.arange(1, NUM_FUTURE_PALM_TARGET_OBS + 1, device=self.device).float()
-            * IDXS_BETWEEN_TARGETS
+            torch.arange(1, NUM_FUTURE_PALM_GOAL_OBS + 1, device=self.device).float()
+            * IDXS_BETWEEN_GOALS
         )
         current_idx = self.goal_float_idx
-        assert relative_idxs.shape == (NUM_FUTURE_PALM_TARGET_OBS,), (
+        assert relative_idxs.shape == (NUM_FUTURE_PALM_GOAL_OBS,), (
             f"relative_idxs shape: {relative_idxs.shape}"
         )
         assert current_idx.shape == (self.num_envs,), (
@@ -3123,7 +3110,7 @@ class BimanualEnv(DirectRLEnv):
             .long()
             .clip(max=NUM_GOAL_TIMESTEPS - 1)
         )
-        assert new_idxs.shape == (self.num_envs, NUM_FUTURE_PALM_TARGET_OBS), (
+        assert new_idxs.shape == (self.num_envs, NUM_FUTURE_PALM_GOAL_OBS), (
             f"new_idxs shape: {new_idxs.shape}"
         )
 
@@ -3134,7 +3121,7 @@ class BimanualEnv(DirectRLEnv):
         future_left_T_R_Ps = self.goal_left_T_R_Ps[new_idxs]
         assert future_left_T_R_Ps.shape == (
             self.num_envs,
-            NUM_FUTURE_PALM_TARGET_OBS,
+            NUM_FUTURE_PALM_GOAL_OBS,
             4,
             4,
         ), f"future_left_T_R_Ps shape: {future_left_T_R_Ps.shape}"
@@ -3145,7 +3132,7 @@ class BimanualEnv(DirectRLEnv):
         future_poses = torch.cat([future_positions, future_orientations], dim=-1)
         assert future_poses.shape == (
             self.num_envs,
-            NUM_FUTURE_PALM_TARGET_OBS,
+            NUM_FUTURE_PALM_GOAL_OBS,
             7,
         ), f"future_left_palm_poses shape: {future_poses.shape}"
         return future_poses
