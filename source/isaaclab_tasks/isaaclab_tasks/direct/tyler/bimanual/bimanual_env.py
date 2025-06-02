@@ -145,6 +145,8 @@ INCLUDE_HAND_TRACKING_REWARD = False
 INCLUDE_Q_OBS = True
 INCLUDE_QD_OBS = False
 INCLUDE_FABRIC_OBS = False
+CONTACT_OBS_TYPE = "forces"  # "forces", "contacts"
+assert CONTACT_OBS_TYPE in ["forces", "contacts"], f"Invalid contact obs type: {CONTACT_OBS_TYPE}"
 
 OBJECT_NAME = "pitcher"  # "box", "pitcher", "basket"
 OBJECT_TRAJECTORY_IDX = 1  # 0, 1, 2
@@ -223,7 +225,7 @@ def compute_num_observations():
         + 1  # episode_length_buf
         + 1  # object_is_lifted
         + 1  # object_has_been_lifted_this_episode
-        + (17 * NUM_BIMANUAL)  # object contacts
+        + (17 * NUM_BIMANUAL) * (1 if CONTACT_OBS_TYPE == "contacts" else 3)  # object contacts
     )
 
 
@@ -1568,14 +1570,15 @@ class BimanualEnv(DirectRLEnv):
         ), (
             f"object_forces.shape: {object_forces.shape} != (self.num_envs, 1, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ): {(self.num_envs, 1, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ)}"
         )
-        object_forces = object_forces.squeeze(dim=1).norm(dim=-1, p=2)
-        assert object_forces.shape == (
+        object_forces = object_forces.squeeze(dim=1)
+        object_force_norms = object_forces.norm(dim=-1, p=2)
+        assert object_force_norms.shape == (
             self.num_envs,
             len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS),
         ), (
-            f"object_forces.shape: {object_forces.shape} != (self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS)): {(self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS))}"
+            f"object_force_norms.shape: {object_force_norms.shape} != (self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS)): {(self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS))}"
         )
-        object_contacts = object_forces > 0.01
+        object_contacts = object_force_norms > 0.01
 
         obs_dict = {
             "q": (
@@ -1653,7 +1656,11 @@ class BimanualEnv(DirectRLEnv):
             "object_has_been_lifted_this_episode": self.object_has_been_lifted_this_episode.reshape(
                 self.num_envs, -1
             ),
-            "object_contacts": object_contacts.float().reshape(self.num_envs, -1),
+            "object_contacts": (
+                object_contacts.float().reshape(self.num_envs, -1)
+                if CONTACT_OBS_TYPE == "contacts"
+                else object_forces.reshape(self.num_envs, -1)
+            ),
         }
         if FINGER_GOALS:
             obs_dict["right_goal_position"] = (
@@ -1761,11 +1768,12 @@ class BimanualEnv(DirectRLEnv):
             assert object_forces.shape == (self.num_envs, 1, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ), (
                 f"object_forces.shape: {object_forces.shape} != (self.num_envs, 1, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ): {(self.num_envs, 1, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ)}"
             )
-            object_forces = object_forces.squeeze(dim=1).norm(dim=-1, p=2)
-            assert object_forces.shape == (self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS)), (
-                f"object_forces.shape: {object_forces.shape} != (self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS)): {(self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS))}"
+            object_forces = object_forces.squeeze(dim=1)
+            object_force_norms = object_forces.norm(dim=-1, p=2)
+            assert object_force_norms.shape == (self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS)), (
+                f"object_force_norms.shape: {object_force_norms.shape} != (self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS)): {(self.num_envs, len(OBJECT_CONTACT_SENSOR_ROBOT_LINKS))}"
             )
-            object_contacts = object_forces > 0.01
+            object_contacts = object_force_norms > 0.01
             num_contacts = object_contacts.float().sum(dim=-1)
 
             # Increase reward if object is close to goal and fingertips are close to object
