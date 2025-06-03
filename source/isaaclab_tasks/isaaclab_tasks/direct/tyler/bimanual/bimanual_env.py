@@ -8,8 +8,15 @@ from __future__ import annotations
 import datetime
 import pickle
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple, List
 
+from isaacsim.core.utils.bounds import (
+    compute_aabb,
+    compute_combined_aabb,
+    compute_obb,
+    compute_obb_corners,
+    create_bbox_cache,
+)
 import isaaclab.envs.mdp as mdp
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
@@ -3732,3 +3739,31 @@ class BimanualEnv(DirectRLEnv):
         return self.cfg.sim.dt * self.cfg.decimation
 
     #### CONSTANT PROPERTIES END ####
+
+    #### BOUNDING BOX UTILITIES START ####
+    @property
+    def bbox_cache(self):
+        if not hasattr(self, "_bbox_cache"):
+            self._bbox_cache = create_bbox_cache()
+        return self._bbox_cache
+
+    def compute_aabb(self, prim_path: str) -> np.ndarray:
+        aabb = compute_aabb(self.bbox_cache, prim_path=prim_path)
+        assert aabb.shape == (NUM_XYZ * 2,), f"AABB shape: {aabb.shape}"
+        return aabb
+
+    def compute_combined_aabb(self, prim_paths: List[str]) -> np.ndarray:
+        aabb = compute_combined_aabb(self.bbox_cache, prim_paths=prim_paths)
+        assert aabb.shape == (NUM_XYZ * 2,), f"AABB shape: {aabb.shape}"
+        return aabb
+
+    def compute_obb(self, prim_path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        centroid, axis, half_extent = compute_obb(self.bbox_cache, prim_path=prim_path)
+        return centroid, axis, half_extent
+
+    def compute_obb_corners(self, prim_path: str) -> np.ndarray:
+        corners = compute_obb_corners(self.bbox_cache, prim_path=prim_path)
+        assert corners.shape == (8, 3), f"OBB corners shape: {corners.shape}"
+        return corners
+
+    #### BOUNDING BOX UTILITIES END ####
