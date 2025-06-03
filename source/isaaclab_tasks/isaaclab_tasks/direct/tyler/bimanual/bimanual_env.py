@@ -2948,7 +2948,7 @@ class BimanualEnv(DirectRLEnv):
         )
         return compute_keypoint_positions(
             pos=self.object_position_w,
-            quat_xyzw=self.object_orientation,
+            quat_xyzw=self.object_orientation[:, [1, 2, 3, 0]],
             keypoint_offsets=object_keypoint_offsets,
         )
 
@@ -2972,7 +2972,7 @@ class BimanualEnv(DirectRLEnv):
         )
         return compute_keypoint_positions(
             pos=self.goal_object_position_w,
-            quat_xyzw=self.goal_object_orientation,
+            quat_xyzw=self.goal_object_orientation[:, [1, 2, 3, 0]],
             keypoint_offsets=object_keypoint_offsets,
         )
 
@@ -3035,7 +3035,7 @@ class BimanualEnv(DirectRLEnv):
 
         future_goal_object_keypoint_positions_w = compute_keypoint_positions(
             pos=future_goal_object_positions_w.reshape(-1, NUM_XYZ),
-            quat_xyzw=future_goal_object_orientations.reshape(-1, NUM_QUAT),
+            quat_xyzw=future_goal_object_orientations.reshape(-1, NUM_QUAT)[:, [1, 2, 3, 0]],
             keypoint_offsets=object_keypoint_offsets,
         ).reshape(self.num_envs, NUM_FUTURE_GOAL_OBS, NUM_OBJECT_KEYPOINTS, 3)
         return future_goal_object_keypoint_positions_w
