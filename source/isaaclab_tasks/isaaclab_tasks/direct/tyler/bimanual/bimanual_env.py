@@ -124,7 +124,7 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
 
 FINGER_GOALS = False  # Use finger goals as the task (fingers go to goal positions)
-FILTER_ARM_ACTIONS = False  # Filter arm actions over time to be smoother
+FILTER_ARM_ACTIONS = True  # Filter arm actions over time to be smoother
 
 USE_FABRIC = True  # Use fabric action space or direct action space
 
