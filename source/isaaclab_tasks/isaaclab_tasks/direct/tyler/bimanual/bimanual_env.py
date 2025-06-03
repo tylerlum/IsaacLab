@@ -581,11 +581,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         )
     )
 
-    origin_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
-        prim_path="/Visuals/Command/pose"
-    )
-    origin_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
-
+    # Palm pose visualizers
     right_palm_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
         prim_path="/Visuals/Command/right_palm_pose"
     )
@@ -595,6 +591,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     )
     left_palm_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
 
+    # Palm target pose visualizers
     right_fabric_palm_target_pose_visualizer: VisualizationMarkersCfg = (
         FRAME_MARKER_CFG.replace(
             prim_path="/Visuals/Command/right_fabric_palm_target_pose"
@@ -608,6 +605,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     )
     left_fabric_palm_target_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
 
+    # Finger goal visualizers
     right_finger_goal_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
         prim_path="/Visuals/Command/right_finger_goal"
     )
@@ -621,15 +619,17 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         "sphere"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
 
-    object_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
-        prim_path="/Visuals/Command/object_pose"
+    # Object keypoint visualizers
+    object_keypoint_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/object_keypoint"
     )
-    object_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
-    goal_object_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
-        prim_path="/Visuals/Command/goal_object_pose"
+    object_keypoint_visualizer.markers["sphere"].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=BLUE_RGB)
+    goal_object_keypoint_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/goal_object_keypoint"
     )
-    goal_object_pose_visualizer.markers["frame"].scale = (1.0, 1.0, 1.0)
+    goal_object_keypoint_visualizer.markers["sphere"].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
 
+    # Fingertip visualizers
     right_fingertip_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
         prim_path="/Visuals/Command/right_fingertip"
     )
@@ -643,6 +643,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         "sphere"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=RED_RGB)
 
+    # Progress visualizers
     progress_visualizer: VisualizationMarkersCfg = CYLINDER_MARKER_CFG.replace(
         prim_path="/Visuals/Command/progress"
     )
@@ -656,6 +657,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         "cylinder"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
 
+    # Collision sphere visualizer
     collision_sphere_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
         prim_path="/Visuals/CollisionSphere"
     )
@@ -663,6 +665,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         "sphere"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=RED_RGB)
 
+    # Fabric world visualizer
     fabric_world_visualizer: VisualizationMarkersCfg = CUBOID_MARKER_CFG.replace(
         prim_path="/Visuals/FabricWorld"
     )
@@ -673,6 +676,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     )  # NOTE: Opacity not working
     fabric_world_visualizer.markers["cuboid"].size = (1.0, 1.0, 1.0)
 
+    # Goal palm pose visualizers
     goal_right_palm_pose_visualizer: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
         prim_path="/Visuals/Command/goal_right_palm_pose"
     )
@@ -2332,10 +2336,6 @@ class BimanualEnv(DirectRLEnv):
     def _set_debug_vis_impl(self, debug_vis: bool):
         # create markers if necessary for the first tome
         if debug_vis:
-            if not hasattr(self, "origin_pose_visualizer"):
-                self.origin_pose_visualizer = VisualizationMarkers(
-                    self.cfg.origin_pose_visualizer
-                )
             if not hasattr(self, "right_palm_pose_visualizer"):
                 self.right_palm_pose_visualizer = VisualizationMarkers(
                     self.cfg.right_palm_pose_visualizer
@@ -2366,14 +2366,24 @@ class BimanualEnv(DirectRLEnv):
                         self.cfg.left_finger_goal_visualizer
                     )
 
-            if not hasattr(self, "object_pose_visualizer"):
-                self.object_pose_visualizer = VisualizationMarkers(
-                    self.cfg.object_pose_visualizer
-                )
-            if not hasattr(self, "goal_object_pose_visualizer"):
-                self.goal_object_pose_visualizer = VisualizationMarkers(
-                    self.cfg.goal_object_pose_visualizer
-                )
+            if not hasattr(self, "object_keypoint_visualizers"):
+                self.object_keypoint_visualizers = [
+                    VisualizationMarkers(
+                        self.cfg.object_keypoint_visualizer.replace(
+                            prim_path=f"{self.cfg.object_keypoint_visualizer.prim_path}_{i}"
+                        )
+                    )
+                    for i in range(NUM_OBJECT_KEYPOINTS)
+                ]
+            if not hasattr(self, "goal_object_keypoint_visualizers"):
+                self.goal_object_keypoint_visualizers = [
+                    VisualizationMarkers(
+                        self.cfg.goal_object_keypoint_visualizer.replace(
+                            prim_path=f"{self.cfg.goal_object_keypoint_visualizer.prim_path}_{i}"
+                        )
+                    )
+                    for i in range(NUM_OBJECT_KEYPOINTS)
+                ]
             if not hasattr(self, "right_fingertip_visualizer"):
                 self.right_fingertip_visualizer = VisualizationMarkers(
                     self.cfg.right_fingertip_visualizer
@@ -2420,7 +2430,6 @@ class BimanualEnv(DirectRLEnv):
                 )
 
             # set their visibility to true
-            self.origin_pose_visualizer.set_visibility(True)
             self.right_palm_pose_visualizer.set_visibility(True)
             self.left_palm_pose_visualizer.set_visibility(True)
             if USE_FABRIC:
@@ -2429,8 +2438,12 @@ class BimanualEnv(DirectRLEnv):
             if FINGER_GOALS:
                 self.right_finger_goal_visualizer.set_visibility(True)
                 self.left_finger_goal_visualizer.set_visibility(True)
-            self.object_pose_visualizer.set_visibility(True)
-            self.goal_object_pose_visualizer.set_visibility(True)
+            if hasattr(self, "object_keypoint_visualizers"):
+                for visualizer in self.object_keypoint_visualizers:
+                    visualizer.set_visibility(True)
+            if hasattr(self, "goal_object_keypoint_visualizers"):
+                for visualizer in self.goal_object_keypoint_visualizers:
+                    visualizer.set_visibility(True)
             self.right_fingertip_visualizer.set_visibility(True)
             self.left_fingertip_visualizer.set_visibility(True)
             self.progress_visualizer.set_visibility(True)
@@ -2450,8 +2463,6 @@ class BimanualEnv(DirectRLEnv):
             self.goal_right_palm_pose_visualizer.set_visibility(True)
             self.goal_left_palm_pose_visualizer.set_visibility(True)
         else:
-            if hasattr(self, "origin_pose_visualizer"):
-                self.origin_pose_visualizer.set_visibility(False)
             if hasattr(self, "right_palm_pose_visualizer"):
                 self.right_palm_pose_visualizer.set_visibility(False)
             if hasattr(self, "left_palm_pose_visualizer"):
@@ -2466,10 +2477,12 @@ class BimanualEnv(DirectRLEnv):
                     self.right_finger_goal_visualizer.set_visibility(False)
                 if hasattr(self, "left_finger_goal_visualizer"):
                     self.left_finger_goal_visualizer.set_visibility(False)
-            if hasattr(self, "object_pose_visualizer"):
-                self.object_pose_visualizer.set_visibility(False)
-            if hasattr(self, "goal_object_pose_visualizer"):
-                self.goal_object_pose_visualizer.set_visibility(False)
+            if hasattr(self, "object_keypoint_visualizers"):
+                for visualizer in self.object_keypoint_visualizers:
+                    visualizer.set_visibility(False)
+            if hasattr(self, "goal_object_keypoint_visualizers"):
+                for visualizer in self.goal_object_keypoint_visualizers:
+                    visualizer.set_visibility(False)
             if hasattr(self, "right_fingertip_visualizer"):
                 self.right_fingertip_visualizer.set_visibility(False)
             if hasattr(self, "left_fingertip_visualizer"):
@@ -2499,14 +2512,6 @@ class BimanualEnv(DirectRLEnv):
         POSE_SCALE = [0.1, 0.1, 0.1]
         SPHERE_SCALE = [0.03, 0.03, 0.03]
 
-        base_pos_w = self.robot.data.root_pos_w.clone()
-        self.origin_pose_visualizer.visualize(
-            translations=base_pos_w,
-            orientations=self.robot.data.root_quat_w,
-            scales=torch.tensor(POSE_SCALE, device=self.device)
-            .unsqueeze(dim=0)
-            .repeat_interleave(self.num_envs, dim=0),
-        )
         right_palm_pose = self.right_palm_pose_w()
         left_palm_pose = self.left_palm_pose_w()
         self.right_palm_pose_visualizer.visualize(
@@ -2564,30 +2569,37 @@ class BimanualEnv(DirectRLEnv):
                 .repeat_interleave(self.num_envs, dim=0),
             )
 
-        self.object_pose_visualizer.visualize(
-            translations=self.object_position_w,
-            orientations=self.object_orientation,
-            scales=torch.tensor(POSE_SCALE, device=self.device)
-            .unsqueeze(dim=0)
-            .repeat_interleave(self.num_envs, dim=0),
-        )
-        self.goal_object_pose_visualizer.visualize(
-            translations=self.goal_object_position_w,
-            orientations=self.goal_object_orientation,
-            scales=torch.tensor(POSE_SCALE, device=self.device)
-            .unsqueeze(dim=0)
-            .repeat_interleave(self.num_envs, dim=0),
-        )
+        object_keypoint_positions = self.object_keypoint_positions_w
+        for i in range(NUM_OBJECT_KEYPOINTS):
+            self.object_keypoint_visualizers[i].visualize(
+                translations=object_keypoint_positions[:, i, :],
+                scales=torch.tensor(SPHERE_SCALE, device=self.device)
+                .unsqueeze(dim=0)
+                .repeat_interleave(self.num_envs, dim=0),
+            )
+        goal_object_keypoint_positions = self.goal_object_keypoint_positions_w
+        for i in range(NUM_OBJECT_KEYPOINTS):
+            self.goal_object_keypoint_visualizers[i].visualize(
+                translations=goal_object_keypoint_positions[:, i, :],
+                scales=torch.tensor(SPHERE_SCALE, device=self.device)
+                .unsqueeze(dim=0)
+                .repeat_interleave(self.num_envs, dim=0),
+            )
 
+        VISUALIZE_FINGER_TIP = False
+        if VISUALIZE_FINGER_TIP:
+            fingertip_scale = SPHERE_SCALE
+        else:
+            fingertip_scale = np.array(SPHERE_SCALE) * 0.001
         self.right_fingertip_visualizer.visualize(
             translations=self.right_index_fingertip_position_w(),
-            scales=torch.tensor(SPHERE_SCALE, device=self.device)
+            scales=torch.tensor(fingertip_scale, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
         self.left_fingertip_visualizer.visualize(
             translations=self.left_index_fingertip_position_w(),
-            scales=torch.tensor(SPHERE_SCALE, device=self.device)
+            scales=torch.tensor(fingertip_scale, device=self.device)
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
@@ -2995,6 +3007,39 @@ class BimanualEnv(DirectRLEnv):
     #### OBJECT COMPUTATIONS END ####
 
     #### GOAL COMPUTATIONS START ####
+    @property
+    def future_goal_object_keypoint_positions_w(self) -> torch.Tensor:
+        object_keypoint_offsets = (
+            torch.tensor(
+                OBJECT_KEYPOINT_OFFSETS,
+                device=self.device,
+                dtype=self.object_position_w.dtype,
+            )
+            .unsqueeze(dim=0)
+            .repeat_interleave(self.num_envs * NUM_FUTURE_GOAL_OBS, dim=0)
+        )
+        assert object_keypoint_offsets.shape == (
+            self.num_envs * NUM_FUTURE_GOAL_OBS,
+            NUM_OBJECT_KEYPOINTS,
+            3,
+        ), (
+            f"Expected object_keypoint_offsets to have shape (self.num_envs, NUM_OBJECT_KEYPOINTS, 3), got {object_keypoint_offsets.shape}"
+        )
+
+        future_goal_object_poses = self.future_goal_object_poses
+        assert future_goal_object_poses.shape == (self.num_envs, NUM_FUTURE_GOAL_OBS, 7), (
+            f"future_goal_object_poses shape: {future_goal_object_poses.shape}"
+        )
+        future_goal_object_positions_w = future_goal_object_poses[:, :, :3] + self.scene.env_origins.unsqueeze(dim=1)
+        future_goal_object_orientations = future_goal_object_poses[:, :, 3:]
+
+        future_goal_object_keypoint_positions_w = compute_keypoint_positions(
+            pos=future_goal_object_positions_w.reshape(-1, NUM_XYZ),
+            quat_xyzw=future_goal_object_orientations.reshape(-1, NUM_QUAT),
+            keypoint_offsets=object_keypoint_offsets,
+        ).reshape(self.num_envs, NUM_FUTURE_GOAL_OBS, NUM_OBJECT_KEYPOINTS, 3)
+        return future_goal_object_keypoint_positions_w
+
     @property
     def future_goal_object_poses(self) -> torch.Tensor:
         # Compute future idxs we want
