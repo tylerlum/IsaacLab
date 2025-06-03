@@ -1812,6 +1812,14 @@ class BimanualEnv(DirectRLEnv):
             )
             object_contacts = object_force_norms > 0.01
             num_contacts = object_contacts.float().sum(dim=-1)
+            contact_reward = num_contacts
+
+            # Increase reward if object is lifted
+            contact_reward = torch.where(
+                torch.logical_and(self.object_is_lifted, self.goal_object_is_lifted),
+                10 * contact_reward,
+                contact_reward,
+            )
 
             # Increase reward if object is close to goal and fingertips are close to object
             object_goal_keypoint_dist = self.object_goal_keypoint_distance
@@ -1824,10 +1832,8 @@ class BimanualEnv(DirectRLEnv):
             )
 
             # Increase reward if object is lifted
-            is_object_lifted = self.object_is_lifted
-            is_goal_object_lifted = self.goal_object_is_lifted
             object_tracking_reward = torch.where(
-                torch.logical_and(is_object_lifted, is_goal_object_lifted),
+                torch.logical_and(self.object_is_lifted, self.goal_object_is_lifted),
                 5 * object_tracking_reward,
                 object_tracking_reward,
             )
@@ -1848,7 +1854,7 @@ class BimanualEnv(DirectRLEnv):
                 "object_tracking_reward": object_tracking_reward,
             }
             if INCLUDE_CONTACT_REWARD:
-                self.individual_reward_bufs["fingertip_contact"] = num_contacts
+                self.individual_reward_bufs["fingertip_contact"] = contact_reward
             if INCLUDE_HAND_TRACKING_REWARD:
                 right_palm_to_target_dist = (self.right_palm_pose_w()[:, :3] - self.goal_right_palm_pose_w()[:, :3]).norm(dim=-1, p=2)
                 left_palm_to_target_dist = (self.left_palm_pose_w()[:, :3] - self.goal_left_palm_pose_w()[:, :3]).norm(dim=-1, p=2)
@@ -1878,7 +1884,7 @@ class BimanualEnv(DirectRLEnv):
                 }
                 if INCLUDE_CONTACT_REWARD:
                     self.individual_reward_weights["fingertip_contact"] = (
-                        0.002  # max = NUM_BIMANUAL * 17 * num_steps ~ 2500
+                        0.0004  # max = (1 or 10) * NUM_BIMANUAL * 17 * num_steps ~ 2500
                     )
                 if INCLUDE_HAND_TRACKING_REWARD:
                     self.individual_reward_weights["right_hand_tracking_reward"] = (
