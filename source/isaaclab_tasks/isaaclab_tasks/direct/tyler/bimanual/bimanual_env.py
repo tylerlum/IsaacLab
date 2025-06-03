@@ -145,7 +145,7 @@ INCLUDE_HAND_TRACKING_REWARD = False
 INCLUDE_Q_OBS = True
 INCLUDE_QD_OBS = True
 INCLUDE_FABRIC_OBS = True
-CONTACT_OBS_TYPE = "contacts"  # "forces", "contacts"
+CONTACT_OBS_TYPE = "forces"  # "forces", "contacts", so far seems like "forces is better
 assert CONTACT_OBS_TYPE in ["forces", "contacts"], (
     f"Invalid contact obs type: {CONTACT_OBS_TYPE}"
 )
