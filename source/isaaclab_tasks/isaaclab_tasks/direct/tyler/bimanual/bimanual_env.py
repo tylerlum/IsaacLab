@@ -1790,7 +1790,7 @@ class BimanualEnv(DirectRLEnv):
             right_improvement = (self.smallest_this_episode_right_index_fingertip_to_object_dist - right_index_fingertip_to_object_dist).clip(min=0.0)
             left_improvement = (self.smallest_this_episode_left_index_fingertip_to_object_dist - left_index_fingertip_to_object_dist).clip(min=0.0)
             object_goal_dist = (self.object_position_w - self.goal_object_position_w).norm(dim=-1, p=2)
-            object_goal_improvement = (self.smallest_this_episode_object_to_goal_dist - object_goal_dist).clip(min=0.0)
+            _object_goal_improvement = (self.smallest_this_episode_object_to_goal_dist - object_goal_dist).clip(min=0.0)
 
             table_forces = self.table_contact_sensor.data.force_matrix_w
             assert table_forces.shape == (self.num_envs, 1, len(TABLE_CONTACT_SENSOR_ROBOT_LINKS), NUM_XYZ), (
@@ -2357,7 +2357,7 @@ class BimanualEnv(DirectRLEnv):
                 self.left_palm_pose_visualizer = VisualizationMarkers(
                     self.cfg.left_palm_pose_visualizer
                 )
-            if USE_FABRIC:
+            if USE_FABRIC and self.VISUALIZE_FABRIC_PALM_TARGETS:
                 if not hasattr(self, "right_fabric_palm_target_pose_visualizer"):
                     self.right_fabric_palm_target_pose_visualizer = (
                         VisualizationMarkers(
@@ -2433,21 +2433,32 @@ class BimanualEnv(DirectRLEnv):
                         )
                         for i in range(NUM_FABRIC_WORLD_CUBES)
                     ]
-            if not hasattr(self, "goal_right_palm_pose_visualizer"):
-                self.goal_right_palm_pose_visualizer = VisualizationMarkers(
-                    self.cfg.goal_right_palm_pose_visualizer
-                )
-            if not hasattr(self, "goal_left_palm_pose_visualizer"):
-                self.goal_left_palm_pose_visualizer = VisualizationMarkers(
-                    self.cfg.goal_left_palm_pose_visualizer
-                )
+            if self.VISUALIZE_GOAL_PALM_POSES:
+                if not hasattr(self, "goal_right_palm_pose_visualizer"):
+                    self.goal_right_palm_pose_visualizer = VisualizationMarkers(
+                        self.cfg.goal_right_palm_pose_visualizer
+                    )
+                if not hasattr(self, "goal_left_palm_pose_visualizer"):
+                    self.goal_left_palm_pose_visualizer = VisualizationMarkers(
+                        self.cfg.goal_left_palm_pose_visualizer
+                    )
 
             # set their visibility to true
             self.right_palm_pose_visualizer.set_visibility(True)
             self.left_palm_pose_visualizer.set_visibility(True)
             if USE_FABRIC:
-                self.right_fabric_palm_target_pose_visualizer.set_visibility(True)
-                self.left_fabric_palm_target_pose_visualizer.set_visibility(True)
+                if self.VISUALIZE_FABRIC_PALM_TARGETS:
+                    self.right_fabric_palm_target_pose_visualizer.set_visibility(True)
+                    self.left_fabric_palm_target_pose_visualizer.set_visibility(True)
+                else:
+                    if hasattr(self, "right_fabric_palm_target_pose_visualizer"):
+                        self.right_fabric_palm_target_pose_visualizer.set_visibility(
+                            False
+                        )
+                    if hasattr(self, "left_fabric_palm_target_pose_visualizer"):
+                        self.left_fabric_palm_target_pose_visualizer.set_visibility(
+                            False
+                        )
             if FINGER_GOALS:
                 self.right_finger_goal_visualizer.set_visibility(True)
                 self.left_finger_goal_visualizer.set_visibility(True)
@@ -2473,14 +2484,20 @@ class BimanualEnv(DirectRLEnv):
             elif hasattr(self, "fabric_world_visualizers"):
                 for visualizer in self.fabric_world_visualizers:
                     visualizer.set_visibility(False)
-            self.goal_right_palm_pose_visualizer.set_visibility(True)
-            self.goal_left_palm_pose_visualizer.set_visibility(True)
+            if self.VISUALIZE_GOAL_PALM_POSES:
+                self.goal_right_palm_pose_visualizer.set_visibility(True)
+                self.goal_left_palm_pose_visualizer.set_visibility(True)
+            else:
+                if hasattr(self, "goal_right_palm_pose_visualizer"):
+                    self.goal_right_palm_pose_visualizer.set_visibility(False)
+                if hasattr(self, "goal_left_palm_pose_visualizer"):
+                    self.goal_left_palm_pose_visualizer.set_visibility(False)
         else:
             if hasattr(self, "right_palm_pose_visualizer"):
                 self.right_palm_pose_visualizer.set_visibility(False)
             if hasattr(self, "left_palm_pose_visualizer"):
                 self.left_palm_pose_visualizer.set_visibility(False)
-            if USE_FABRIC:
+            if USE_FABRIC and self.VISUALIZE_FABRIC_PALM_TARGETS:
                 if hasattr(self, "right_fabric_palm_target_pose_visualizer"):
                     self.right_fabric_palm_target_pose_visualizer.set_visibility(False)
                 if hasattr(self, "left_fabric_palm_target_pose_visualizer"):
@@ -2512,10 +2529,11 @@ class BimanualEnv(DirectRLEnv):
                 if hasattr(self, "fabric_world_visualizers"):
                     for visualizer in self.fabric_world_visualizers:
                         visualizer.set_visibility(False)
-            if hasattr(self, "goal_right_palm_pose_visualizer"):
-                self.goal_right_palm_pose_visualizer.set_visibility(False)
-            if hasattr(self, "goal_left_palm_pose_visualizer"):
-                self.goal_left_palm_pose_visualizer.set_visibility(False)
+            if self.VISUALIZE_GOAL_PALM_POSES:
+                if hasattr(self, "goal_right_palm_pose_visualizer"):
+                    self.goal_right_palm_pose_visualizer.set_visibility(False)
+                if hasattr(self, "goal_left_palm_pose_visualizer"):
+                    self.goal_left_palm_pose_visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
         # Make sure the robot is initialized
@@ -2541,7 +2559,7 @@ class BimanualEnv(DirectRLEnv):
             .unsqueeze(dim=0)
             .repeat_interleave(self.num_envs, dim=0),
         )
-        if USE_FABRIC:
+        if USE_FABRIC and self.VISUALIZE_FABRIC_PALM_TARGETS:
             # Actions are in robot frame
             # [RIGHT xyz, RIGHT euler_ZYX, LEFT xyz, LEFT euler_ZYX]
             right_fabric_palm_target_pose_w = self.xyzZYX_to_pose_w(
@@ -2553,18 +2571,14 @@ class BimanualEnv(DirectRLEnv):
             self.right_fabric_palm_target_pose_visualizer.visualize(
                 translations=right_fabric_palm_target_pose_w[:, :3],
                 orientations=right_fabric_palm_target_pose_w[:, 3:],
-                scales=torch.tensor(
-                    (np.array(POSE_SCALE) * 0.3).tolist(), device=self.device
-                )
+                scales=torch.tensor(POSE_SCALE, device=self.device)
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
             self.left_fabric_palm_target_pose_visualizer.visualize(
                 translations=left_fabric_palm_target_pose_w[:, :3],
                 orientations=left_fabric_palm_target_pose_w[:, 3:],
-                scales=torch.tensor(
-                    (np.array(POSE_SCALE) * 0.3).tolist(), device=self.device
-                )
+                scales=torch.tensor(POSE_SCALE, device=self.device)
                 .unsqueeze(dim=0)
                 .repeat_interleave(self.num_envs, dim=0),
             )
@@ -2697,22 +2711,24 @@ class BimanualEnv(DirectRLEnv):
                         self.num_envs, dim=0
                     ),
                 )
-        goal_right_palm_pose_w = self.goal_right_palm_pose_w()
-        goal_left_palm_pose_w = self.goal_left_palm_pose_w()
-        self.goal_right_palm_pose_visualizer.visualize(
-            translations=goal_right_palm_pose_w[:, :3],
-            orientations=goal_right_palm_pose_w[:, 3:],
-            scales=torch.tensor(POSE_SCALE, device=self.device)
-            .unsqueeze(dim=0)
-            .repeat_interleave(self.num_envs, dim=0),
-        )
-        self.goal_left_palm_pose_visualizer.visualize(
-            translations=goal_left_palm_pose_w[:, :3],
-            orientations=goal_left_palm_pose_w[:, 3:],
-            scales=torch.tensor(POSE_SCALE, device=self.device)
-            .unsqueeze(dim=0)
-            .repeat_interleave(self.num_envs, dim=0),
-        )
+
+        if self.VISUALIZE_GOAL_PALM_POSES:
+            goal_right_palm_pose_w = self.goal_right_palm_pose_w()
+            goal_left_palm_pose_w = self.goal_left_palm_pose_w()
+            self.goal_right_palm_pose_visualizer.visualize(
+                translations=goal_right_palm_pose_w[:, :3],
+                orientations=goal_right_palm_pose_w[:, 3:],
+                scales=torch.tensor(POSE_SCALE, device=self.device)
+                .unsqueeze(dim=0)
+                .repeat_interleave(self.num_envs, dim=0),
+            )
+            self.goal_left_palm_pose_visualizer.visualize(
+                translations=goal_left_palm_pose_w[:, :3],
+                orientations=goal_left_palm_pose_w[:, 3:],
+                scales=torch.tensor(POSE_SCALE, device=self.device)
+                .unsqueeze(dim=0)
+                .repeat_interleave(self.num_envs, dim=0),
+            )
 
     #### DEBUG END ####
 
@@ -2754,6 +2770,16 @@ class BimanualEnv(DirectRLEnv):
                     KeyboardCommand(
                         key=carb.input.KeyboardInput.D,
                         func=self._toggle_debug_vis,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.G,
+                        func=self._toggle_goal_palm_poses,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.T,
+                        func=self._toggle_fabric_palm_targets,
                         args=[],
                     ),
                     KeyboardCommand(
@@ -2848,6 +2874,25 @@ class BimanualEnv(DirectRLEnv):
     def _toggle_debug_vis(self):
         self.DEBUG_VIS = not self.DEBUG_VIS
         print(colored(f"Toggling debug vis: {self.DEBUG_VIS}", "green"))
+        self.set_debug_vis(self.DEBUG_VIS)
+
+    def _toggle_goal_palm_poses(self):
+        self.VISUALIZE_GOAL_PALM_POSES = not self.VISUALIZE_GOAL_PALM_POSES
+        print(
+            colored(
+                f"Toggling goal palm poses: {self.VISUALIZE_GOAL_PALM_POSES}", "green"
+            )
+        )
+        self.set_debug_vis(self.DEBUG_VIS)
+
+    def _toggle_fabric_palm_targets(self):
+        self.VISUALIZE_FABRIC_PALM_TARGETS = not self.VISUALIZE_FABRIC_PALM_TARGETS
+        print(
+            colored(
+                f"Toggling fabric palm targets: {self.VISUALIZE_FABRIC_PALM_TARGETS}",
+                "green",
+            )
+        )
         self.set_debug_vis(self.DEBUG_VIS)
 
     def _apply_external_force_neg_y(self):
@@ -3564,6 +3609,26 @@ class BimanualEnv(DirectRLEnv):
     @DEBUG_VIS.setter
     def DEBUG_VIS(self, value: bool):
         self._DEBUG_VIS = value
+
+    @property
+    def VISUALIZE_GOAL_PALM_POSES(self) -> bool:
+        if not hasattr(self, "_VISUALIZE_GOAL_PALM_POSES"):
+            self._VISUALIZE_GOAL_PALM_POSES = False
+        return self._VISUALIZE_GOAL_PALM_POSES
+
+    @VISUALIZE_GOAL_PALM_POSES.setter
+    def VISUALIZE_GOAL_PALM_POSES(self, value: bool):
+        self._VISUALIZE_GOAL_PALM_POSES = value
+
+    @property
+    def VISUALIZE_FABRIC_PALM_TARGETS(self) -> bool:
+        if not hasattr(self, "_VISUALIZE_FABRIC_PALM_TARGETS"):
+            self._VISUALIZE_FABRIC_PALM_TARGETS = False
+        return self._VISUALIZE_FABRIC_PALM_TARGETS
+
+    @VISUALIZE_FABRIC_PALM_TARGETS.setter
+    def VISUALIZE_FABRIC_PALM_TARGETS(self, value: bool):
+        self._VISUALIZE_FABRIC_PALM_TARGETS = value
 
     #### MODIFIABLE PROPERTIES END ####
 
