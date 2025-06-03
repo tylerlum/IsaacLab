@@ -2272,8 +2272,8 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_qdd[env_ids] = torch.zeros_like(self.fabric_q[env_ids])
                 self.fabric_palm_target[env_ids] = torch.cat(
                     [
-                        self.pose_w_to_xyzZYX(self.right_palm_pose_w()[env_ids]),
-                        self.pose_w_to_xyzZYX(self.left_palm_pose_w()[env_ids]),
+                        self.pose_w_to_xyzZYX(self.right_palm_pose_w())[env_ids],
+                        self.pose_w_to_xyzZYX(self.left_palm_pose_w())[env_ids],
                     ],
                     dim=1,
                 )
