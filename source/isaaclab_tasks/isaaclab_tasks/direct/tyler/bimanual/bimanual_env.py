@@ -15,6 +15,7 @@ import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
 import numpy as np
 import torch
+import torch.nn.functional as F
 import yaml
 from isaaclab.assets import Articulation, ArticulationCfg, RigidObject, RigidObjectCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
@@ -47,6 +48,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.average_meter import AverageMete
 from isaaclab_tasks.direct.tyler.bimanual.utils.color_constants import (
     BLUE_RGB,
     GREEN_RGB,
+    LIGHT_GREEN_RGB,
     RED_RGB,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.constants import (
@@ -136,7 +138,7 @@ NUM_FUTURE_PALM_GOAL_OBS = 4  # Number of future palm goal observations
 SIM_DT = 1 / 60  # Simulation time step
 CONTACT_SENSOR_HISTORY_LENGTH = 1  # Number of contact sensor history steps to use
 
-FORCE_MAG = 1.0  # Magnitude of force to apply to object
+FORCE_MAG = 0.5  # Magnitude of force to apply to object
 
 RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filtering
 
@@ -632,6 +634,16 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     goal_object_keypoint_visualizer.markers[
         "sphere"
     ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
+
+    # Future goal visualizers
+    future_goal_object_keypoint_visualizer: VisualizationMarkersCfg = (
+        SPHERE_MARKER_CFG.replace(
+            prim_path="/Visuals/Command/future_goal_object_keypoint"
+        )
+    )
+    future_goal_object_keypoint_visualizer.markers[
+        "sphere"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=LIGHT_GREEN_RGB)
 
     # Fingertip visualizers
     right_fingertip_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
@@ -1263,9 +1275,9 @@ class BimanualEnv(DirectRLEnv):
                 "position_targets (after fabric_to_isaaclab_joint_order_torch)",
             )
         else:
-            position_targets = self._compute_actions(self.raw_actions)
+            position_targets = self._compute_nonfabric_actions(self.raw_actions)
             check_nan_and_print_if_any(
-                position_targets, "position_targets (after _compute_actions)"
+                position_targets, "position_targets (after _compute_nonfabric_actions)"
             )
 
         # Clamp
@@ -1348,12 +1360,42 @@ class BimanualEnv(DirectRLEnv):
         # Random force
         APPLY_RANDOM_FORCE = False
         if APPLY_RANDOM_FORCE:
+            # Sample probability of applying force
+            FORCE_EVERY_N_SECONDS = 5.0
+            force_every_n_steps = int(FORCE_EVERY_N_SECONDS / self.control_dt)
+            prob_force = 1 / force_every_n_steps
+            apply_force = torch.rand(self.num_envs) < prob_force
+
             random_force_o = (
-                torch.randn(self.num_envs, NUM_XYZ, device=self.device) * FORCE_MAG
+                F.normalize(
+                    torch.randn(self.num_envs, NUM_XYZ, device=self.device),
+                    p=2,
+                    dim=-1,
+                )
+                * FORCE_MAG
             )
-            external_force_o += random_force_o.repeat_interleave(
-                OBJECT_NUM_RIGID_BODIES, dim=1
+            external_force_o[apply_force] = random_force_o[apply_force].unsqueeze(dim=1)
+
+            # num_envs_apply_force = apply_force.sum().item()
+            # if num_envs_apply_force > 0:
+            #     print(
+            #         colored(
+            #             f"Applying force and torque to {num_envs_apply_force} environments",
+            #             "red",
+            #         )
+            #     )
+
+        APPLY_TORQUE_TO_PREVENT_TIPPING = False
+        if APPLY_TORQUE_TO_PREVENT_TIPPING:
+            # We want to apply a force at the BOTTOM of the object so it doesn't tip over
+            # But we can only apply force/torque at the COM
+            # Thus, we need to apply an additional torque of tau = r x F
+            # Where r is the vector from the COM to the point of application of the force
+            r = torch.tensor([0.0, 0.0, -OBJECT_LENGTH_Z / 2], device=self.device)
+            torque_o = torch.cross(
+                r.unsqueeze(dim=0).unsqueeze(dim=0), external_force_o, dim=-1
             )
+            external_torque_o += torque_o
 
         self.object.set_external_force_and_torque(
             forces=external_force_o,
@@ -1447,7 +1489,7 @@ class BimanualEnv(DirectRLEnv):
 
         return new_fabric_palm_target, new_fabric_hand_target
 
-    def _compute_actions(self, raw_actions: torch.Tensor) -> torch.Tensor:
+    def _compute_nonfabric_actions(self, raw_actions: torch.Tensor) -> torch.Tensor:
         # Split into arm and hand actions
         raw_arm_actions = raw_actions[:, : NUM_BIMANUAL * NUM_ARM_JOINTS]
         raw_hand_actions = raw_actions[:, NUM_BIMANUAL * NUM_ARM_JOINTS :]
@@ -2131,7 +2173,6 @@ class BimanualEnv(DirectRLEnv):
         goal_object_quat_wxyz = matrix_to_quat_wxyz(goal_T_R_Os[:, :3, :3])
         goal_object_pose = torch.cat([goal_object_pos, goal_object_quat_wxyz], dim=-1)
         self.object.write_root_pose_to_sim(object_pose, env_ids=env_ids)
-
         self.object.write_root_velocity_to_sim(
             torch.zeros(len(env_ids), 6, device=self.device), env_ids=env_ids
         )
@@ -2403,6 +2444,16 @@ class BimanualEnv(DirectRLEnv):
                     )
                     for i in range(NUM_OBJECT_KEYPOINTS)
                 ]
+            if not hasattr(self, "future_goal_object_keypoint_visualizers"):
+                self.future_goal_object_keypoint_visualizers = [
+                    VisualizationMarkers(
+                        self.cfg.future_goal_object_keypoint_visualizer.replace(
+                            prim_path=f"{self.cfg.future_goal_object_keypoint_visualizer.prim_path}_{i}_{j}"
+                        )
+                    )
+                    for i in range(NUM_FUTURE_GOAL_OBS)
+                    for j in range(NUM_OBJECT_KEYPOINTS)
+                ]
             if not hasattr(self, "right_fingertip_visualizer"):
                 self.right_fingertip_visualizer = VisualizationMarkers(
                     self.cfg.right_fingertip_visualizer
@@ -2474,6 +2525,9 @@ class BimanualEnv(DirectRLEnv):
             if hasattr(self, "goal_object_keypoint_visualizers"):
                 for visualizer in self.goal_object_keypoint_visualizers:
                     visualizer.set_visibility(True)
+            if hasattr(self, "future_goal_object_keypoint_visualizers"):
+                for visualizer in self.future_goal_object_keypoint_visualizers:
+                    visualizer.set_visibility(True)
             self.right_fingertip_visualizer.set_visibility(True)
             self.left_fingertip_visualizer.set_visibility(True)
             self.progress_visualizer.set_visibility(True)
@@ -2518,6 +2572,9 @@ class BimanualEnv(DirectRLEnv):
                     visualizer.set_visibility(False)
             if hasattr(self, "goal_object_keypoint_visualizers"):
                 for visualizer in self.goal_object_keypoint_visualizers:
+                    visualizer.set_visibility(False)
+            if hasattr(self, "future_goal_object_keypoint_visualizers"):
+                for visualizer in self.future_goal_object_keypoint_visualizers:
                     visualizer.set_visibility(False)
             if hasattr(self, "right_fingertip_visualizer"):
                 self.right_fingertip_visualizer.set_visibility(False)
@@ -2619,11 +2676,31 @@ class BimanualEnv(DirectRLEnv):
                 .repeat_interleave(self.num_envs, dim=0),
             )
 
+        future_goal_object_keypoint_positions_w = (
+            self.future_goal_object_keypoint_positions
+            + self.scene.env_origins.unsqueeze(dim=1).unsqueeze(dim=1)
+        )
+        VISUALIZE_FUTURE_GOAL_OBJECT_KEYPOINTS = False
+        if VISUALIZE_FUTURE_GOAL_OBJECT_KEYPOINTS:
+            future_goal_object_scale = SPHERE_SCALE
+        else:
+            future_goal_object_scale = (np.array(SPHERE_SCALE) * 0.001).tolist()
+        for i in range(NUM_FUTURE_GOAL_OBS):
+            for j in range(NUM_OBJECT_KEYPOINTS):
+                self.future_goal_object_keypoint_visualizers[
+                    i * NUM_OBJECT_KEYPOINTS + j
+                ].visualize(
+                    translations=future_goal_object_keypoint_positions_w[:, i, j, :],
+                    scales=torch.tensor(future_goal_object_scale, device=self.device)
+                    .unsqueeze(dim=0)
+                    .repeat_interleave(self.num_envs, dim=0),
+                )
+
         VISUALIZE_FINGER_TIP = False
         if VISUALIZE_FINGER_TIP:
             fingertip_scale = SPHERE_SCALE
         else:
-            fingertip_scale = np.array(SPHERE_SCALE) * 0.001
+            fingertip_scale = (np.array(SPHERE_SCALE) * 0.001).tolist()
         self.right_fingertip_visualizer.visualize(
             translations=self.right_index_fingertip_position_w(),
             scales=torch.tensor(fingertip_scale, device=self.device)
@@ -3112,8 +3189,7 @@ class BimanualEnv(DirectRLEnv):
     def future_goal_object_poses(self) -> torch.Tensor:
         # Compute future idxs we want
         TIME_BETWEEN_GOALS_SECONDS = 0.5
-        CONTROL_DT = self.cfg.sim.dt * self.cfg.decimation
-        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / CONTROL_DT
+        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / self.control_dt
         relative_idxs = (
             torch.arange(1, NUM_FUTURE_GOAL_OBS + 1, device=self.device).float()
             * IDXS_BETWEEN_GOALS
@@ -3159,8 +3235,7 @@ class BimanualEnv(DirectRLEnv):
     def future_goal_right_palm_poses(self) -> torch.Tensor:
         # Compute future idxs we want
         TIME_BETWEEN_GOALS_SECONDS = 0.5
-        CONTROL_DT = self.cfg.sim.dt * self.cfg.decimation
-        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / CONTROL_DT
+        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / self.control_dt
         relative_idxs = (
             torch.arange(1, NUM_FUTURE_PALM_GOAL_OBS + 1, device=self.device).float()
             * IDXS_BETWEEN_GOALS
@@ -3209,8 +3284,7 @@ class BimanualEnv(DirectRLEnv):
     def future_goal_left_palm_poses(self) -> torch.Tensor:
         # Compute future idxs we want
         TIME_BETWEEN_GOALS_SECONDS = 0.5
-        CONTROL_DT = self.cfg.sim.dt * self.cfg.decimation
-        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / CONTROL_DT
+        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / self.control_dt
 
         relative_idxs = (
             torch.arange(1, NUM_FUTURE_PALM_GOAL_OBS + 1, device=self.device).float()
@@ -3369,9 +3443,9 @@ class BimanualEnv(DirectRLEnv):
         palm_y_pos = x[:, RIGHT_PALM_Y_LINK_IDX]
         palm_z_pos = x[:, RIGHT_PALM_Z_LINK_IDX]
 
-        x_dir = torch.nn.functional.normalize(palm_x_pos - palm_pos, p=2, dim=-1)
-        y_dir = torch.nn.functional.normalize(palm_y_pos - palm_pos, p=2, dim=-1)
-        z_dir = torch.nn.functional.normalize(palm_z_pos - palm_pos, p=2, dim=-1)
+        x_dir = F.normalize(palm_x_pos - palm_pos, p=2, dim=-1)
+        y_dir = F.normalize(palm_y_pos - palm_pos, p=2, dim=-1)
+        z_dir = F.normalize(palm_z_pos - palm_pos, p=2, dim=-1)
 
         # Assemble the rotation matrix with columns [x̂  ŷ  ẑ]
         # Resulting shape: (B, 3, 3)
@@ -3399,9 +3473,9 @@ class BimanualEnv(DirectRLEnv):
         palm_y_pos = x[:, LEFT_PALM_Y_LINK_IDX]
         palm_z_pos = x[:, LEFT_PALM_Z_LINK_IDX]
 
-        x_dir = torch.nn.functional.normalize(palm_x_pos - palm_pos, p=2, dim=-1)
-        y_dir = torch.nn.functional.normalize(palm_y_pos - palm_pos, p=2, dim=-1)
-        z_dir = torch.nn.functional.normalize(palm_z_pos - palm_pos, p=2, dim=-1)
+        x_dir = F.normalize(palm_x_pos - palm_pos, p=2, dim=-1)
+        y_dir = F.normalize(palm_y_pos - palm_pos, p=2, dim=-1)
+        z_dir = F.normalize(palm_z_pos - palm_pos, p=2, dim=-1)
 
         # Assemble the rotation matrix with columns [x̂  ŷ  ẑ]
         # Resulting shape: (B, 3, 3)
@@ -3652,5 +3726,9 @@ class BimanualEnv(DirectRLEnv):
     def fabric_decimation(self) -> int:
         # Use same as simulator for now
         return self.cfg.decimation
+
+    @property
+    def control_dt(self) -> float:
+        return self.cfg.sim.dt * self.cfg.decimation
 
     #### CONSTANT PROPERTIES END ####

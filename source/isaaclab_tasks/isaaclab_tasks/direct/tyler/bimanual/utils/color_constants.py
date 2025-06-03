@@ -1,3 +1,7 @@
 RED_RGB = (1.0, 0.0, 0.0)
 GREEN_RGB = (0.0, 1.0, 0.0)
 BLUE_RGB = (0.0, 0.0, 1.0)
+
+LIGHT_RED_RGB = (0.5, 0.0, 0.0)
+LIGHT_GREEN_RGB = (0.0, 0.5, 0.0)
+LIGHT_BLUE_RGB = (0.0, 0.0, 0.5)
