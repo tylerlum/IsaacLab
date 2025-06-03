@@ -195,8 +195,8 @@ def compute_num_observations():
         + (NUM_ARM_HAND_JOINTS * NUM_BIMANUAL if INCLUDE_QD_OBS else 0)  # qd
         + (NUM_XYZ * NUM_FINGERS * NUM_BIMANUAL)  # fingertip positions
         + ((NUM_XYZ + NUM_QUAT) * NUM_BIMANUAL)  # palm poses
-        + (NUM_XYZ + NUM_QUAT)  # object position and orientation
-        + (NUM_XYZ + NUM_QUAT)  # goal object position and orientation
+        + (NUM_XYZ * NUM_OBJECT_KEYPOINTS)  # object keypoint positions
+        + (NUM_XYZ * NUM_OBJECT_KEYPOINTS)  # goal object keypoint positions
         + (NUM_XYZ * NUM_BIMANUAL if FINGER_GOALS else 0)  # fingertip goal positions
         + (
             (NUM_ARM_JOINTS * NUM_BIMANUAL)
@@ -219,8 +219,8 @@ def compute_num_observations():
             else 0
         )  # future palm goal positions
         + (
-            (NUM_XYZ + NUM_QUAT) * NUM_FUTURE_GOAL_OBS
-        )  # future goal object poses
+            NUM_XYZ * NUM_OBJECT_KEYPOINTS * NUM_FUTURE_GOAL_OBS
+        )  # future goal object keypoint positions
         + compute_num_actions()  # prev actions
         + (NUM_XYZ * NUM_BIMANUAL)  # palm linvels
         + (NUM_XYZ * NUM_FINGERS * NUM_BIMANUAL)  # fingertip linvels
@@ -623,11 +623,15 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     object_keypoint_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
         prim_path="/Visuals/Command/object_keypoint"
     )
-    object_keypoint_visualizer.markers["sphere"].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=BLUE_RGB)
-    goal_object_keypoint_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
-        prim_path="/Visuals/Command/goal_object_keypoint"
+    object_keypoint_visualizer.markers[
+        "sphere"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=BLUE_RGB)
+    goal_object_keypoint_visualizer: VisualizationMarkersCfg = (
+        SPHERE_MARKER_CFG.replace(prim_path="/Visuals/Command/goal_object_keypoint")
     )
-    goal_object_keypoint_visualizer.markers["sphere"].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
+    goal_object_keypoint_visualizer.markers[
+        "sphere"
+    ].visual_material = sim_utils.PreviewSurfaceCfg(diffuse_color=GREEN_RGB)
 
     # Fingertip visualizers
     right_fingertip_visualizer: VisualizationMarkersCfg = SPHERE_MARKER_CFG.replace(
@@ -1615,20 +1619,23 @@ class BimanualEnv(DirectRLEnv):
             "right_fingertip_positions": (
                 self.right_fingertip_positions_w()
                 - self.scene.env_origins.unsqueeze(dim=1)
-            ).reshape(self.num_envs, -1),
+            ).reshape(self.num_envs, NUM_FINGERS * NUM_XYZ),
             "left_fingertip_positions": (
                 self.left_fingertip_positions_w()
                 - self.scene.env_origins.unsqueeze(dim=1)
-            ).reshape(self.num_envs, -1),
+            ).reshape(self.num_envs, NUM_FINGERS * NUM_XYZ),
             "right_palm_position": right_palm_pose_w[:, :3] - self.scene.env_origins,
             "right_palm_orientation": right_palm_pose_w[:, 3:],
             "left_palm_position": left_palm_pose_w[:, :3] - self.scene.env_origins,
             "left_palm_orientation": left_palm_pose_w[:, 3:],
-            "object_position": self.object_position_w - self.scene.env_origins,
-            "goal_object_position": self.goal_object_position_w
-            - self.scene.env_origins,
-            "object_orientation": self.object_orientation,
-            "goal_object_orientation": self.goal_object_orientation,
+            "object_keypoint_positions": (
+                self.object_keypoint_positions_w
+                - self.scene.env_origins.unsqueeze(dim=1)
+            ).reshape(self.num_envs, NUM_OBJECT_KEYPOINTS * NUM_XYZ),
+            "goal_object_keypoint_positions": (
+                self.goal_object_keypoint_positions_w
+                - self.scene.env_origins.unsqueeze(dim=1)
+            ).reshape(self.num_envs, NUM_OBJECT_KEYPOINTS * NUM_XYZ),
             "goal_right_palm_position": (
                 self.goal_right_palm_pose_w()[:, :3] - self.scene.env_origins
                 if INCLUDE_HAND_TRACKING_REWARD
@@ -1640,17 +1647,23 @@ class BimanualEnv(DirectRLEnv):
                 else torch.zeros(self.num_envs, 0, device=self.device)
             ),
             "future_goal_right_palm_positions": (
-                self.future_goal_right_palm_poses[:, :, :3].reshape(self.num_envs, -1)
+                self.future_goal_right_palm_poses[:, :, :3].reshape(
+                    self.num_envs, NUM_FUTURE_PALM_GOAL_OBS * NUM_XYZ
+                )
                 if INCLUDE_HAND_TRACKING_REWARD
                 else torch.zeros(self.num_envs, 0, device=self.device)
             ),
             "future_goal_left_palm_positions": (
-                self.future_goal_left_palm_poses[:, :, :3].reshape(self.num_envs, -1)
+                self.future_goal_left_palm_poses[:, :, :3].reshape(
+                    self.num_envs, NUM_FUTURE_PALM_GOAL_OBS * NUM_XYZ
+                )
                 if INCLUDE_HAND_TRACKING_REWARD
                 else torch.zeros(self.num_envs, 0, device=self.device)
             ),
-            "future_goal_object_poses": self.future_goal_object_poses.reshape(
-                self.num_envs, -1
+            "future_goal_object_keypoint_positions": (
+                self.future_goal_object_keypoint_positions.reshape(
+                    self.num_envs, NUM_FUTURE_GOAL_OBS * NUM_OBJECT_KEYPOINTS * NUM_XYZ
+                )
             ),
             "prev_actions": self.prev_raw_actions.reshape(self.num_envs, -1),
             "right_palm_linvel": self.right_palm_linvel(),
@@ -3008,7 +3021,7 @@ class BimanualEnv(DirectRLEnv):
 
     #### GOAL COMPUTATIONS START ####
     @property
-    def future_goal_object_keypoint_positions_w(self) -> torch.Tensor:
+    def future_goal_object_keypoint_positions(self) -> torch.Tensor:
         object_keypoint_offsets = (
             torch.tensor(
                 OBJECT_KEYPOINT_OFFSETS,
@@ -3026,19 +3039,23 @@ class BimanualEnv(DirectRLEnv):
             f"Expected object_keypoint_offsets to have shape (self.num_envs, NUM_OBJECT_KEYPOINTS, 3), got {object_keypoint_offsets.shape}"
         )
 
-        future_goal_object_poses = self.future_goal_object_poses
-        assert future_goal_object_poses.shape == (self.num_envs, NUM_FUTURE_GOAL_OBS, 7), (
-            f"future_goal_object_poses shape: {future_goal_object_poses.shape}"
-        )
-        future_goal_object_positions_w = future_goal_object_poses[:, :, :3] + self.scene.env_origins.unsqueeze(dim=1)
-        future_goal_object_orientations = future_goal_object_poses[:, :, 3:]
+        poses = self.future_goal_object_poses
+        assert poses.shape == (
+            self.num_envs,
+            NUM_FUTURE_GOAL_OBS,
+            7,
+        ), f"poses shape: {poses.shape}"
+        positions = poses[:, :, :3]
+        orientations = poses[:, :, 3:]
 
-        future_goal_object_keypoint_positions_w = compute_keypoint_positions(
-            pos=future_goal_object_positions_w.reshape(-1, NUM_XYZ),
-            quat_xyzw=future_goal_object_orientations.reshape(-1, NUM_QUAT)[:, [1, 2, 3, 0]],
+        keypoint_positions = compute_keypoint_positions(
+            pos=positions.reshape(self.num_envs * NUM_FUTURE_GOAL_OBS, NUM_XYZ),
+            quat_xyzw=orientations.reshape(
+                self.num_envs * NUM_FUTURE_GOAL_OBS, NUM_QUAT
+            )[:, [1, 2, 3, 0]],
             keypoint_offsets=object_keypoint_offsets,
         ).reshape(self.num_envs, NUM_FUTURE_GOAL_OBS, NUM_OBJECT_KEYPOINTS, 3)
-        return future_goal_object_keypoint_positions_w
+        return keypoint_positions
 
     @property
     def future_goal_object_poses(self) -> torch.Tensor:
