@@ -152,7 +152,7 @@ FORCE_MAG = 0.5  # Magnitude of force to apply to object
 
 RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filtering
 
-USE_VIRTUAL_OBJECT_CONTROLLER = True
+USE_VIRTUAL_OBJECT_CONTROLLER = False
 
 INCLUDE_CONTACT_REWARD = False
 INCLUDE_HAND_TRACKING_REWARD = False
@@ -768,6 +768,15 @@ class BimanualEnv(DirectRLEnv):
         self._setup_sanity_checks()
         self._setup_demo_trajectory()
         self._setup_default_joint_pos()
+
+        # Modify simulation properties
+        self._modify_gravity(gravity=(0.0, 0.0, 0.0))
+        self._modify_object_masses(scale=0.1)
+        self._modify_object_materials(
+            static_friction=0.1,
+            dynamic_friction=0.1,
+            restitution=0.1,
+        )
 
         # Taskmap is needed for FK, even if not using fabric
         # Must be done before _reset_state() because it uses the taskmap
@@ -3908,3 +3917,114 @@ class BimanualEnv(DirectRLEnv):
         return corners
 
     #### BOUNDING BOX UTILITIES END ####
+
+    #### CHANGE SIMULATION PROPERTIES START ####
+    def _modify_gravity(self, gravity: Tuple[float, float, float]):
+        import carb
+        import omni.physics.tensors.impl.api as physx
+
+        gravity = list(gravity)
+        physics_sim_view: physx.SimulationView = (
+            sim_utils.SimulationContext.instance().physics_sim_view
+        )
+
+        physics_sim_view.set_gravity(carb.Float3(*gravity))
+
+    def _modify_object_masses(
+        self,
+        scale: float,
+        env_ids: Optional[torch.Tensor] = None,
+        recompute_inertia: bool = True,
+    ) -> None:
+        asset_cfg = SceneEntityCfg("object", body_names=".*")
+
+        # extract the used quantities (to enable type-hinting)
+        asset: RigidObject | Articulation = self.scene[asset_cfg.name]
+
+        # resolve environment ids
+        if env_ids is None:
+            env_ids = torch.arange(self.scene.num_envs, device="cpu")
+        else:
+            env_ids = env_ids.cpu()
+
+        # resolve body indices
+        if asset_cfg.body_ids == slice(None):
+            body_ids = torch.arange(asset.num_bodies, dtype=torch.int, device="cpu")
+        else:
+            body_ids = torch.tensor(asset_cfg.body_ids, dtype=torch.int, device="cpu")
+
+        # get the current masses of the bodies (num_assets, num_bodies)
+        masses = asset.root_physx_view.get_masses()
+        N_BODIES = masses.shape[1]
+        assert masses.shape == (self.num_envs, N_BODIES), (
+            f"masses.shape: {masses.shape}"
+        )
+
+        # apply randomization on default values
+        # this is to make sure when calling the function multiple times, the randomization is applied on the
+        # default values and not the previously randomized values
+        masses[env_ids[:, None], body_ids] = (
+            asset.data.default_mass[env_ids[:, None], body_ids].clone() * scale
+        )
+
+        # set the mass into the physics simulation
+        asset.root_physx_view.set_masses(masses, env_ids)
+
+        # recompute inertia tensors if needed
+        if recompute_inertia:
+            # compute the ratios of the new masses to the initial masses
+            ratios = (
+                masses[env_ids[:, None], body_ids]
+                / asset.data.default_mass[env_ids[:, None], body_ids]
+            )
+            # scale the inertia tensors by the the ratios
+            # since mass randomization is done on default values, we can use the default inertia tensors
+            inertias = asset.root_physx_view.get_inertias()
+            if isinstance(asset, Articulation):
+                # inertia has shape: (num_envs, num_bodies, 9) for articulation
+                inertias[env_ids[:, None], body_ids] = (
+                    asset.data.default_inertia[env_ids[:, None], body_ids]
+                    * ratios[..., None]
+                )
+            else:
+                # inertia has shape: (num_envs, 9) for rigid object
+                inertias[env_ids] = asset.data.default_inertia[env_ids] * ratios
+            # set the inertia tensors into the physics simulation
+            asset.root_physx_view.set_inertias(inertias, env_ids)
+
+    def _modify_object_materials(
+        self,
+        static_friction: Optional[float] = None,
+        dynamic_friction: Optional[float] = None,
+        restitution: Optional[float] = None,
+        env_ids: Optional[torch.Tensor] = None,
+    ) -> None:
+        asset_cfg = SceneEntityCfg("object", body_names=".*")
+        asset: RigidObject | Articulation = self.scene[asset_cfg.name]
+
+        # resolve environment ids
+        if env_ids is None:
+            env_ids = torch.arange(self.scene.num_envs, device="cpu")
+        else:
+            env_ids = env_ids.cpu()
+
+        # retrieve material buffer from the physics simulation
+        materials = asset.root_physx_view.get_material_properties()
+        N_BODIES = materials.shape[1]
+        assert materials.shape == (self.num_envs, N_BODIES, 3), (
+            f"materials.shape: {materials.shape}"
+        )
+
+        # update material buffer with new samples
+        STATIC_FRICTION_IDX, DYNAMIC_FRICTION_IDX, RESTITUTION_IDX = 0, 1, 2
+        if static_friction is not None:
+            materials[env_ids, :, STATIC_FRICTION_IDX] = static_friction
+        if dynamic_friction is not None:
+            materials[env_ids, :, DYNAMIC_FRICTION_IDX] = dynamic_friction
+        if restitution is not None:
+            materials[env_ids, :, RESTITUTION_IDX] = restitution
+
+        # apply to simulation
+        asset.root_physx_view.set_material_properties(materials, env_ids)
+
+    #### CHANGE SIMULATION PROPERTIES END ####
