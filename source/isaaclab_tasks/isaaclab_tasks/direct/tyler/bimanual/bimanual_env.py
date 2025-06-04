@@ -152,7 +152,7 @@ FORCE_MAG = 0.5  # Magnitude of force to apply to object
 
 RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filtering
 
-USE_VIRTUAL_OBJECT_CONTROLLER = False
+USE_VIRTUAL_OBJECT_CONTROLLER = True
 
 INCLUDE_CONTACT_REWARD = False
 INCLUDE_HAND_TRACKING_REWARD = False
@@ -435,6 +435,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=USE_VIRTUAL_OBJECT_CONTROLLER,  # Should be False, but if using VOC, then must be True
+                # disable_gravity=False,
                 enable_gyroscopic_forces=True,
                 solver_position_iteration_count=8,
                 solver_velocity_iteration_count=8,
@@ -741,6 +742,7 @@ class BimanualEnv(DirectRLEnv):
     * _w means in world frame (each env is different, need to subtract env origin to get in env frame)
     * pose means [xyz, quat_wxyz]
     * pose_w means [xyz_w, quat_wxyz]
+    * orientation means quat_wxyz
     * xyzZYX means [xyz, euler_ZYX]
 
     Goal:
@@ -770,13 +772,13 @@ class BimanualEnv(DirectRLEnv):
         self._setup_default_joint_pos()
 
         # Modify simulation properties
-        self._modify_gravity(gravity=(0.0, 0.0, 0.0))
-        self._modify_object_masses(scale=0.1)
-        self._modify_object_materials(
-            static_friction=0.1,
-            dynamic_friction=0.1,
-            restitution=0.1,
-        )
+        # self._modify_gravity(gravity=(0.0, 0.0, 0.0))
+        # self._modify_object_masses(scale=0.1)
+        # self._modify_object_materials(
+        #     static_friction=0.1,
+        #     dynamic_friction=0.1,
+        #     restitution=0.1,
+        # )
 
         # Taskmap is needed for FK, even if not using fabric
         # Must be done before _reset_state() because it uses the taskmap
