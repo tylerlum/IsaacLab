@@ -124,6 +124,8 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
     matrix_to_euler_angles,
     matrix_to_quat_wxyz,
     pose_to_T,
+    quat_conjugate,
+    quat_mul,
     quat_wxyz_to_matrix,
     rescale,
     sample_uniform_tensor,
@@ -149,6 +151,8 @@ CONTACT_SENSOR_HISTORY_LENGTH = 1  # Number of contact sensor history steps to u
 FORCE_MAG = 0.5  # Magnitude of force to apply to object
 
 RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filtering
+
+USE_VIRTUAL_OBJECT_CONTROLLER = True
 
 INCLUDE_CONTACT_REWARD = False
 INCLUDE_HAND_TRACKING_REWARD = False
@@ -430,7 +434,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/TODO/usd_convex_decomp/TODO.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
-                disable_gravity=False,
+                disable_gravity=USE_VIRTUAL_OBJECT_CONTROLLER,  # Should be False, but if using VOC, then must be True
                 enable_gyroscopic_forces=True,
                 solver_position_iteration_count=8,
                 solver_velocity_iteration_count=8,
@@ -1338,26 +1342,14 @@ class BimanualEnv(DirectRLEnv):
         if (self.keyboard_external_force_w.abs() > 0.0).any():
             # self.keyboard_external_force_w is in world frame
             # When applying to the object, we need to transform it to the object frame
-            T_W_O = pose_to_T(
-                torch.cat(
-                    [
-                        torch.zeros_like(self.object_position_w),
-                        self.object_orientation,
-                    ],
-                    dim=-1,
-                )
+            keyboard_external_force_o = self._w_to_o_wrench(
+                self.keyboard_external_force_w
             )
-            T_O_W = T_W_O.inverse()
-            keyboard_external_force_o = transform_points(
-                T=T_O_W,
-                points=self.keyboard_external_force_w,
-            )
+
             # Reset keyboard external force after applying it
             self.keyboard_external_force_w[:] = 0.0
 
-            external_force_o += keyboard_external_force_o.unsqueeze(
-                dim=1
-            ).repeat_interleave(OBJECT_NUM_RIGID_BODIES, dim=1)
+            external_force_o += keyboard_external_force_o.unsqueeze(dim=1)
 
         # Random force
         APPLY_RANDOM_FORCE = False
@@ -1368,7 +1360,7 @@ class BimanualEnv(DirectRLEnv):
             prob_force = 1 / force_every_n_steps
             apply_force = torch.rand(self.num_envs) < prob_force
 
-            random_force_o = (
+            random_force_w = (
                 F.normalize(
                     torch.randn(self.num_envs, NUM_XYZ, device=self.device),
                     p=2,
@@ -1376,6 +1368,7 @@ class BimanualEnv(DirectRLEnv):
                 )
                 * FORCE_MAG
             )
+            random_force_o = self._w_to_o_wrench(random_force_w)
             external_force_o[apply_force] = random_force_o[apply_force].unsqueeze(dim=1)
 
             # num_envs_apply_force = apply_force.sum().item()
@@ -1399,10 +1392,82 @@ class BimanualEnv(DirectRLEnv):
             )
             external_torque_o += torque_o
 
+        if USE_VIRTUAL_OBJECT_CONTROLLER:
+            voc_external_force_w, voc_external_torque_w = (
+                self.compute_virtual_object_controller_external_force_and_torque()
+            )
+            voc_external_force_o = self._w_to_o_wrench(voc_external_force_w)
+            voc_external_torque_o = self._w_to_o_wrench(voc_external_torque_w)
+            external_force_o += voc_external_force_o.unsqueeze(dim=1)
+            external_torque_o += voc_external_torque_o.unsqueeze(dim=1)
+
         self.object.set_external_force_and_torque(
             forces=external_force_o,
             torques=external_torque_o,
         )
+
+    # ---------- main controller ----------
+    def compute_virtual_object_controller_external_force_and_torque(
+        self,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """PD‑style virtual spring‑damper that pulls the object to `goal_*`.
+
+        Returns
+        -------
+        force_w  : (B,3)   force in world frame  [N]
+        torque_w : (B,3)   torque in world frame [N·m]
+        """
+        # --- gains (tune as needed) ---
+        K_p_trans = 10.0  # [N / m]
+        D_p_trans = 1.0  # [N s / m]
+
+        # K_p_rot   =   5.0      # [N m / rad]
+        # D_p_rot   =   0.5      # [N m s / rad]
+        K_p_rot = 0.1  # [N m / rad]
+        D_p_rot = 0.01  # [N m s / rad]
+
+        # --- position spring‑damper ---
+        pos_err = self.goal_object_position_w - self.object_position_w  # (B,3)
+        vel_err = -self.object_linvel  # goal vel = 0
+        force_w = K_p_trans * pos_err + D_p_trans * vel_err  # (B,3)
+
+        # --- orientation spring‑damper ---
+        #   1. relative quaternion  q_err = q_goal ∘ q_obj*
+        q_err = quat_mul(
+            self.goal_object_orientation, quat_conjugate(self.object_orientation)
+        )  # (B,4)
+
+        #   2. use the vector part as the axis‑error (shortest‑path convention)
+        #      ensure scalar part ≥ 0 so axis points the short way
+        mask = q_err[..., :1] < 0  # (B,1)
+        q_err = torch.where(mask, -q_err, q_err)
+
+        axis_err = q_err[..., 1:]  # (B,3)  ≈ sin(θ/2)·û
+        ang_vel_err = -self.object_angvel
+        torque_w = K_p_rot * 2.0 * axis_err + D_p_rot * ang_vel_err
+
+        return force_w, torque_w
+
+    def _w_to_o_wrench(self, force_or_torque_w: torch.Tensor) -> torch.Tensor:
+        # force_or_torque_w is in world frame
+        # When applying to the object, we need to transform it to the object frame
+        T_W_O = pose_to_T(
+            torch.cat(
+                [
+                    torch.zeros_like(
+                        self.object_position_w
+                    ),  # zero out position, only rotate the force/torque
+                    self.object_orientation,
+                ],
+                dim=-1,
+            )
+        )
+        T_O_W = T_W_O.inverse()
+        force_or_torque_o = transform_points(
+            T=T_O_W,
+            points=force_or_torque_w,
+        )
+        return force_or_torque_o
 
     def _compute_fabric_actions(
         self, raw_actions: torch.Tensor
