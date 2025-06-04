@@ -8,15 +8,8 @@ from __future__ import annotations
 import datetime
 import pickle
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Optional, Tuple, List
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
-from isaacsim.core.utils.bounds import (
-    compute_aabb,
-    compute_combined_aabb,
-    compute_obb,
-    compute_obb_corners,
-    create_bbox_cache,
-)
 import isaaclab.envs.mdp as mdp
 import isaaclab.sim as sim_utils
 import isaaclab.utils.math as math_utils
@@ -45,6 +38,13 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
 from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelWithAdditiveBiasCfg
 from isaaclab_assets import ISAACLAB_ASSETS_DATA_DIR
 from isaaclab_assets.robots.bimanual import BIMANUAL_CFG, BLUE_BIMANUAL_CFG
+from isaacsim.core.utils.bounds import (
+    compute_aabb,
+    compute_combined_aabb,
+    compute_obb,
+    compute_obb_corners,
+    create_bbox_cache,
+)
 from termcolor import colored
 
 import wandb
@@ -95,6 +95,16 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.joint_order_constants import (
     fabric_to_isaaclab_joint_order_torch,
     isaaclab_to_fabric_joint_order_torch,
 )
+from isaaclab_tasks.direct.tyler.bimanual.utils.long_table_constants import (
+    TABLE_LENGTH_Z,
+    TABLE_QW,
+    TABLE_QX,
+    TABLE_QY,
+    TABLE_QZ,
+    TABLE_X,
+    TABLE_Y,
+    TABLE_Z,
+)
 from isaaclab_tasks.direct.tyler.bimanual.utils.object_constants import (
     NUM_OBJECT_KEYPOINTS,
     OBJECT_KEYPOINT_OFFSETS,
@@ -107,16 +117,6 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.robot_constants import (
     NUM_ARM_JOINTS,
     NUM_BIMANUAL,
     NUM_FINGERS,
-)
-from isaaclab_tasks.direct.tyler.bimanual.utils.long_table_constants import (
-    TABLE_LENGTH_Z,
-    TABLE_QW,
-    TABLE_QX,
-    TABLE_QY,
-    TABLE_QZ,
-    TABLE_X,
-    TABLE_Y,
-    TABLE_Z,
 )
 from isaaclab_tasks.direct.tyler.bimanual.utils.torch_utils import (
     euler_angles_to_matrix,
@@ -788,7 +788,9 @@ class BimanualEnv(DirectRLEnv):
 
     def _setup_demo_trajectory(self):
         ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
-        DEMO_TRAJECTORY_PATH = ROOT_DIR / f"2025-06-03_outputs_v2/{self.cfg.object_task}.pkl"
+        DEMO_TRAJECTORY_PATH = (
+            ROOT_DIR / f"2025-06-03_outputs_v2/{self.cfg.object_task}.pkl"
+        )
         assert DEMO_TRAJECTORY_PATH.exists(), f"{DEMO_TRAJECTORY_PATH} does not exist"
         with open(DEMO_TRAJECTORY_PATH, "rb") as f:
             data = pickle.load(f)
@@ -1086,16 +1088,18 @@ class BimanualEnv(DirectRLEnv):
 
         # add object to scene
         object_usd_path = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/{self.object_name}/usd_convex_decomp/{self.object_name}.usd"
-        assert Path(object_usd_path).exists(), f"Object USD path does not exist: {object_usd_path}"
-        self.cfg.object.spawn.usd_path = object_usd_path
-        self.object = RigidObject(
-            self.cfg.object
+        assert Path(object_usd_path).exists(), (
+            f"Object USD path does not exist: {object_usd_path}"
         )
+        self.cfg.object.spawn.usd_path = object_usd_path
+        self.object = RigidObject(self.cfg.object)
         self.scene.rigid_objects["object"] = self.object
 
         # add goal object to scene
         goal_object_usd_path = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_{self.object_name}/usd/{self.object_name}.usd"
-        assert Path(goal_object_usd_path).exists(), f"Goal object USD path does not exist: {goal_object_usd_path}"
+        assert Path(goal_object_usd_path).exists(), (
+            f"Goal object USD path does not exist: {goal_object_usd_path}"
+        )
         self.cfg.goal_object.spawn.usd_path = goal_object_usd_path
         self.goal_object = RigidObject(self.cfg.goal_object)
         self.scene.rigid_objects["goal_object"] = self.goal_object
@@ -2081,9 +2085,15 @@ class BimanualEnv(DirectRLEnv):
             return died, time_out
 
         died = torch.where(self.object_fallen_off_table, torch.ones_like(died), died)
-        right_hand_far_from_object = (self.right_palm_pose_w()[:, :3] - self.object_position_w).norm(dim=-1, p=2) > 0.5
-        left_hand_far_from_object = (self.left_palm_pose_w()[:, :3] - self.object_position_w).norm(dim=-1, p=2) > 0.5
-        hand_far_from_object = torch.logical_or(right_hand_far_from_object, left_hand_far_from_object)
+        right_hand_far_from_object = (
+            self.right_palm_pose_w()[:, :3] - self.object_position_w
+        ).norm(dim=-1, p=2) > 0.5
+        left_hand_far_from_object = (
+            self.left_palm_pose_w()[:, :3] - self.object_position_w
+        ).norm(dim=-1, p=2) > 0.5
+        hand_far_from_object = torch.logical_or(
+            right_hand_far_from_object, left_hand_far_from_object
+        )
 
         # Reset if either hand is far from object
         # But, don't reset if it's the first N_SECONDS of the episode, since it might have spawned far away
@@ -2092,7 +2102,9 @@ class BimanualEnv(DirectRLEnv):
         start_of_episode = self.episode_length_buf <= N_STEPS
 
         died = torch.where(
-            torch.logical_and(hand_far_from_object, torch.logical_not(start_of_episode)),
+            torch.logical_and(
+                hand_far_from_object, torch.logical_not(start_of_episode)
+            ),
             torch.ones_like(died),
             died,
         )
