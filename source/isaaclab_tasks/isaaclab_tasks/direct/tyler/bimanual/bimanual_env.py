@@ -1220,7 +1220,7 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_hand_target, "self.fabric_hand_target (after copying)"
             )
 
-        OVERWRITE_GO_TO_GOAL = False
+        OVERWRITE_GO_TO_GOAL = True
         if OVERWRITE_GO_TO_GOAL:
             goal_right_palm_xyzZYX = self.pose_w_to_xyzZYX(
                 self.goal_right_palm_pose_w()
@@ -1429,13 +1429,11 @@ class BimanualEnv(DirectRLEnv):
         torque_w : (B,3)   torque in world frame [N·m]
         """
         # --- gains (tune as needed) ---
-        K_p_trans = 10.0  # [N / m]
-        D_p_trans = 1.0  # [N s / m]
+        K_p_trans = 2.0  # [N / m]
+        D_p_trans = 0.2  # [N s / m]
 
-        # K_p_rot   =   5.0      # [N m / rad]
-        # D_p_rot   =   0.5      # [N m s / rad]
-        K_p_rot = 0.1  # [N m / rad]
-        D_p_rot = 0.01  # [N m s / rad]
+        K_p_rot = 0.02  # [N m / rad]
+        D_p_rot = 0.002  # [N m s / rad]
 
         # --- position spring‑damper ---
         pos_err = self.goal_object_position_w - self.object_position_w  # (B,3)
