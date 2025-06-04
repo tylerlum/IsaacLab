@@ -108,6 +108,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.long_table_constants import (
 from isaaclab_tasks.direct.tyler.bimanual.utils.object_constants import (
     NUM_OBJECT_KEYPOINTS,
     OBJECT_KEYPOINT_OFFSETS,
+    OBJECT_KEYPOINT_OFFSETS_YAW_INVARIANT,
     OBJECT_LENGTH_Z,
     OBJECT_NUM_RIGID_BODIES,
     compute_keypoint_positions,
@@ -3081,7 +3082,7 @@ class BimanualEnv(DirectRLEnv):
     def object_keypoint_positions_w(self) -> torch.Tensor:
         object_keypoint_offsets = (
             torch.tensor(
-                OBJECT_KEYPOINT_OFFSETS,
+                self.object_keypoint_offsets,
                 device=self.device,
                 dtype=self.object_position_w.dtype,
             )
@@ -3105,7 +3106,7 @@ class BimanualEnv(DirectRLEnv):
     def goal_object_keypoint_positions_w(self) -> torch.Tensor:
         object_keypoint_offsets = (
             torch.tensor(
-                OBJECT_KEYPOINT_OFFSETS,
+                self.object_keypoint_offsets,
                 device=self.device,
                 dtype=self.object_position_w.dtype,
             )
@@ -3160,7 +3161,7 @@ class BimanualEnv(DirectRLEnv):
     def future_goal_object_keypoint_positions(self) -> torch.Tensor:
         object_keypoint_offsets = (
             torch.tensor(
-                OBJECT_KEYPOINT_OFFSETS,
+                self.object_keypoint_offsets,
                 device=self.device,
                 dtype=self.object_position_w.dtype,
             )
@@ -3764,6 +3765,17 @@ class BimanualEnv(DirectRLEnv):
         last_underscore_idx = object_task.rfind("_")
         object_idx = int(object_task[last_underscore_idx + 1 :])
         return object_idx
+
+    @property
+    def object_yaw_invariant(self) -> bool:
+        return self.object_name in ["bowl", "creamer", "cup", "plate"]
+
+    @property
+    def object_keypoint_offsets(self) -> list[list[float]]:
+        if self.object_yaw_invariant:
+            return OBJECT_KEYPOINT_OFFSETS_YAW_INVARIANT
+        else:
+            return OBJECT_KEYPOINT_OFFSETS
 
     #### CONSTANT PROPERTIES END ####
 
