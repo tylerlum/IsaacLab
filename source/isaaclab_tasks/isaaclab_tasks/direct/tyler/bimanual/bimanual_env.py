@@ -159,65 +159,6 @@ assert CONTACT_OBS_TYPE in ["forces", "contacts"], (
     f"Invalid contact obs type: {CONTACT_OBS_TYPE}"
 )
 
-# bowl_0
-# creamer_0, creamer_1
-# cup_0, cup_1, cup_2, cup_3
-# plate_0, plate_1, plate_3
-# snackbox_0, snackbox_1, snackbox_2, snackbox_3, snackbox_4, snackbox_5
-# sponge_0, sponge_1
-# strainer_0, strainer_1
-# starbucks_bottle_0, starbucks_bottle_1, starbucks_bottle_2
-# watering_can_0, watering_can_1
-OBJECT_TASK = "bowl_0"
-
-if "bowl" in OBJECT_TASK:
-    OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/bowl/usd_convex_decomp/bowl.usd"
-    )
-    GREEN_OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_bowl/usd/bowl.usd"
-    )
-elif "creamer" in OBJECT_TASK:
-    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/creamer/usd_convex_decomp/creamer.usd"
-    GREEN_OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_creamer/usd/creamer.usd"
-    )
-elif "cup" in OBJECT_TASK:
-    OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/cup/usd_convex_decomp/cup.usd"
-    )
-    GREEN_OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_cup/usd/cup.usd"
-    )
-elif "plate" in OBJECT_TASK:
-    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/plate/usd_convex_decomp/plate.usd"
-    GREEN_OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_plate/usd/plate.usd"
-    )
-elif "snackbox" in OBJECT_TASK:
-    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/snackbox/usd_convex_decomp/snackbox.usd"
-    GREEN_OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_snackbox/usd/snackbox.usd"
-    )
-elif "sponge" in OBJECT_TASK:
-    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/sponge/usd_convex_decomp/sponge.usd"
-    GREEN_OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_sponge/usd/sponge.usd"
-    )
-elif "strainer" in OBJECT_TASK:
-    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/strainer/usd_convex_decomp/strainer.usd"
-    GREEN_OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_strainer/usd/strainer.usd"
-    )
-elif "starbucks_bottle" in OBJECT_TASK:
-    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/starbucks_bottle/usd_convex_decomp/starbucks_bottle.usd"
-    GREEN_OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_starbucks_bottle/usd/starbucks_bottle.usd"
-elif "watering_can" in OBJECT_TASK:
-    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/watering_can/usd_convex_decomp/watering_can.usd"
-    GREEN_OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_watering_can/usd/watering_can.usd"
-else:
-    raise ValueError(f"Invalid object name: {OBJECT_TASK}")
-
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
     restitution_combine_mode="multiply",
@@ -424,6 +365,18 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     observation_space = NUM_OBSERVATIONS
     state_space = NUM_STATES
 
+    # task
+    # bowl_0
+    # creamer_0, creamer_1
+    # cup_0, cup_1, cup_2, cup_3
+    # plate_0, plate_1, plate_3
+    # snackbox_0, snackbox_1, snackbox_2, snackbox_3, snackbox_4, snackbox_5
+    # sponge_0, sponge_1
+    # strainer_0, strainer_1
+    # starbucks_bottle_0, starbucks_bottle_1, starbucks_bottle_2
+    # watering_can_0, watering_can_1
+    object_task = "bowl_0"
+
     # simulation
     sim: SimulationCfg = SimulationCfg(
         dt=SIM_DT,
@@ -473,7 +426,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         prim_path=f"{ENV_REGEX_NS}/Object",
         spawn=sim_utils.UsdFileCfg(
             activate_contact_sensors=True,
-            usd_path=OBJECT_USD_PATH,
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/TODO/usd_convex_decomp/TODO.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
                 disable_gravity=False,
@@ -501,7 +454,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     goal_object: RigidObjectCfg = RigidObjectCfg(
         prim_path=f"{ENV_REGEX_NS}/GoalObject",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=GREEN_OBJECT_USD_PATH,
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_TODO/usd/TODO.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,
                 disable_gravity=False,
@@ -835,7 +788,7 @@ class BimanualEnv(DirectRLEnv):
 
     def _setup_demo_trajectory(self):
         ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
-        DEMO_TRAJECTORY_PATH = ROOT_DIR / f"2025-06-03_outputs_v2/{OBJECT_TASK}.pkl"
+        DEMO_TRAJECTORY_PATH = ROOT_DIR / f"2025-06-03_outputs_v2/{self.cfg.object_task}.pkl"
         assert DEMO_TRAJECTORY_PATH.exists(), f"{DEMO_TRAJECTORY_PATH} does not exist"
         with open(DEMO_TRAJECTORY_PATH, "rb") as f:
             data = pickle.load(f)
@@ -862,7 +815,7 @@ class BimanualEnv(DirectRLEnv):
 
         ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
         DEMO_ARM_HAND_PATH = (
-            ROOT_DIR / f"2025-06-03_outputs_v2/{OBJECT_TASK}_arm_hand.pkl"
+            ROOT_DIR / f"2025-06-03_outputs_v2/{self.cfg.object_task}_arm_hand.pkl"
         )
         assert DEMO_ARM_HAND_PATH.exists(), f"{DEMO_ARM_HAND_PATH} does not exist"
         with open(DEMO_ARM_HAND_PATH, "rb") as f:
@@ -1132,10 +1085,18 @@ class BimanualEnv(DirectRLEnv):
             self.scene.articulations["blue_robot"] = self.blue_robot
 
         # add object to scene
-        self.object = RigidObject(self.cfg.object)
+        object_usd_path = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/{self.object_name}/usd_convex_decomp/{self.object_name}.usd"
+        assert Path(object_usd_path).exists(), f"Object USD path does not exist: {object_usd_path}"
+        self.cfg.object.spawn.usd_path = object_usd_path
+        self.object = RigidObject(
+            self.cfg.object
+        )
         self.scene.rigid_objects["object"] = self.object
 
         # add goal object to scene
+        goal_object_usd_path = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_{self.object_name}/usd/{self.object_name}.usd"
+        assert Path(goal_object_usd_path).exists(), f"Goal object USD path does not exist: {goal_object_usd_path}"
+        self.cfg.goal_object.spawn.usd_path = goal_object_usd_path
         self.goal_object = RigidObject(self.cfg.goal_object)
         self.scene.rigid_objects["goal_object"] = self.goal_object
 
@@ -3766,6 +3727,32 @@ class BimanualEnv(DirectRLEnv):
     @property
     def control_dt(self) -> float:
         return self.cfg.sim.dt * self.cfg.decimation
+
+    @property
+    def object_name(self) -> str:
+        object_task = self.cfg.object_task
+        last_underscore_idx = object_task.rfind("_")
+        object_name = object_task[:last_underscore_idx]
+        assert object_name in [
+            "bowl",
+            "creamer",
+            "cup",
+            "plate",
+            "snackbox",
+            "sponge",
+            "strainer",
+            "starbucks_bottle",
+            "watering_can",
+        ], f"Invalid object name: {object_name}"
+
+        return object_name
+
+    @property
+    def object_idx(self) -> int:
+        object_task = self.cfg.object_task
+        last_underscore_idx = object_task.rfind("_")
+        object_idx = int(object_task[last_underscore_idx + 1 :])
+        return object_idx
 
     #### CONSTANT PROPERTIES END ####
 
