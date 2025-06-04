@@ -108,7 +108,7 @@ from isaaclab_tasks.direct.tyler.bimanual.utils.robot_constants import (
     NUM_BIMANUAL,
     NUM_FINGERS,
 )
-from isaaclab_tasks.direct.tyler.bimanual.utils.table_constants import (
+from isaaclab_tasks.direct.tyler.bimanual.utils.long_table_constants import (
     TABLE_LENGTH_Z,
     TABLE_QW,
     TABLE_QX,
@@ -507,7 +507,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
         prim_path=f"{ENV_REGEX_NS}/Table",
         spawn=sim_utils.UsdFileCfg(
             activate_contact_sensors=True,
-            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/table/usd/table.usd",
+            usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/long_table/usd/long_table.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=True,  # make it static
                 disable_gravity=False,
