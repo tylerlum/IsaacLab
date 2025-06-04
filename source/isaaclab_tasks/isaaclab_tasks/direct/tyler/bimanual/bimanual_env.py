@@ -159,32 +159,64 @@ assert CONTACT_OBS_TYPE in ["forces", "contacts"], (
     f"Invalid contact obs type: {CONTACT_OBS_TYPE}"
 )
 
-OBJECT_NAME = "pitcher"  # "box", "pitcher", "basket"
-OBJECT_TRAJECTORY_IDX = 0  # 0, 1, 2
+# bowl_0
+# creamer_0, creamer_1
+# cup_0, cup_1, cup_2, cup_3
+# plate_0, plate_1, plate_3
+# snackbox_0, snackbox_1, snackbox_2, snackbox_3, snackbox_4, snackbox_5
+# sponge_0, sponge_1
+# strainer_0, strainer_1
+# starbucks_bottle_0, starbucks_bottle_1, starbucks_bottle_2
+# watering_can_0, watering_can_1
+OBJECT_TASK = "bowl_0"
 
-if "box" in OBJECT_NAME:
-    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/box/usd/box.usd"
-    GREEN_OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/manually_created/green_box/usd/box.usd"
-    )
-    # OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/white_box/usd/white_box.usd"
-    # GREEN_OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_white_box/usd/white_box.usd"
-elif "pitcher" in OBJECT_NAME:
+if "bowl" in OBJECT_TASK:
     OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/pitcher/usd_convex_decomp/pitcher.usd"
+        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/bowl/usd_convex_decomp/bowl.usd"
     )
     GREEN_OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_pitcher/usd/pitcher.usd"
+        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_bowl/usd/bowl.usd"
     )
-elif "basket" in OBJECT_NAME:
+elif "creamer" in OBJECT_TASK:
+    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/creamer/usd_convex_decomp/creamer.usd"
+    GREEN_OBJECT_USD_PATH = (
+        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_creamer/usd/creamer.usd"
+    )
+elif "cup" in OBJECT_TASK:
     OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/basket/usd_convex_decomp/basket.usd"
+        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/cup/usd_convex_decomp/cup.usd"
     )
     GREEN_OBJECT_USD_PATH = (
-        f"{ISAACLAB_ASSETS_DATA_DIR}/kiri/green_basket/usd/basket.usd"
+        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_cup/usd/cup.usd"
     )
+elif "plate" in OBJECT_TASK:
+    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/plate/usd_convex_decomp/plate.usd"
+    GREEN_OBJECT_USD_PATH = (
+        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_plate/usd/plate.usd"
+    )
+elif "snackbox" in OBJECT_TASK:
+    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/snackbox/usd_convex_decomp/snackbox.usd"
+    GREEN_OBJECT_USD_PATH = (
+        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_snackbox/usd/snackbox.usd"
+    )
+elif "sponge" in OBJECT_TASK:
+    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/sponge/usd_convex_decomp/sponge.usd"
+    GREEN_OBJECT_USD_PATH = (
+        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_sponge/usd/sponge.usd"
+    )
+elif "strainer" in OBJECT_TASK:
+    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/strainer/usd_convex_decomp/strainer.usd"
+    GREEN_OBJECT_USD_PATH = (
+        f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_strainer/usd/strainer.usd"
+    )
+elif "starbucks_bottle" in OBJECT_TASK:
+    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/starbucks_bottle/usd_convex_decomp/starbucks_bottle.usd"
+    GREEN_OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_starbucks_bottle/usd/starbucks_bottle.usd"
+elif "watering_can" in OBJECT_TASK:
+    OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/watering_can/usd_convex_decomp/watering_can.usd"
+    GREEN_OBJECT_USD_PATH = f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/green_watering_can/usd/watering_can.usd"
 else:
-    raise ValueError(f"Invalid object name: {OBJECT_NAME}")
+    raise ValueError(f"Invalid object name: {OBJECT_TASK}")
 
 physics_material = sim_utils.RigidBodyMaterialCfg(
     friction_combine_mode="multiply",
@@ -803,9 +835,7 @@ class BimanualEnv(DirectRLEnv):
 
     def _setup_demo_trajectory(self):
         ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
-        DEMO_TRAJECTORY_PATH = (
-            ROOT_DIR / f"2025-05-29_outputs/{OBJECT_NAME}_{OBJECT_TRAJECTORY_IDX}.pkl"
-        )
+        DEMO_TRAJECTORY_PATH = ROOT_DIR / f"2025-06-03_outputs_v2/{OBJECT_TASK}.pkl"
         assert DEMO_TRAJECTORY_PATH.exists(), f"{DEMO_TRAJECTORY_PATH} does not exist"
         with open(DEMO_TRAJECTORY_PATH, "rb") as f:
             data = pickle.load(f)
@@ -831,17 +861,16 @@ class BimanualEnv(DirectRLEnv):
             return
 
         ROOT_DIR = Path(__file__).parent.parent.parent.parent.parent.parent.parent
-        DEMO_ARM_PATH = (
-            ROOT_DIR
-            / f"2025-05-29_outputs/{OBJECT_NAME}_{OBJECT_TRAJECTORY_IDX}_arm.pkl"
+        DEMO_ARM_HAND_PATH = (
+            ROOT_DIR / f"2025-06-03_outputs_v2/{OBJECT_TASK}_arm_hand.pkl"
         )
-        assert DEMO_ARM_PATH.exists(), f"{DEMO_ARM_PATH} does not exist"
-        with open(DEMO_ARM_PATH, "rb") as f:
+        assert DEMO_ARM_HAND_PATH.exists(), f"{DEMO_ARM_HAND_PATH} does not exist"
+        with open(DEMO_ARM_HAND_PATH, "rb") as f:
             data = pickle.load(f)
-        right_arm_q = data["right_arm_q"]
-        left_arm_q = data["left_arm_q"]
-        assert right_arm_q.shape == left_arm_q.shape == (NUM_ARM_JOINTS,), (
-            f"Expected right_arm_q and left_arm_q to have shape (NUM_ARM_JOINTS,), got {right_arm_q.shape} and {left_arm_q.shape}"
+        right_q = data["right_q"]
+        left_q = data["left_q"]
+        assert right_q.shape == left_q.shape == (NUM_ARM_HAND_JOINTS,), (
+            f"Expected right_q and left_q to have shape (NUM_ARM_HAND_JOINTS,), got {right_q.shape} and {left_q.shape}"
         )
         orig_default_q_isaaclab = self.robot.data.default_joint_pos.clone()
         assert orig_default_q_isaaclab.shape == (
@@ -856,12 +885,12 @@ class BimanualEnv(DirectRLEnv):
             to_order=VISER_JOINT_ORDER,
         )
         new_default_q_viser = orig_default_q_viser.clone()
-        new_default_q_viser[:, :NUM_ARM_JOINTS] = (
-            torch.from_numpy(right_arm_q).to(self.device).float().unsqueeze(dim=0)
+        new_default_q_viser[:, :NUM_ARM_HAND_JOINTS] = (
+            torch.from_numpy(right_q).to(self.device).float().unsqueeze(dim=0)
         )
-        new_default_q_viser[
-            :, NUM_ARM_HAND_JOINTS : NUM_ARM_HAND_JOINTS + NUM_ARM_JOINTS
-        ] = torch.from_numpy(left_arm_q).to(self.device).float().unsqueeze(dim=0)
+        new_default_q_viser[:, NUM_ARM_HAND_JOINTS:] = (
+            torch.from_numpy(left_q).to(self.device).float().unsqueeze(dim=0)
+        )
         new_default_q_isaaclab = change_joint_order_torch(
             new_default_q_viser,
             from_order=VISER_JOINT_ORDER,
