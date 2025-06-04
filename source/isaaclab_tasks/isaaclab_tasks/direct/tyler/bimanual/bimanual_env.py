@@ -2435,24 +2435,26 @@ class BimanualEnv(DirectRLEnv):
                         self.cfg.left_finger_goal_visualizer
                     )
 
-            if not hasattr(self, "object_keypoint_visualizers"):
-                self.object_keypoint_visualizers = [
-                    VisualizationMarkers(
-                        self.cfg.object_keypoint_visualizer.replace(
-                            prim_path=f"{self.cfg.object_keypoint_visualizer.prim_path}_{i}"
+            if self.VISUALIZE_OBJECT_KEYPOINTS:
+                if not hasattr(self, "object_keypoint_visualizers"):
+                    self.object_keypoint_visualizers = [
+                        VisualizationMarkers(
+                            self.cfg.object_keypoint_visualizer.replace(
+                                prim_path=f"{self.cfg.object_keypoint_visualizer.prim_path}_{i}"
+                            )
                         )
-                    )
-                    for i in range(NUM_OBJECT_KEYPOINTS)
-                ]
-            if not hasattr(self, "goal_object_keypoint_visualizers"):
-                self.goal_object_keypoint_visualizers = [
-                    VisualizationMarkers(
-                        self.cfg.goal_object_keypoint_visualizer.replace(
-                            prim_path=f"{self.cfg.goal_object_keypoint_visualizer.prim_path}_{i}"
+                        for i in range(NUM_OBJECT_KEYPOINTS)
+                    ]
+                if not hasattr(self, "goal_object_keypoint_visualizers"):
+                    self.goal_object_keypoint_visualizers = [
+                        VisualizationMarkers(
+                            self.cfg.goal_object_keypoint_visualizer.replace(
+                                prim_path=f"{self.cfg.goal_object_keypoint_visualizer.prim_path}_{i}"
+                            )
                         )
-                    )
-                    for i in range(NUM_OBJECT_KEYPOINTS)
-                ]
+                        for i in range(NUM_OBJECT_KEYPOINTS)
+                    ]
+
             if not hasattr(self, "future_goal_object_keypoint_visualizers"):
                 self.future_goal_object_keypoint_visualizers = [
                     VisualizationMarkers(
@@ -2528,12 +2530,20 @@ class BimanualEnv(DirectRLEnv):
             if FINGER_GOALS:
                 self.right_finger_goal_visualizer.set_visibility(True)
                 self.left_finger_goal_visualizer.set_visibility(True)
-            if hasattr(self, "object_keypoint_visualizers"):
+
+            if self.VISUALIZE_OBJECT_KEYPOINTS:
                 for visualizer in self.object_keypoint_visualizers:
                     visualizer.set_visibility(True)
-            if hasattr(self, "goal_object_keypoint_visualizers"):
                 for visualizer in self.goal_object_keypoint_visualizers:
                     visualizer.set_visibility(True)
+            else:
+                if hasattr(self, "object_keypoint_visualizers"):
+                    for visualizer in self.object_keypoint_visualizers:
+                        visualizer.set_visibility(False)
+                if hasattr(self, "goal_object_keypoint_visualizers"):
+                    for visualizer in self.goal_object_keypoint_visualizers:
+                        visualizer.set_visibility(False)
+
             if hasattr(self, "future_goal_object_keypoint_visualizers"):
                 for visualizer in self.future_goal_object_keypoint_visualizers:
                     visualizer.set_visibility(True)
@@ -2576,12 +2586,13 @@ class BimanualEnv(DirectRLEnv):
                     self.right_finger_goal_visualizer.set_visibility(False)
                 if hasattr(self, "left_finger_goal_visualizer"):
                     self.left_finger_goal_visualizer.set_visibility(False)
-            if hasattr(self, "object_keypoint_visualizers"):
-                for visualizer in self.object_keypoint_visualizers:
-                    visualizer.set_visibility(False)
-            if hasattr(self, "goal_object_keypoint_visualizers"):
-                for visualizer in self.goal_object_keypoint_visualizers:
-                    visualizer.set_visibility(False)
+            if self.VISUALIZE_OBJECT_KEYPOINTS:
+                if hasattr(self, "object_keypoint_visualizers"):
+                    for visualizer in self.object_keypoint_visualizers:
+                        visualizer.set_visibility(False)
+                if hasattr(self, "goal_object_keypoint_visualizers"):
+                    for visualizer in self.goal_object_keypoint_visualizers:
+                        visualizer.set_visibility(False)
             if hasattr(self, "future_goal_object_keypoint_visualizers"):
                 for visualizer in self.future_goal_object_keypoint_visualizers:
                     visualizer.set_visibility(False)
@@ -2668,22 +2679,23 @@ class BimanualEnv(DirectRLEnv):
                 .repeat_interleave(self.num_envs, dim=0),
             )
 
-        object_keypoint_positions = self.object_keypoint_positions_w
-        for i in range(NUM_OBJECT_KEYPOINTS):
-            self.object_keypoint_visualizers[i].visualize(
-                translations=object_keypoint_positions[:, i, :],
-                scales=torch.tensor(SPHERE_SCALE, device=self.device)
-                .unsqueeze(dim=0)
-                .repeat_interleave(self.num_envs, dim=0),
-            )
-        goal_object_keypoint_positions = self.goal_object_keypoint_positions_w
-        for i in range(NUM_OBJECT_KEYPOINTS):
-            self.goal_object_keypoint_visualizers[i].visualize(
-                translations=goal_object_keypoint_positions[:, i, :],
-                scales=torch.tensor(SPHERE_SCALE, device=self.device)
-                .unsqueeze(dim=0)
-                .repeat_interleave(self.num_envs, dim=0),
-            )
+        if self.VISUALIZE_OBJECT_KEYPOINTS:
+            object_keypoint_positions = self.object_keypoint_positions_w
+            for i in range(NUM_OBJECT_KEYPOINTS):
+                self.object_keypoint_visualizers[i].visualize(
+                    translations=object_keypoint_positions[:, i, :],
+                    scales=torch.tensor(SPHERE_SCALE, device=self.device)
+                    .unsqueeze(dim=0)
+                    .repeat_interleave(self.num_envs, dim=0),
+                )
+            goal_object_keypoint_positions = self.goal_object_keypoint_positions_w
+            for i in range(NUM_OBJECT_KEYPOINTS):
+                self.goal_object_keypoint_visualizers[i].visualize(
+                    translations=goal_object_keypoint_positions[:, i, :],
+                    scales=torch.tensor(SPHERE_SCALE, device=self.device)
+                    .unsqueeze(dim=0)
+                    .repeat_interleave(self.num_envs, dim=0),
+                )
 
         future_goal_object_keypoint_positions_w = (
             self.future_goal_object_keypoint_positions
@@ -2870,6 +2882,11 @@ class BimanualEnv(DirectRLEnv):
                         args=[],
                     ),
                     KeyboardCommand(
+                        key=carb.input.KeyboardInput.O,
+                        func=self._toggle_object_keypoints,
+                        args=[],
+                    ),
+                    KeyboardCommand(
                         key=carb.input.KeyboardInput.T,
                         func=self._toggle_fabric_palm_targets,
                         args=[],
@@ -2982,6 +2999,16 @@ class BimanualEnv(DirectRLEnv):
         print(
             colored(
                 f"Toggling fabric palm targets: {self.VISUALIZE_FABRIC_PALM_TARGETS}",
+                "green",
+            )
+        )
+        self.set_debug_vis(self.DEBUG_VIS)
+
+    def _toggle_object_keypoints(self):
+        self.VISUALIZE_OBJECT_KEYPOINTS = not self.VISUALIZE_OBJECT_KEYPOINTS
+        print(
+            colored(
+                f"Toggling object keypoints: {self.VISUALIZE_OBJECT_KEYPOINTS}",
                 "green",
             )
         )
@@ -3718,6 +3745,16 @@ class BimanualEnv(DirectRLEnv):
     @VISUALIZE_FABRIC_PALM_TARGETS.setter
     def VISUALIZE_FABRIC_PALM_TARGETS(self, value: bool):
         self._VISUALIZE_FABRIC_PALM_TARGETS = value
+
+    @property
+    def VISUALIZE_OBJECT_KEYPOINTS(self) -> bool:
+        if not hasattr(self, "_VISUALIZE_OBJECT_KEYPOINTS"):
+            self._VISUALIZE_OBJECT_KEYPOINTS = False
+        return self._VISUALIZE_OBJECT_KEYPOINTS
+
+    @VISUALIZE_OBJECT_KEYPOINTS.setter
+    def VISUALIZE_OBJECT_KEYPOINTS(self, value: bool):
+        self._VISUALIZE_OBJECT_KEYPOINTS = value
 
     #### MODIFIABLE PROPERTIES END ####
 
