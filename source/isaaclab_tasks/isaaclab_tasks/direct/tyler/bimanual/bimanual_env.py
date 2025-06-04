@@ -2081,19 +2081,10 @@ class BimanualEnv(DirectRLEnv):
             return died, time_out
 
         died = torch.where(self.object_fallen_off_table, torch.ones_like(died), died)
+        right_hand_far_from_object = (self.right_palm_pose_w()[:, :3] - self.object_position_w).norm(dim=-1, p=2) > 0.5
+        left_hand_far_from_object = (self.left_palm_pose_w()[:, :3] - self.object_position_w).norm(dim=-1, p=2) > 0.5
         died = torch.where(
-            (self.right_index_fingertip_position_w() - self.object_position_w).norm(
-                dim=-1, p=2
-            )
-            > 0.5,
-            torch.ones_like(died),
-            died,
-        )
-        died = torch.where(
-            (self.left_index_fingertip_position_w() - self.object_position_w).norm(
-                dim=-1, p=2
-            )
-            > 0.5,
+            torch.logical_and(right_hand_far_from_object, left_hand_far_from_object),
             torch.ones_like(died),
             died,
         )
