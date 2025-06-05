@@ -1184,12 +1184,14 @@ class BimanualEnv(DirectRLEnv):
         self.cfg.light.func("/World/Light", self.cfg.light)
 
     def _pre_physics_step(self, actions: torch.Tensor):
-        actions = actions.clamp_(min=-1.0, max=1.0)
-
         OVERWRITE_ZERO_ACTIONS = False  # Set to True to debug
         if OVERWRITE_ZERO_ACTIONS:
             actions = torch.zeros_like(actions)
+        OVERWRITE_RANDOM_ACTIONS = False  # Set to True to debug
+        if OVERWRITE_RANDOM_ACTIONS:
+            actions = torch.rand_like(actions) * 2.0 - 1.0
 
+        actions = actions.clamp_(min=-1.0, max=1.0)
         self.prev_raw_actions = self.raw_actions.clone()
         self.raw_actions = actions.clone()
         assert self.raw_actions.shape == self.prev_raw_actions.shape, (
