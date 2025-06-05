@@ -160,8 +160,6 @@ VOC_D_P_TRANS = 0.2  # [N s / m]
 VOC_K_P_ROT = 0.02  # [N m / rad]
 VOC_D_P_ROT = 0.002  # [N m s / rad]
 
-INCLUDE_CONTACT_REWARD = False
-INCLUDE_HAND_TRACKING_REWARD = False
 INCLUDE_Q_OBS = True
 INCLUDE_QD_OBS = True
 INCLUDE_FABRIC_OBS = True
@@ -365,8 +363,8 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     # env
     episode_length_s = 20.0  # NOTE: This is not currently used, it is overwritten by the max_episode_length property
     decimation = 4
-    arm_action_scale = 0.1
-    hand_action_scale = 2.0
+    arm_action_scale = 0.1  # Not used with fabrics
+    hand_action_scale = 2.0  # Not used with fabrics
     debug_vis = False
     action_space = NUM_ACTIONS
     observation_space = NUM_OBSERVATIONS
@@ -383,6 +381,10 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     # starbucks_bottle_0, starbucks_bottle_1, starbucks_bottle_2
     # watering_can_0, watering_can_1
     object_task = "bowl_0"
+
+    # rewards
+    INCLUDE_CONTACT_REWARD = False
+    INCLUDE_HAND_TRACKING_REWARD = True
 
     # simulation
     sim: SimulationCfg = SimulationCfg(
@@ -717,11 +719,9 @@ else:
         # "object_reached_goal",
         "object_tracking_reward",
     ]
-    if INCLUDE_CONTACT_REWARD:
-        REWARD_NAMES.append("fingertip_contact")
-    if INCLUDE_HAND_TRACKING_REWARD:
-        REWARD_NAMES.append("right_hand_tracking_reward")
-        REWARD_NAMES.append("left_hand_tracking_reward")
+    REWARD_NAMES.append("fingertip_contact")
+    REWARD_NAMES.append("right_hand_tracking_reward")
+    REWARD_NAMES.append("left_hand_tracking_reward")
 
 
 def assert_equals(a, b):
@@ -1999,15 +1999,14 @@ class BimanualEnv(DirectRLEnv):
                 # "object_reached_goal": object_goal_dist < 0.1,
                 "object_tracking_reward": object_tracking_reward,
             }
-            if INCLUDE_CONTACT_REWARD:
-                self.individual_reward_bufs["fingertip_contact"] = contact_reward
-            if INCLUDE_HAND_TRACKING_REWARD:
-                right_palm_to_target_dist = (self.right_palm_pose_w()[:, :3] - self.goal_right_palm_pose_w()[:, :3]).norm(dim=-1, p=2)
-                left_palm_to_target_dist = (self.left_palm_pose_w()[:, :3] - self.goal_left_palm_pose_w()[:, :3]).norm(dim=-1, p=2)
-                right_hand_tracking_reward = torch.exp(-right_palm_to_target_dist * 10.0)
-                left_hand_tracking_reward = torch.exp(-left_palm_to_target_dist * 10.0)
-                self.individual_reward_bufs["right_hand_tracking_reward"] = right_hand_tracking_reward
-                self.individual_reward_bufs["left_hand_tracking_reward"] = left_hand_tracking_reward
+            self.individual_reward_bufs["fingertip_contact"] = contact_reward
+
+            right_palm_to_target_dist = (self.right_palm_pose_w()[:, :3] - self.goal_right_palm_pose_w()[:, :3]).norm(dim=-1, p=2)
+            left_palm_to_target_dist = (self.left_palm_pose_w()[:, :3] - self.goal_left_palm_pose_w()[:, :3]).norm(dim=-1, p=2)
+            right_hand_tracking_reward = torch.exp(-right_palm_to_target_dist * 10.0)
+            left_hand_tracking_reward = torch.exp(-left_palm_to_target_dist * 10.0)
+            self.individual_reward_bufs["right_hand_tracking_reward"] = right_hand_tracking_reward
+            self.individual_reward_bufs["left_hand_tracking_reward"] = left_hand_tracking_reward
         # fmt: on
         assert set(self.individual_reward_bufs.keys()) == set(REWARD_NAMES), (
             f"Individual reward buffers and reward names do not match: {self.individual_reward_bufs.keys()} vs {REWARD_NAMES}\nOnly in individual reward buffers: {set(self.individual_reward_bufs.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_bufs.keys())}"
@@ -2028,17 +2027,23 @@ class BimanualEnv(DirectRLEnv):
                     # "object_reached_goal": 0.1,  # max = num_steps ~ 75
                     "object_tracking_reward": 0.1,  # max = (1 or 5) * num_steps ~ 75 or 375
                 }
-                if INCLUDE_CONTACT_REWARD:
+                if self.cfg.INCLUDE_CONTACT_REWARD:
                     self.individual_reward_weights["fingertip_contact"] = (
                         0.0004  # max = (1 or 10) * NUM_BIMANUAL * 17 * num_steps ~ 2500
                     )
-                if INCLUDE_HAND_TRACKING_REWARD:
+                else:
+                    self.individual_reward_weights["fingertip_contact"] = 0.0
+
+                if self.cfg.INCLUDE_HAND_TRACKING_REWARD:
                     self.individual_reward_weights["right_hand_tracking_reward"] = (
                         0.02  # max = num_steps ~ 75
                     )
                     self.individual_reward_weights["left_hand_tracking_reward"] = (
                         0.02  # max = num_steps ~ 75
                     )
+                else:
+                    self.individual_reward_weights["right_hand_tracking_reward"] = 0.0
+                    self.individual_reward_weights["left_hand_tracking_reward"] = 0.0
 
             assert set(self.individual_reward_weights.keys()) == set(REWARD_NAMES), (
                 f"Individual reward weights and reward names do not match: {self.individual_reward_weights.keys()} vs {REWARD_NAMES}\nOnly in individual reward weights: {set(self.individual_reward_weights.keys()) - set(REWARD_NAMES)}\nOnly in reward names: {set(REWARD_NAMES) - set(self.individual_reward_weights.keys())}"
@@ -2131,9 +2136,13 @@ class BimanualEnv(DirectRLEnv):
         if not USE_CURRICULUM:
             return
 
+        # Don't update curriculum too quickly, need cooldown period
+        # This also allows us to flush out the metrics so that we have new numbers to work with
+        COOLDOWN_STEPS = self.max_episode_length * 3
+
         doing_well = self.curriculum_metric < self.curriculum_metric_threshold
         updated_recently = (
-            self.common_step_counter - self.last_curriculum_update_step < 1000
+            self.common_step_counter - self.last_curriculum_update_step < COOLDOWN_STEPS
         )
         if doing_well and not updated_recently:
             self.last_curriculum_update_step = self.common_step_counter
@@ -4104,7 +4113,6 @@ class BimanualEnv(DirectRLEnv):
         BUFFER_STEPS = int(BUFFER_SEC / self.control_dt)
         new_max_episode_length = NUM_GOAL_TIMESTEPS + BUFFER_STEPS
         return new_max_episode_length
-
 
     #### CONSTANT PROPERTIES END ####
 
