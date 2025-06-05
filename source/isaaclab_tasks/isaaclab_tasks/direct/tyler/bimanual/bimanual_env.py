@@ -152,8 +152,6 @@ FORCE_MAG = 0.5  # Magnitude of force to apply to object
 
 RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filtering
 
-USE_CURRICULUM = True
-
 # Default VOC gains that seem to work well
 VOC_K_P_TRANS = 2.0  # [N / m]
 VOC_D_P_TRANS = 0.2  # [N s / m]
@@ -385,6 +383,9 @@ class BimanualEnvCfg(DirectRLEnvCfg):
     # rewards
     INCLUDE_CONTACT_REWARD = False
     INCLUDE_HAND_TRACKING_REWARD = True
+
+    # Curriculum
+    USE_CURRICULUM = True
 
     # simulation
     sim: SimulationCfg = SimulationCfg(
@@ -762,10 +763,13 @@ class BimanualEnv(DirectRLEnv):
         self.gravity_curriculum_alpha = 0.0  # [0, 1], 0 means full gravity, 1 means no gravity. Set to 0 to use regular gravity.
         self.residual_action_curriculum_alpha = 0.0  # [0, 1], 0 means base palm target is current palm pose, 1 means base palm target is goal palm pose. Set to 0 to disable residual action. Set to 0 to use regular actions
 
-        if USE_CURRICULUM:
-            self.voc_curriculum_alpha = 1.0
-            self.gravity_curriculum_alpha = 1.0
-            self.residual_action_curriculum_alpha = 1.0
+        if self.cfg.USE_CURRICULUM:
+            # self.voc_curriculum_alpha = 1.0  # VOC assistance
+            # self.gravity_curriculum_alpha = 1.0  # No gravity
+            self.voc_curriculum_alpha = 0.0  # No VOC assistance
+            self.gravity_curriculum_alpha = 0.0  # Regular gravity
+            # self.residual_action_curriculum_alpha = 0.0  # Regular actions
+            self.residual_action_curriculum_alpha = 1.0  # Residual actions
 
             # Curriculum update step
             self.last_curriculum_update_step = self.common_step_counter
@@ -2176,7 +2180,7 @@ class BimanualEnv(DirectRLEnv):
         self.log_wandb_dict()
 
     def _update_curriculum_if_needed(self):
-        if not USE_CURRICULUM:
+        if not self.cfg.USE_CURRICULUM:
             return
 
         # Don't update curriculum too quickly, need cooldown period
@@ -2251,7 +2255,7 @@ class BimanualEnv(DirectRLEnv):
                 for reward_name, metric in self.individual_weighted_reward_metrics.items()
             }
         )
-        if USE_CURRICULUM:
+        if self.cfg.USE_CURRICULUM:
             self.wandb_dict.update(
                 {
                     "curriculum/voc_curriculum_alpha": self.voc_curriculum_alpha,
