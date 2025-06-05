@@ -152,12 +152,11 @@ FORCE_MAG = 0.5  # Magnitude of force to apply to object
 
 RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filtering
 
-USE_VIRTUAL_OBJECT_CONTROLLER = True
+USE_CURRICULUM = True
 
 # Default VOC gains that seem to work well
 VOC_K_P_TRANS = 2.0  # [N / m]
 VOC_D_P_TRANS = 0.2  # [N s / m]
-
 VOC_K_P_ROT = 0.02  # [N m / rad]
 VOC_D_P_ROT = 0.002  # [N m s / rad]
 
@@ -762,6 +761,11 @@ class BimanualEnv(DirectRLEnv):
         self.gravity_curriculum_alpha = 0.0  # [0, 1], 0 means full gravity, 1 means no gravity. Set to 0 to use regular gravity.
         self.residual_action_curriculum_alpha = 0.0  # [0, 1], 0 means base palm target is current palm pose, 1 means base palm target is goal palm pose. Set to 0 to disable residual action. Set to 0 to use regular actions
 
+        if USE_CURRICULUM:
+            self.voc_curriculum_alpha = 1.0
+            self.gravity_curriculum_alpha = 1.0
+            self.residual_action_curriculum_alpha = 1.0
+
         # Plotting data
         self.plot_data = {
             "actual": [],
@@ -777,10 +781,9 @@ class BimanualEnv(DirectRLEnv):
         self._setup_default_joint_pos()
 
         # Modify simulation properties
-        if USE_VIRTUAL_OBJECT_CONTROLLER:
-            self._modify_gravity(
-                gravity=(0.0, 0.0, -9.81 * (1.0 - self.gravity_curriculum_alpha))
-            )
+        self._modify_gravity(
+            gravity=(0.0, 0.0, -9.81 * (1.0 - self.gravity_curriculum_alpha))
+        )
         # self._modify_gravity(gravity=(0.0, 0.0, 0.0))
         # self._modify_object_masses(scale=0.1)
         # self._modify_object_materials(
@@ -929,6 +932,7 @@ class BimanualEnv(DirectRLEnv):
                 for reward_name in REWARD_NAMES
             }
             self.episode_length_metric = AverageMeter().to(self.device)
+            self.object_goal_dist_metric = AverageMeter().to(self.device)
         else:
             self.reward_metric.update(self.aggregated_reward_buf[env_ids])
             for reward_name, metric in self.individual_reward_metrics.items():
@@ -942,6 +946,15 @@ class BimanualEnv(DirectRLEnv):
                     ]
                 )
             self.episode_length_metric.update(self.episode_length_buf[env_ids])
+
+            reached_end_of_episode = (
+                self.episode_length_buf[env_ids] >= self.max_episode_length - 10
+            )
+            mean_object_goal_dist = (
+                self.aggregated_object_goal_dist_buf[env_ids][reached_end_of_episode]
+                / self.episode_length_buf[env_ids][reached_end_of_episode]
+            )
+            self.object_goal_dist_metric.update(mean_object_goal_dist)
 
     def _setup_fabric_action_space(self) -> None:
         # Hide imports so that the code still runs without fabrics if unused
@@ -1393,19 +1406,19 @@ class BimanualEnv(DirectRLEnv):
             )
             external_torque_o += torque_o
 
-        if USE_VIRTUAL_OBJECT_CONTROLLER:
-            voc_external_force_w, voc_external_torque_w = (
-                self.compute_virtual_object_controller_external_force_and_torque(
-                    K_p_trans=VOC_K_P_TRANS * self.voc_curriculum_alpha,
-                    D_p_trans=VOC_D_P_TRANS * self.voc_curriculum_alpha,
-                    K_p_rot=VOC_K_P_ROT * self.voc_curriculum_alpha,
-                    D_p_rot=VOC_D_P_ROT * self.voc_curriculum_alpha,
-                )
+        # VOC
+        voc_external_force_w, voc_external_torque_w = (
+            self.compute_virtual_object_controller_external_force_and_torque(
+                K_p_trans=VOC_K_P_TRANS * self.voc_curriculum_alpha,
+                D_p_trans=VOC_D_P_TRANS * self.voc_curriculum_alpha,
+                K_p_rot=VOC_K_P_ROT * self.voc_curriculum_alpha,
+                D_p_rot=VOC_D_P_ROT * self.voc_curriculum_alpha,
             )
-            voc_external_force_o = self._w_to_o_wrench(voc_external_force_w)
-            voc_external_torque_o = self._w_to_o_wrench(voc_external_torque_w)
-            external_force_o += voc_external_force_o.unsqueeze(dim=1)
-            external_torque_o += voc_external_torque_o.unsqueeze(dim=1)
+        )
+        voc_external_force_o = self._w_to_o_wrench(voc_external_force_w)
+        voc_external_torque_o = self._w_to_o_wrench(voc_external_torque_w)
+        external_force_o += voc_external_force_o.unsqueeze(dim=1)
+        external_torque_o += voc_external_torque_o.unsqueeze(dim=1)
 
         self.object.set_external_force_and_torque(
             forces=external_force_o,
@@ -1700,6 +1713,8 @@ class BimanualEnv(DirectRLEnv):
             self.goal_float_idx[small_object_goal_distance_ids] += 1
         else:
             self.goal_float_idx += 1
+
+        self.aggregated_object_goal_dist_buf += self.object_goal_keypoint_distance
 
     def _get_observations(self) -> dict:
         right_palm_pose_w = self.right_palm_pose_w()
@@ -2131,6 +2146,7 @@ class BimanualEnv(DirectRLEnv):
             {
                 "metrics/mean/reward": self.reward_metric.get_mean().item(),
                 "metrics/mean/episode_length": self.episode_length_metric.get_mean().item(),
+                "metrics/mean/object_goal_dist": self.object_goal_dist_metric.get_mean().item(),
             }
         )
         self.wandb_dict.update(
@@ -2304,6 +2320,9 @@ class BimanualEnv(DirectRLEnv):
                 reward_name: torch.zeros(self.num_envs, device=self.device)
                 for reward_name in REWARD_NAMES
             }
+            self.aggregated_object_goal_dist_buf = torch.zeros(
+                self.num_envs, device=self.device
+            )
 
             if FILTER_ARM_ACTIONS:
                 # NOTE: This actually doesn't quite work on the first run
@@ -2382,6 +2401,8 @@ class BimanualEnv(DirectRLEnv):
                 self.individual_weighted_aggregated_reward_bufs[reward_name][
                     env_ids
                 ] = 0
+
+            self.aggregated_object_goal_dist_buf[env_ids] = 0
 
             if FILTER_ARM_ACTIONS:
                 self.filtered_arm_position_targets[env_ids] = self.robot.data.joint_pos[
