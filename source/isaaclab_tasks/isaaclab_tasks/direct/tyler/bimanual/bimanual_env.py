@@ -1262,7 +1262,7 @@ class BimanualEnv(DirectRLEnv):
                 new_fabric_hand_target, "new_fabric_hand_target (after computing)"
             )
             if FILTER_ARM_ACTIONS:
-                ALPHA = 0.1  # 1 means no filtering, 0 means never update
+                ALPHA = 0.9  # 1 means no filtering, 0 means never update
                 new_fabric_palm_target = (
                     ALPHA * new_fabric_palm_target
                     + (1 - ALPHA) * self.fabric_palm_target
