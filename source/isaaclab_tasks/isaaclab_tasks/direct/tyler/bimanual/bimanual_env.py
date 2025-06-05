@@ -786,7 +786,9 @@ class BimanualEnv(DirectRLEnv):
 
         # Modify simulation properties
         self._modify_gravity(
-            gravity=(0.0, 0.0, -9.81 * (1.0 - self.gravity_curriculum_alpha))
+            gravity=(
+                np.array(self.cfg.sim.gravity) * (1.0 - self.gravity_curriculum_alpha)
+            ).tolist()
         )
         # self._modify_gravity(gravity=(0.0, 0.0, 0.0))
         # self._modify_object_masses(scale=0.1)
@@ -959,6 +961,9 @@ class BimanualEnv(DirectRLEnv):
                 / self.episode_length_buf[env_ids][reached_end_of_episode]
             )
             self.object_goal_dist_metric.update(mean_object_goal_dist)
+
+            # Debug print
+            print(colored(f"self.curriculum_metric: {self.curriculum_metric}", "green"))
 
     def _setup_fabric_action_space(self) -> None:
         # Hide imports so that the code still runs without fabrics if unused
@@ -2148,12 +2153,12 @@ class BimanualEnv(DirectRLEnv):
             self.smallest_this_episode_object_to_goal_dist,
         )
 
-        self._update_curriculum()
+        self._update_curriculum_if_needed()
 
         self.populate_wandb_dict()
         self.log_wandb_dict()
 
-    def _update_curriculum(self):
+    def _update_curriculum_if_needed(self):
         if not USE_CURRICULUM:
             return
 
@@ -2166,27 +2171,36 @@ class BimanualEnv(DirectRLEnv):
             self.common_step_counter - self.last_curriculum_update_step < COOLDOWN_STEPS
         )
         if doing_well and not updated_recently:
-            self.last_curriculum_update_step = self.common_step_counter
+            self._update_curriculum()
 
-            self.voc_curriculum_alpha -= 0.05
-            self.gravity_curriculum_alpha -= 0.05
-            self.residual_action_curriculum_alpha -= 0.05
-            self.voc_curriculum_alpha = np.clip(
-                self.voc_curriculum_alpha, a_min=0.0, a_max=1.0
-            )
-            self.gravity_curriculum_alpha = np.clip(
-                self.gravity_curriculum_alpha, a_min=0.0, a_max=1.0
-            )
-            self.residual_action_curriculum_alpha = np.clip(
-                self.residual_action_curriculum_alpha, a_min=0.0, a_max=1.0
-            )
+    def _update_curriculum(self):
+        self.last_curriculum_update_step = self.common_step_counter
 
-            print(
-                colored(
-                    f"Updated curriculum: voc_curriculum_alpha: {self.voc_curriculum_alpha}, gravity_curriculum_alpha: {self.gravity_curriculum_alpha}, residual_action_curriculum_alpha: {self.residual_action_curriculum_alpha}",
-                    "green",
-                )
+        self.voc_curriculum_alpha -= 0.05
+        self.gravity_curriculum_alpha -= 0.05
+        self.residual_action_curriculum_alpha -= 0.05
+        self.voc_curriculum_alpha = np.clip(
+            self.voc_curriculum_alpha, a_min=0.0, a_max=1.0
+        )
+        self.gravity_curriculum_alpha = np.clip(
+            self.gravity_curriculum_alpha, a_min=0.0, a_max=1.0
+        )
+        self.residual_action_curriculum_alpha = np.clip(
+            self.residual_action_curriculum_alpha, a_min=0.0, a_max=1.0
+        )
+
+        self._modify_gravity(
+            gravity=(
+                np.array(self.cfg.sim.gravity) * (1.0 - self.gravity_curriculum_alpha)
+            ).tolist()
+        )
+
+        print(
+            colored(
+                f"Updated curriculum (metric: {self.curriculum_metric}): voc_curriculum_alpha: {self.voc_curriculum_alpha}, gravity_curriculum_alpha: {self.gravity_curriculum_alpha}, residual_action_curriculum_alpha: {self.residual_action_curriculum_alpha}",
+                "green",
             )
+        )
 
     def populate_wandb_dict(self) -> None:
         if self.common_step_counter % 10 != 0:
@@ -3088,6 +3102,11 @@ class BimanualEnv(DirectRLEnv):
                         args=[],
                     ),
                     KeyboardCommand(
+                        key=carb.input.KeyboardInput.U,
+                        func=self._update_curriculum,
+                        args=[],
+                    ),
+                    KeyboardCommand(
                         key=carb.input.KeyboardInput.LEFT,
                         func=self._apply_external_force_neg_y,
                         args=[],
@@ -3226,7 +3245,9 @@ class BimanualEnv(DirectRLEnv):
             )
         )
         self._modify_gravity(
-            gravity=(0.0, 0.0, -9.81 * (1.0 - self.gravity_curriculum_alpha))
+            gravity=(
+                np.array(self.cfg.sim.gravity) * (1.0 - self.gravity_curriculum_alpha)
+            ).tolist()
         )
 
     def _increase_gravity_curriculum_alpha(self):
@@ -3241,7 +3262,9 @@ class BimanualEnv(DirectRLEnv):
             )
         )
         self._modify_gravity(
-            gravity=(0.0, 0.0, -9.81 * (1.0 - self.gravity_curriculum_alpha))
+            gravity=(
+                np.array(self.cfg.sim.gravity) * (1.0 - self.gravity_curriculum_alpha)
+            ).tolist()
         )
 
     def _decrease_residual_action_curriculum_alpha(self):
