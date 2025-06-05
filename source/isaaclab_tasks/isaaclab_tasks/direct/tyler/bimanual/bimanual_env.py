@@ -1691,11 +1691,15 @@ class BimanualEnv(DirectRLEnv):
             check_nan_and_print_if_any(self.fabric_qdd, "self.fabric_qdd (after step)")
 
     def _compute_intermediate_values(self):
-        object_goal_keypoint_dist = self.object_goal_keypoint_distance
-        small_object_goal_distance_ids = (
-            (object_goal_keypoint_dist < 0.25).nonzero(as_tuple=False).squeeze(-1)
-        )
-        self.goal_float_idx[small_object_goal_distance_ids] += 1
+        STOP_IF_FAR_FROM_GOAL = False
+        if STOP_IF_FAR_FROM_GOAL:
+            object_goal_keypoint_dist = self.object_goal_keypoint_distance
+            small_object_goal_distance_ids = (
+                (object_goal_keypoint_dist < 0.25).nonzero(as_tuple=False).squeeze(-1)
+            )
+            self.goal_float_idx[small_object_goal_distance_ids] += 1
+        else:
+            self.goal_float_idx += 1
 
     def _get_observations(self) -> dict:
         right_palm_pose_w = self.right_palm_pose_w()
@@ -3020,12 +3024,12 @@ class BimanualEnv(DirectRLEnv):
                         args=[],
                     ),
                     KeyboardCommand(
-                        key=carb.input.KeyboardInput.MINUS,
+                        key=carb.input.KeyboardInput.KEY_1,
                         func=self._decrease_curriculum_alpha,
                         args=[],
                     ),
                     KeyboardCommand(
-                        key=carb.input.KeyboardInput.PLUS,
+                        key=carb.input.KeyboardInput.KEY_2,
                         func=self._increase_curriculum_alpha,
                         args=[],
                     ),
@@ -3078,11 +3082,17 @@ class BimanualEnv(DirectRLEnv):
         self.curriculum_alpha -= 0.1
         self.curriculum_alpha = np.clip(self.curriculum_alpha, a_min=0.0, a_max=1.0)
         print(colored(f"Decreased curriculum alpha: {self.curriculum_alpha}", "green"))
+        self._modify_gravity(
+            gravity=(0.0, 0.0, -9.81 * (1.0 - self.curriculum_alpha))
+        )
 
     def _increase_curriculum_alpha(self):
         self.curriculum_alpha += 0.1
         self.curriculum_alpha = np.clip(self.curriculum_alpha, a_min=0.0, a_max=1.0)
         print(colored(f"Increased curriculum alpha: {self.curriculum_alpha}", "green"))
+        self._modify_gravity(
+            gravity=(0.0, 0.0, -9.81 * (1.0 - self.curriculum_alpha))
+        )
 
     def _toggle_fabric_spheres(self):
         self.VISUALIZE_FABRIC_SPHERES = not self.VISUALIZE_FABRIC_SPHERES
