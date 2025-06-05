@@ -204,13 +204,9 @@ def compute_num_observations():
             if USE_FABRIC and INCLUDE_FABRIC_OBS
             else 0
         )  # fabric state
-        + (
-            NUM_XYZ * NUM_BIMANUAL if INCLUDE_HAND_TRACKING_REWARD else 0
-        )  # palm goal positions
+        + (NUM_XYZ * NUM_BIMANUAL)  # palm goal positions
         + (
             NUM_XYZ * NUM_BIMANUAL * NUM_FUTURE_PALM_GOAL_OBS
-            if INCLUDE_HAND_TRACKING_REWARD
-            else 0
         )  # future palm goal positions
         + (
             NUM_XYZ * NUM_OBJECT_KEYPOINTS * NUM_FUTURE_GOAL_OBS
@@ -762,13 +758,9 @@ class BimanualEnv(DirectRLEnv):
 
     def __init__(self, cfg: BimanualEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
-        self.voc_curriculum_alpha = (
-            1.0  # [0, 1], 0 means no VOC assistance, 1 means full VOC assistance
-        )
-        self.gravity_curriculum_alpha = (
-            1.0  # [0, 1], 0 means full gravity, 1 means no gravity
-        )
-        self.residual_action_curriculum_alpha = 1.0  # [0, 1], 0 means base palm target is current palm pose, 1 means base palm target is goal palm pose
+        self.voc_curriculum_alpha = 0.0  # [0, 1], 0 means no VOC assistance, 1 means full VOC assistance. Set to 0 to disable VOC.
+        self.gravity_curriculum_alpha = 0.0  # [0, 1], 0 means full gravity, 1 means no gravity. Set to 0 to use regular gravity.
+        self.residual_action_curriculum_alpha = 0.0  # [0, 1], 0 means base palm target is current palm pose, 1 means base palm target is goal palm pose. Set to 0 to disable residual action. Set to 0 to use regular actions
 
         # Plotting data
         self.plot_data = {
