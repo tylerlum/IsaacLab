@@ -766,6 +766,9 @@ class BimanualEnv(DirectRLEnv):
             self.gravity_curriculum_alpha = 1.0
             self.residual_action_curriculum_alpha = 1.0
 
+            # Curriculum update step
+            self.last_curriculum_update_step = self.common_step_counter
+
         # Plotting data
         self.plot_data = {
             "actual": [],
@@ -2126,8 +2129,41 @@ class BimanualEnv(DirectRLEnv):
             self.smallest_this_episode_object_to_goal_dist,
         )
 
+        self._update_curriculum()
+
         self.populate_wandb_dict()
         self.log_wandb_dict()
+
+    def _update_curriculum(self):
+        if not USE_CURRICULUM:
+            return
+
+        doing_well = self.curriculum_metric < self.curriculum_metric_threshold
+        updated_recently = (
+            self.common_step_counter - self.last_curriculum_update_step < 1000
+        )
+        if doing_well and not updated_recently:
+            self.last_curriculum_update_step = self.common_step_counter
+
+            self.voc_curriculum_alpha -= 0.05
+            self.gravity_curriculum_alpha -= 0.05
+            self.residual_action_curriculum_alpha -= 0.05
+            self.voc_curriculum_alpha = np.clip(
+                self.voc_curriculum_alpha, a_min=0.0, a_max=1.0
+            )
+            self.gravity_curriculum_alpha = np.clip(
+                self.gravity_curriculum_alpha, a_min=0.0, a_max=1.0
+            )
+            self.residual_action_curriculum_alpha = np.clip(
+                self.residual_action_curriculum_alpha, a_min=0.0, a_max=1.0
+            )
+
+            print(
+                colored(
+                    f"Updated curriculum: voc_curriculum_alpha: {self.voc_curriculum_alpha}, gravity_curriculum_alpha: {self.gravity_curriculum_alpha}, residual_action_curriculum_alpha: {self.residual_action_curriculum_alpha}",
+                    "green",
+                )
+            )
 
     def populate_wandb_dict(self) -> None:
         if self.common_step_counter % 10 != 0:
@@ -2161,6 +2197,17 @@ class BimanualEnv(DirectRLEnv):
                 for reward_name, metric in self.individual_weighted_reward_metrics.items()
             }
         )
+        if USE_CURRICULUM:
+            self.wandb_dict.update(
+                {
+                    "curriculum/voc_curriculum_alpha": self.voc_curriculum_alpha,
+                    "curriculum/gravity_curriculum_alpha": self.gravity_curriculum_alpha,
+                    "curriculum/residual_action_curriculum_alpha": self.residual_action_curriculum_alpha,
+                    "curriculum/curriculum_metric": self.curriculum_metric,
+                    "curriculum/last_curriculum_update_step": self.last_curriculum_update_step,
+                    "curriculum/curriculum_metric_threshold": self.curriculum_metric_threshold,
+                }
+            )
 
     def log_wandb_dict(self) -> None:
         if wandb.run is None:
@@ -3409,6 +3456,14 @@ class BimanualEnv(DirectRLEnv):
         return (
             self.object_position_w[:, 2] < self.table_position[:, 2] - OBJECT_LENGTH_Z
         )
+
+    @property
+    def curriculum_metric(self) -> float:
+        return self.object_goal_dist_metric.get_mean().item()
+
+    @property
+    def curriculum_metric_threshold(self) -> float:
+        return 0.1
 
     #### OBJECT COMPUTATIONS END ####
 
