@@ -2232,29 +2232,32 @@ class BimanualEnv(DirectRLEnv):
             return died, time_out
 
         died = torch.where(self.object_fallen_off_table, torch.ones_like(died), died)
-        right_hand_far_from_object = (
-            self.right_palm_pose_w()[:, :3] - self.object_position_w
-        ).norm(dim=-1, p=2) > 0.5
-        left_hand_far_from_object = (
-            self.left_palm_pose_w()[:, :3] - self.object_position_w
-        ).norm(dim=-1, p=2) > 0.5
-        hand_far_from_object = torch.logical_or(
-            right_hand_far_from_object, left_hand_far_from_object
-        )
 
-        # Reset if either hand is far from object
-        # But, don't reset if it's the first N_SECONDS of the episode, since it might have spawned far away
-        N_SECONDS = 3
-        N_STEPS = N_SECONDS / self.control_dt
-        start_of_episode = self.episode_length_buf <= N_STEPS
+        RESET_IF_HAND_FAR_FROM_OBJECT = False
+        if RESET_IF_HAND_FAR_FROM_OBJECT:
+            right_hand_far_from_object = (
+                self.right_palm_pose_w()[:, :3] - self.object_position_w
+            ).norm(dim=-1, p=2) > 0.5
+            left_hand_far_from_object = (
+                self.left_palm_pose_w()[:, :3] - self.object_position_w
+            ).norm(dim=-1, p=2) > 0.5
+            hand_far_from_object = torch.logical_or(
+                right_hand_far_from_object, left_hand_far_from_object
+            )
 
-        died = torch.where(
-            torch.logical_and(
-                hand_far_from_object, torch.logical_not(start_of_episode)
-            ),
-            torch.ones_like(died),
-            died,
-        )
+            # Reset if either hand is far from object
+            # But, don't reset if it's the first N_SECONDS of the episode, since it might have spawned far away
+            N_SECONDS = 3
+            N_STEPS = N_SECONDS / self.control_dt
+            start_of_episode = self.episode_length_buf <= N_STEPS
+
+            died = torch.where(
+                torch.logical_and(
+                    hand_far_from_object, torch.logical_not(start_of_episode)
+                ),
+                torch.ones_like(died),
+                died,
+            )
 
         return died, time_out
 
