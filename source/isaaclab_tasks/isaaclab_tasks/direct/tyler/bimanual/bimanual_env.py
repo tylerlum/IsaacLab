@@ -282,17 +282,17 @@ class BimanualEventCfg:
         },
     )
 
-    gravity = EventTerm(
-        func=mdp.randomize_physics_scene_gravity,
-        mode="interval",
-        is_global_time=True,
-        interval_range_s=(36.0, 36.0),  # time_s = num_steps * (decimation * dt)
-        params={
-            "gravity_distribution_params": ([0.0, 0.0, 0.0], [0.0, 0.0, 0.4]),
-            "operation": "add",
-            "distribution": "gaussian",
-        },
-    )
+    # gravity = EventTerm(
+    #     func=mdp.randomize_physics_scene_gravity,
+    #     mode="interval",
+    #     is_global_time=True,
+    #     interval_range_s=(36.0, 36.0),  # time_s = num_steps * (decimation * dt)
+    #     params={
+    #         "gravity_distribution_params": ([0.0, 0.0, 0.0], [0.0, 0.0, 0.4]),
+    #         "operation": "add",
+    #         "distribution": "gaussian",
+    #     },
+    # )
 
     # -- object
     object_physics_material = EventTerm(
@@ -958,6 +958,7 @@ class BimanualEnv(DirectRLEnv):
                 self.aggregated_object_goal_dist_buf[env_ids][reached_end_of_episode]
                 / self.episode_length_buf[env_ids][reached_end_of_episode]
             )
+            print(f"mean_object_goal_dist: {mean_object_goal_dist}")
             self.object_goal_dist_metric.update(mean_object_goal_dist)
 
     def _setup_fabric_action_space(self) -> None:
@@ -1184,7 +1185,17 @@ class BimanualEnv(DirectRLEnv):
         self.cfg.light.func("/World/Light", self.cfg.light)
 
     def _pre_physics_step(self, actions: torch.Tensor):
-        actions = actions.clamp_(min=-1.0, max=1.0)
+        import carb
+        import omni.physics.tensors.impl.api as physx
+        physics_sim_view: physx.SimulationView = (
+            sim_utils.SimulationContext.instance().physics_sim_view
+        )
+        gravity = physics_sim_view.get_gravity()
+        print(f"gravity: {gravity}")
+
+        OVERWRITE_ZERO_ACTIONS = True  # Set to True to debug
+        if OVERWRITE_ZERO_ACTIONS:
+            actions = torch.zeros_like(actions)
 
         self.prev_raw_actions = self.raw_actions.clone()
         self.raw_actions = actions.clone()
