@@ -1791,27 +1791,19 @@ class BimanualEnv(DirectRLEnv):
             ).reshape(self.num_envs, NUM_OBJECT_KEYPOINTS * NUM_XYZ),
             "goal_right_palm_position": (
                 self.goal_right_palm_pose_w()[:, :3] - self.scene.env_origins
-                if INCLUDE_HAND_TRACKING_REWARD
-                else torch.zeros(self.num_envs, 0, device=self.device)
             ),
             "goal_left_palm_position": (
                 self.goal_left_palm_pose_w()[:, :3] - self.scene.env_origins
-                if INCLUDE_HAND_TRACKING_REWARD
-                else torch.zeros(self.num_envs, 0, device=self.device)
             ),
             "future_goal_right_palm_positions": (
                 self.future_goal_right_palm_poses[:, :, :3].reshape(
                     self.num_envs, NUM_FUTURE_PALM_GOAL_OBS * NUM_XYZ
                 )
-                if INCLUDE_HAND_TRACKING_REWARD
-                else torch.zeros(self.num_envs, 0, device=self.device)
             ),
             "future_goal_left_palm_positions": (
                 self.future_goal_left_palm_poses[:, :, :3].reshape(
                     self.num_envs, NUM_FUTURE_PALM_GOAL_OBS * NUM_XYZ
                 )
-                if INCLUDE_HAND_TRACKING_REWARD
-                else torch.zeros(self.num_envs, 0, device=self.device)
             ),
             "future_goal_object_keypoint_positions": (
                 self.future_goal_object_keypoint_positions.reshape(
