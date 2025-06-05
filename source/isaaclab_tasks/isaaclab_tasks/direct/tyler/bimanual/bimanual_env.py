@@ -363,7 +363,7 @@ FINGERTIP_CONTACT_SENSOR_ROBOT_LINKS = (
 @configclass
 class BimanualEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 20.0
+    episode_length_s = 20.0  # NOTE: This is not currently used, it is overwritten by the max_episode_length property
     decimation = 4
     arm_action_scale = 0.1
     hand_action_scale = 2.0
@@ -414,6 +414,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
+        # num_envs=8192,
         num_envs=4096,
         env_spacing=4.0,
         # replicate_physics=True,
@@ -4092,6 +4093,18 @@ class BimanualEnv(DirectRLEnv):
             return OBJECT_KEYPOINT_OFFSETS_YAW_INVARIANT
         else:
             return OBJECT_KEYPOINT_OFFSETS
+
+    @property
+    def max_episode_length(self) -> int:
+        # Overwrite this hardcoded value to account for the goal timesteps
+        _default_max_episode_length = super().max_episode_length
+
+        NUM_GOAL_TIMESTEPS = self.goal_right_T_R_Ps.shape[0]
+        BUFFER_SEC = 1.0
+        BUFFER_STEPS = int(BUFFER_SEC / self.control_dt)
+        new_max_episode_length = NUM_GOAL_TIMESTEPS + BUFFER_STEPS
+        return new_max_episode_length
+
 
     #### CONSTANT PROPERTIES END ####
 
