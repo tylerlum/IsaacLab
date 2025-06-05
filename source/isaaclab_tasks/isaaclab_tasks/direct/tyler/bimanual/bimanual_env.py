@@ -1709,14 +1709,23 @@ class BimanualEnv(DirectRLEnv):
 
     def _compute_intermediate_values(self):
         STOP_IF_FAR_FROM_GOAL = False
+
+        # Want units [goal_idx / control_idx]
+        # goal_dt units [s / goal_idx]
+        # control_dt units [s / control_idx]
+        goal_float_update_amount = (
+            self.control_dt / self.goal_dt
+        )  # If goal at 30Hz and control at 60Hz, step 1/2 speed
         if STOP_IF_FAR_FROM_GOAL:
             object_goal_keypoint_dist = self.object_goal_keypoint_distance
             small_object_goal_distance_ids = (
                 (object_goal_keypoint_dist < 0.25).nonzero(as_tuple=False).squeeze(-1)
             )
-            self.goal_float_idx[small_object_goal_distance_ids] += 1
+            self.goal_float_idx[small_object_goal_distance_ids] += (
+                goal_float_update_amount
+            )
         else:
-            self.goal_float_idx += 1
+            self.goal_float_idx += goal_float_update_amount
 
         self.aggregated_object_goal_dist_buf += self.object_goal_keypoint_distance
 
@@ -2027,20 +2036,26 @@ class BimanualEnv(DirectRLEnv):
                     # "object_reached_goal": 0.1,  # max = num_steps ~ 75
                     "object_tracking_reward": 0.1,  # max = (1 or 5) * num_steps ~ 75 or 375
                 }
+
+                # Rescale rewards so they are roughly invariant to the decimation
+                RESCALE_FACTOR = self.cfg.decimation / 4
+                self.individual_reward_weights["object_tracking_reward"] *= (
+                    RESCALE_FACTOR
+                )
                 if self.cfg.INCLUDE_CONTACT_REWARD:
                     self.individual_reward_weights["fingertip_contact"] = (
                         0.0004  # max = (1 or 10) * NUM_BIMANUAL * 17 * num_steps ~ 2500
-                    )
+                    ) * RESCALE_FACTOR
                 else:
                     self.individual_reward_weights["fingertip_contact"] = 0.0
 
                 if self.cfg.INCLUDE_HAND_TRACKING_REWARD:
                     self.individual_reward_weights["right_hand_tracking_reward"] = (
                         0.02  # max = num_steps ~ 75
-                    )
+                    ) * RESCALE_FACTOR
                     self.individual_reward_weights["left_hand_tracking_reward"] = (
                         0.02  # max = num_steps ~ 75
-                    )
+                    ) * RESCALE_FACTOR
                 else:
                     self.individual_reward_weights["right_hand_tracking_reward"] = 0.0
                     self.individual_reward_weights["left_hand_tracking_reward"] = 0.0
@@ -3514,7 +3529,7 @@ class BimanualEnv(DirectRLEnv):
     def future_goal_object_poses(self) -> torch.Tensor:
         # Compute future idxs we want
         TIME_BETWEEN_GOALS_SECONDS = 0.5
-        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / self.control_dt
+        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / self.goal_dt
         relative_idxs = (
             torch.arange(1, NUM_FUTURE_GOAL_OBS + 1, device=self.device).float()
             * IDXS_BETWEEN_GOALS
@@ -3560,7 +3575,7 @@ class BimanualEnv(DirectRLEnv):
     def future_goal_right_palm_poses(self) -> torch.Tensor:
         # Compute future idxs we want
         TIME_BETWEEN_GOALS_SECONDS = 0.5
-        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / self.control_dt
+        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / self.goal_dt
         relative_idxs = (
             torch.arange(1, NUM_FUTURE_PALM_GOAL_OBS + 1, device=self.device).float()
             * IDXS_BETWEEN_GOALS
@@ -3609,7 +3624,7 @@ class BimanualEnv(DirectRLEnv):
     def future_goal_left_palm_poses(self) -> torch.Tensor:
         # Compute future idxs we want
         TIME_BETWEEN_GOALS_SECONDS = 0.5
-        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / self.control_dt
+        IDXS_BETWEEN_GOALS = TIME_BETWEEN_GOALS_SECONDS / self.goal_dt
 
         relative_idxs = (
             torch.arange(1, NUM_FUTURE_PALM_GOAL_OBS + 1, device=self.device).float()
@@ -4113,6 +4128,13 @@ class BimanualEnv(DirectRLEnv):
         BUFFER_STEPS = int(BUFFER_SEC / self.control_dt)
         new_max_episode_length = NUM_GOAL_TIMESTEPS + BUFFER_STEPS
         return new_max_episode_length
+
+    @property
+    def goal_dt(self) -> float:
+        original_goal_dt = 1 / 30  # 30 Hz is the rate the goal demo data was captured
+        SLOW_DOWN_FACTOR = 2  # Slow down to make it easier. Larger factor means longer dt, which means the demo is longer, which means slower
+        new_goal_dt = original_goal_dt * SLOW_DOWN_FACTOR
+        return new_goal_dt
 
     #### CONSTANT PROPERTIES END ####
 
