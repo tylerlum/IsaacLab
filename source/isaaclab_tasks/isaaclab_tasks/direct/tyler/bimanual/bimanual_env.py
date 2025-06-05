@@ -4170,9 +4170,15 @@ class BimanualEnv(DirectRLEnv):
         _default_max_episode_length = super().max_episode_length
 
         NUM_GOAL_TIMESTEPS = self.goal_right_T_R_Ps.shape[0]
+
+        # Want units [control steps]
+        # NUM_GOAL_TIMESTEPS units [goal_steps]
+        # goal_dt units [s / goal_step]
+        # control_dt units [s / control_step]
+        NUM_CONTROL_TIMESTEPS = int(NUM_GOAL_TIMESTEPS * (self.goal_dt / self.control_dt))
         BUFFER_SEC = 1.0
         BUFFER_STEPS = int(BUFFER_SEC / self.control_dt)
-        new_max_episode_length = NUM_GOAL_TIMESTEPS + BUFFER_STEPS
+        new_max_episode_length = NUM_CONTROL_TIMESTEPS + BUFFER_STEPS
         return new_max_episode_length
 
     @property
