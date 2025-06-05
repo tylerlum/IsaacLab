@@ -963,7 +963,24 @@ class BimanualEnv(DirectRLEnv):
             self.object_goal_dist_metric.update(mean_object_goal_dist)
 
             # Debug print
+            print()
+            print(colored("!" * 100, "green"))
+            for reward_name in REWARD_NAMES:
+                print(
+                    colored(
+                        f"{reward_name}: {self.individual_aggregated_reward_bufs[reward_name][env_ids].mean()} (weighted: {self.individual_weighted_aggregated_reward_bufs[reward_name][env_ids].mean()})",
+                        "green",
+                    )
+                )
+            print(
+                colored(
+                    f"self.aggregated_reward_buf: {self.aggregated_reward_buf[env_ids].mean()}",
+                    "green",
+                )
+            )
             print(colored(f"self.curriculum_metric: {self.curriculum_metric}", "green"))
+            print(colored("!" * 100, "green"))
+            print()
 
     def _setup_fabric_action_space(self) -> None:
         # Hide imports so that the code still runs without fabrics if unused
