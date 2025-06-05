@@ -154,6 +154,13 @@ RANDOMIZE_OBJECT_SCALE = False  # NOTE: This doesn't work with collision filteri
 
 USE_VIRTUAL_OBJECT_CONTROLLER = True
 
+# Default VOC gains that seem to work well
+VOC_K_P_TRANS = 2.0  # [N / m]
+VOC_D_P_TRANS = 0.2  # [N s / m]
+
+VOC_K_P_ROT = 0.02  # [N m / rad]
+VOC_D_P_ROT = 0.002  # [N m s / rad]
+
 INCLUDE_CONTACT_REWARD = False
 INCLUDE_HAND_TRACKING_REWARD = False
 INCLUDE_Q_OBS = True
@@ -434,8 +441,7 @@ class BimanualEnvCfg(DirectRLEnvCfg):
             usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/2025-06-03_assets/TODO/usd_convex_decomp/TODO.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 kinematic_enabled=False,
-                disable_gravity=USE_VIRTUAL_OBJECT_CONTROLLER,  # Should be False, but if using VOC, then must be True
-                # disable_gravity=False,
+                disable_gravity=False,
                 enable_gyroscopic_forces=True,
                 solver_position_iteration_count=8,
                 solver_velocity_iteration_count=8,
@@ -756,6 +762,7 @@ class BimanualEnv(DirectRLEnv):
 
     def __init__(self, cfg: BimanualEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
+        self.curriculum_alpha = 1.0  # [0, 1], 0 means no VOC, 1 means full VOC
 
         # Plotting data
         self.plot_data = {
@@ -772,6 +779,10 @@ class BimanualEnv(DirectRLEnv):
         self._setup_default_joint_pos()
 
         # Modify simulation properties
+        if USE_VIRTUAL_OBJECT_CONTROLLER:
+            self._modify_gravity(
+                gravity=(0.0, 0.0, -9.81 * (1.0 - self.curriculum_alpha))
+            )
         # self._modify_gravity(gravity=(0.0, 0.0, 0.0))
         # self._modify_object_masses(scale=0.1)
         # self._modify_object_materials(
@@ -1405,7 +1416,12 @@ class BimanualEnv(DirectRLEnv):
 
         if USE_VIRTUAL_OBJECT_CONTROLLER:
             voc_external_force_w, voc_external_torque_w = (
-                self.compute_virtual_object_controller_external_force_and_torque()
+                self.compute_virtual_object_controller_external_force_and_torque(
+                    K_p_trans=VOC_K_P_TRANS * self.curriculum_alpha,
+                    D_p_trans=VOC_D_P_TRANS * self.curriculum_alpha,
+                    K_p_rot=VOC_K_P_ROT * self.curriculum_alpha,
+                    D_p_rot=VOC_D_P_ROT * self.curriculum_alpha,
+                )
             )
             voc_external_force_o = self._w_to_o_wrench(voc_external_force_w)
             voc_external_torque_o = self._w_to_o_wrench(voc_external_torque_w)
@@ -1420,6 +1436,10 @@ class BimanualEnv(DirectRLEnv):
     # ---------- main controller ----------
     def compute_virtual_object_controller_external_force_and_torque(
         self,
+        K_p_trans: float = VOC_K_P_TRANS,
+        D_p_trans: float = VOC_D_P_TRANS,
+        K_p_rot: float = VOC_K_P_ROT,
+        D_p_rot: float = VOC_D_P_ROT,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """PD‑style virtual spring‑damper that pulls the object to `goal_*`.
 
@@ -1428,13 +1448,6 @@ class BimanualEnv(DirectRLEnv):
         force_w  : (B,3)   force in world frame  [N]
         torque_w : (B,3)   torque in world frame [N·m]
         """
-        # --- gains (tune as needed) ---
-        K_p_trans = 2.0  # [N / m]
-        D_p_trans = 0.2  # [N s / m]
-
-        K_p_rot = 0.02  # [N m / rad]
-        D_p_rot = 0.002  # [N m s / rad]
-
         # --- position spring‑damper ---
         pos_err = self.goal_object_position_w - self.object_position_w  # (B,3)
         vel_err = -self.object_linvel  # goal vel = 0
@@ -2920,6 +2933,17 @@ class BimanualEnv(DirectRLEnv):
             )
 
             # kbc = keyboard callback
+            # KeyboardInput options:
+            # ['A', 'APOSTROPHE', 'B', 'BACKSLASH', 'BACKSPACE', 'C', 'CAPS_LOCK', 'COMMA', 'COUNT', 'D', 'DEL', 'DOWN',
+            # 'E', 'END', 'ENTER', 'EQUAL', 'ESCAPE', 'F', 'F1', 'F10', 'F11', 'F12', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7',
+            # 'F8', 'F9', 'G', 'GRAVE_ACCENT', 'H', 'HOME', 'I', 'INSERT', 'J', 'K', 'KEY_0', 'KEY_1', 'KEY_2', 'KEY_3',
+            # 'KEY_4', 'KEY_5', 'KEY_6', 'KEY_7', 'KEY_8', 'KEY_9', 'L', 'LEFT', 'LEFT_ALT', 'LEFT_BRACKET', 'LEFT_CONTROL',
+            # 'LEFT_SHIFT', 'LEFT_SUPER', 'M', 'MENU', 'MINUS', 'N', 'NUMPAD_0', 'NUMPAD_1', 'NUMPAD_2', 'NUMPAD_3',
+            # 'NUMPAD_4', 'NUMPAD_5', 'NUMPAD_6', 'NUMPAD_7', 'NUMPAD_8', 'NUMPAD_9', 'NUMPAD_ADD', 'NUMPAD_DEL',
+            # 'NUMPAD_DIVIDE', 'NUMPAD_ENTER', 'NUMPAD_EQUAL', 'NUMPAD_MULTIPLY', 'NUMPAD_SUBTRACT', 'NUM_LOCK', 'O', 'P',
+            # 'PAGE_DOWN', 'PAGE_UP', 'PAUSE', 'PERIOD', 'PRINT_SCREEN', 'Q', 'R', 'RIGHT', 'RIGHT_ALT', 'RIGHT_BRACKET',
+            # 'RIGHT_CONTROL', 'RIGHT_SHIFT', 'RIGHT_SUPER', 'S', 'SCROLL_LOCK', 'SEMICOLON', 'SLASH', 'SPACE', 'T', 'TAB',
+            # 'U', 'UNKNOWN', 'UP', 'V', 'W', 'X', 'Y', 'Z']
             self.keyboard = GeneralKeyboard(
                 commands=[
                     KeyboardCommand(
@@ -2995,6 +3019,16 @@ class BimanualEnv(DirectRLEnv):
                         func=self._apply_external_force_neg_z,
                         args=[],
                     ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.MINUS,
+                        func=self._decrease_curriculum_alpha,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.PLUS,
+                        func=self._increase_curriculum_alpha,
+                        args=[],
+                    ),
                 ]
             )
         except AttributeError as e:
@@ -3039,6 +3073,16 @@ class BimanualEnv(DirectRLEnv):
             episode_frac=episode_frac,
         )
         print(colored(f"Saved data to {output_filename}", "green"))
+
+    def _decrease_curriculum_alpha(self):
+        self.curriculum_alpha -= 0.1
+        self.curriculum_alpha = np.clip(self.curriculum_alpha, a_min=0.0, a_max=1.0)
+        print(colored(f"Decreased curriculum alpha: {self.curriculum_alpha}", "green"))
+
+    def _increase_curriculum_alpha(self):
+        self.curriculum_alpha += 0.1
+        self.curriculum_alpha = np.clip(self.curriculum_alpha, a_min=0.0, a_max=1.0)
+        print(colored(f"Increased curriculum alpha: {self.curriculum_alpha}", "green"))
 
     def _toggle_fabric_spheres(self):
         self.VISUALIZE_FABRIC_SPHERES = not self.VISUALIZE_FABRIC_SPHERES
