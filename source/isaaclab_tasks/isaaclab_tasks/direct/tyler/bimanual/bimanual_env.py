@@ -762,7 +762,12 @@ class BimanualEnv(DirectRLEnv):
 
     def __init__(self, cfg: BimanualEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
-        self.curriculum_alpha = 1.0  # [0, 1], 0 means no VOC, 1 means full VOC
+        self.voc_curriculum_alpha = (
+            1.0  # [0, 1], 0 means no VOC assistance, 1 means full VOC assistance
+        )
+        self.gravity_curriculum_alpha = (
+            1.0  # [0, 1], 0 means full gravity, 1 means no gravity
+        )
 
         # Plotting data
         self.plot_data = {
@@ -781,7 +786,7 @@ class BimanualEnv(DirectRLEnv):
         # Modify simulation properties
         if USE_VIRTUAL_OBJECT_CONTROLLER:
             self._modify_gravity(
-                gravity=(0.0, 0.0, -9.81 * (1.0 - self.curriculum_alpha))
+                gravity=(0.0, 0.0, -9.81 * (1.0 - self.gravity_curriculum_alpha))
             )
         # self._modify_gravity(gravity=(0.0, 0.0, 0.0))
         # self._modify_object_masses(scale=0.1)
@@ -1417,10 +1422,10 @@ class BimanualEnv(DirectRLEnv):
         if USE_VIRTUAL_OBJECT_CONTROLLER:
             voc_external_force_w, voc_external_torque_w = (
                 self.compute_virtual_object_controller_external_force_and_torque(
-                    K_p_trans=VOC_K_P_TRANS * self.curriculum_alpha,
-                    D_p_trans=VOC_D_P_TRANS * self.curriculum_alpha,
-                    K_p_rot=VOC_K_P_ROT * self.curriculum_alpha,
-                    D_p_rot=VOC_D_P_ROT * self.curriculum_alpha,
+                    K_p_trans=VOC_K_P_TRANS * self.voc_curriculum_alpha,
+                    D_p_trans=VOC_D_P_TRANS * self.voc_curriculum_alpha,
+                    K_p_rot=VOC_K_P_ROT * self.voc_curriculum_alpha,
+                    D_p_rot=VOC_D_P_ROT * self.voc_curriculum_alpha,
                 )
             )
             voc_external_force_o = self._w_to_o_wrench(voc_external_force_w)
@@ -3025,12 +3030,22 @@ class BimanualEnv(DirectRLEnv):
                     ),
                     KeyboardCommand(
                         key=carb.input.KeyboardInput.KEY_1,
-                        func=self._decrease_curriculum_alpha,
+                        func=self._decrease_voc_curriculum_alpha,
                         args=[],
                     ),
                     KeyboardCommand(
                         key=carb.input.KeyboardInput.KEY_2,
-                        func=self._increase_curriculum_alpha,
+                        func=self._increase_voc_curriculum_alpha,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.KEY_3,
+                        func=self._decrease_gravity_curriculum_alpha,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.KEY_4,
+                        func=self._increase_gravity_curriculum_alpha,
                         args=[],
                     ),
                 ]
@@ -3078,20 +3093,56 @@ class BimanualEnv(DirectRLEnv):
         )
         print(colored(f"Saved data to {output_filename}", "green"))
 
-    def _decrease_curriculum_alpha(self):
-        self.curriculum_alpha -= 0.1
-        self.curriculum_alpha = np.clip(self.curriculum_alpha, a_min=0.0, a_max=1.0)
-        print(colored(f"Decreased curriculum alpha: {self.curriculum_alpha}", "green"))
-        self._modify_gravity(
-            gravity=(0.0, 0.0, -9.81 * (1.0 - self.curriculum_alpha))
+    def _decrease_voc_curriculum_alpha(self):
+        self.voc_curriculum_alpha -= 0.1
+        self.voc_curriculum_alpha = np.clip(
+            self.voc_curriculum_alpha, a_min=0.0, a_max=1.0
+        )
+        print(
+            colored(
+                f"Decreased VOC curriculum alpha: {self.voc_curriculum_alpha}", "green"
+            )
         )
 
-    def _increase_curriculum_alpha(self):
-        self.curriculum_alpha += 0.1
-        self.curriculum_alpha = np.clip(self.curriculum_alpha, a_min=0.0, a_max=1.0)
-        print(colored(f"Increased curriculum alpha: {self.curriculum_alpha}", "green"))
+    def _increase_voc_curriculum_alpha(self):
+        self.voc_curriculum_alpha += 0.1
+        self.voc_curriculum_alpha = np.clip(
+            self.voc_curriculum_alpha, a_min=0.0, a_max=1.0
+        )
+        print(
+            colored(
+                f"Increased VOC curriculum alpha: {self.voc_curriculum_alpha}", "green"
+            )
+        )
+
+    def _decrease_gravity_curriculum_alpha(self):
+        self.gravity_curriculum_alpha -= 0.1
+        self.gravity_curriculum_alpha = np.clip(
+            self.gravity_curriculum_alpha, a_min=0.0, a_max=1.0
+        )
+        print(
+            colored(
+                f"Decreased gravity curriculum alpha: {self.gravity_curriculum_alpha}",
+                "green",
+            )
+        )
         self._modify_gravity(
-            gravity=(0.0, 0.0, -9.81 * (1.0 - self.curriculum_alpha))
+            gravity=(0.0, 0.0, -9.81 * (1.0 - self.gravity_curriculum_alpha))
+        )
+
+    def _increase_gravity_curriculum_alpha(self):
+        self.gravity_curriculum_alpha += 0.1
+        self.gravity_curriculum_alpha = np.clip(
+            self.gravity_curriculum_alpha, a_min=0.0, a_max=1.0
+        )
+        print(
+            colored(
+                f"Increased gravity curriculum alpha: {self.gravity_curriculum_alpha}",
+                "green",
+            )
+        )
+        self._modify_gravity(
+            gravity=(0.0, 0.0, -9.81 * (1.0 - self.gravity_curriculum_alpha))
         )
 
     def _toggle_fabric_spheres(self):
