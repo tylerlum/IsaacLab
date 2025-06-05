@@ -8,7 +8,7 @@ from __future__ import annotations
 import datetime
 import pickle
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Tuple
 
 import isaaclab.envs.mdp as mdp
 import isaaclab.sim as sim_utils
@@ -768,6 +768,7 @@ class BimanualEnv(DirectRLEnv):
         self.gravity_curriculum_alpha = (
             1.0  # [0, 1], 0 means full gravity, 1 means no gravity
         )
+        self.residual_action_curriculum_alpha = 1.0  # [0, 1], 0 means base palm target is current palm pose, 1 means base palm target is goal palm pose
 
         # Plotting data
         self.plot_data = {
@@ -1236,34 +1237,15 @@ class BimanualEnv(DirectRLEnv):
                 self.fabric_hand_target, "self.fabric_hand_target (after copying)"
             )
 
-        OVERWRITE_GO_TO_GOAL = True
+        OVERWRITE_GO_TO_GOAL = False
         if OVERWRITE_GO_TO_GOAL:
-            goal_right_palm_xyzZYX = self.pose_w_to_xyzZYX(
+            # Actions
+            self.fabric_palm_target[:, :6] = self.pose_w_to_xyzZYX(
                 self.goal_right_palm_pose_w()
             )
-            goal_left_palm_xyzZYX = self.pose_w_to_xyzZYX(self.goal_left_palm_pose_w())
-
-            # Actions
-            self.fabric_palm_target[:, :3] = goal_right_palm_xyzZYX[:, :3]
-            self.fabric_palm_target[:, 3:6] = goal_right_palm_xyzZYX[:, 3:6]
-            self.fabric_palm_target[:, 6:9] = goal_left_palm_xyzZYX[:, :3]
-            self.fabric_palm_target[:, 9:12] = goal_left_palm_xyzZYX[:, 3:6]
-
-            OVERWRITE_LEFT_PALM_POSE = False
-            if OVERWRITE_LEFT_PALM_POSE:
-                if not hasattr(self, "first_goal_left_palm_xyzZYX"):
-                    self.first_goal_left_palm_xyzZYX = goal_left_palm_xyzZYX.clone()
-
-                # Adjust position manually
-                new_goal_left_palm_xyz = goal_right_palm_xyzZYX[:, :3].clone()
-                # adjusted_left_palm_xyz[:, 1] *= -1
-                new_goal_left_palm_xyz[:, 1] += 0.3
-
-                # Keep same orientation as the start
-                new_goal_left_palm_ZYX = goal_left_palm_xyzZYX[:, 3:6].clone()
-
-                self.fabric_palm_target[:, 6:9] = new_goal_left_palm_xyz
-                self.fabric_palm_target[:, 9:12] = new_goal_left_palm_ZYX
+            self.fabric_palm_target[:, 6:] = self.pose_w_to_xyzZYX(
+                self.goal_left_palm_pose_w()
+            )
 
         if USE_FABRIC:
             check_nan_and_print_if_any(
@@ -1536,6 +1518,27 @@ class BimanualEnv(DirectRLEnv):
                 ],
                 dim=1,
             )
+            goal_fabric_palm = torch.cat(
+                [
+                    self.pose_w_to_xyzZYX(self.goal_right_palm_pose_w()),
+                    self.pose_w_to_xyzZYX(self.goal_left_palm_pose_w()),
+                ],
+                dim=1,
+            )
+
+            BASE_MODE: Literal["current", "goal", "mix"] = "mix"
+            if BASE_MODE == "current":
+                base_fabric_palm_target = current_fabric_palm
+            elif BASE_MODE == "goal":
+                base_fabric_palm_target = goal_fabric_palm
+            elif BASE_MODE == "mix":
+                base_fabric_palm_target = (
+                    current_fabric_palm * (1.0 - self.residual_action_curriculum_alpha)
+                    + goal_fabric_palm * self.residual_action_curriculum_alpha
+                )
+            else:
+                raise ValueError(f"Invalid base mode: {BASE_MODE}")
+
             POS_DELTA = 0.2
             ANG_DELTA = np.deg2rad(45)
             fabric_palm_delta_mins = torch.tensor(
@@ -1562,7 +1565,7 @@ class BimanualEnv(DirectRLEnv):
                 * NUM_BIMANUAL,
                 device=self.device,
             )
-            new_fabric_palm_target = current_fabric_palm + rescale(
+            new_fabric_palm_target = base_fabric_palm_target + rescale(
                 values=raw_fabric_palm_actions,
                 old_mins=torch.ones_like(self.fabric_palm_mins) * -1,
                 old_maxs=torch.ones_like(self.fabric_palm_maxs) * 1,
@@ -3048,6 +3051,16 @@ class BimanualEnv(DirectRLEnv):
                         func=self._increase_gravity_curriculum_alpha,
                         args=[],
                     ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.KEY_5,
+                        func=self._decrease_residual_action_curriculum_alpha,
+                        args=[],
+                    ),
+                    KeyboardCommand(
+                        key=carb.input.KeyboardInput.KEY_6,
+                        func=self._increase_residual_action_curriculum_alpha,
+                        args=[],
+                    ),
                 ]
             )
         except AttributeError as e:
@@ -3143,6 +3156,30 @@ class BimanualEnv(DirectRLEnv):
         )
         self._modify_gravity(
             gravity=(0.0, 0.0, -9.81 * (1.0 - self.gravity_curriculum_alpha))
+        )
+
+    def _decrease_residual_action_curriculum_alpha(self):
+        self.residual_action_curriculum_alpha -= 0.1
+        self.residual_action_curriculum_alpha = np.clip(
+            self.residual_action_curriculum_alpha, a_min=0.0, a_max=1.0
+        )
+        print(
+            colored(
+                f"Decreased residual action curriculum alpha: {self.residual_action_curriculum_alpha}",
+                "green",
+            )
+        )
+
+    def _increase_residual_action_curriculum_alpha(self):
+        self.residual_action_curriculum_alpha += 0.1
+        self.residual_action_curriculum_alpha = np.clip(
+            self.residual_action_curriculum_alpha, a_min=0.0, a_max=1.0
+        )
+        print(
+            colored(
+                f"Increased residual action curriculum alpha: {self.residual_action_curriculum_alpha}",
+                "green",
+            )
         )
 
     def _toggle_fabric_spheres(self):
