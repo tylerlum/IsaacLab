@@ -235,16 +235,15 @@ class SimToolRealEnv(DirectRLEnv):
         )
         self._robot = Articulation(robot_cfg)
 
-        # Table (static)
-        table_cfg = ArticulationCfg(
+        # Table (static rigid body — no joints after merge_fixed_joints=True)
+        table_cfg = RigidObjectCfg(
             prim_path="/World/envs/env_.*/Table",
             spawn=sim_utils.UsdFileCfg(
                 usd_path=table_usd,
             ),
-            init_state=ArticulationCfg.InitialStateCfg(pos=self.cfg.table_translation),
-            actuators={},
+            init_state=RigidObjectCfg.InitialStateCfg(pos=self.cfg.table_translation),
         )
-        self._table = Articulation(table_cfg)
+        self._table = RigidObject(table_cfg)
 
         # Object (dynamic rigid body)
         object_cfg = RigidObjectCfg(
@@ -263,7 +262,7 @@ class SimToolRealEnv(DirectRLEnv):
         # Register with scene for cloning across envs
         self.scene.clone_environments(copy_from_source=False)
         self.scene.articulations["robot"] = self._robot
-        self.scene.articulations["table"] = self._table
+        self.scene.rigid_objects["table"] = self._table
         self.scene.rigid_objects["object"] = self._object
 
     # ------------------------------------------------------------------
