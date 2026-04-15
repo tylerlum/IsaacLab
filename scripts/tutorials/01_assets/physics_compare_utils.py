@@ -47,15 +47,19 @@ def build_sim_cfg(
         solver_cfg = MJWarpSolverCfg(
             njmax=768,
             nconmax=768,
+            iterations=100,
+            ls_iterations=50,
             solver="newton",
             integrator="implicitfast",
+            impratio=10.0,
             cone="elliptic",
+            ccd_iterations=4,
             use_mujoco_contacts=False,
             ls_parallel=False,
         )
         physics = NewtonCfg(
             solver_cfg=solver_cfg,
-            num_substeps=1,
+            num_substeps=2,
             debug_mode=False,
             use_cuda_graph=False,
         )

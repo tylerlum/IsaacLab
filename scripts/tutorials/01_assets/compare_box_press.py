@@ -37,9 +37,6 @@ from isaaclab.sim import SimulationContext
 
 def design_scene() -> dict[str, RigidObject]:
     """Create a heavy support block and a tilted dynamic top box."""
-    ground_cfg = sim_utils.GroundPlaneCfg()
-    ground_cfg.func("/World/defaultGroundPlane", ground_cfg)
-
     light_cfg = sim_utils.DomeLightCfg(intensity=2600.0, color=(0.85, 0.85, 0.85))
     light_cfg.func("/World/Light", light_cfg)
 
@@ -89,7 +86,6 @@ def configure_initial_state(entities: dict[str, RigidObject]) -> None:
     top_vel.zero_()
 
     support.write_root_pose_to_sim_index(root_pose=support_pose)
-    support.write_root_velocity_to_sim_index(root_velocity=support_vel)
     top_box.write_root_pose_to_sim_index(root_pose=top_pose)
     top_box.write_root_velocity_to_sim_index(root_velocity=top_vel)
     support.reset()
