@@ -12,7 +12,14 @@ from isaaclab.app import AppLauncher
 from physics_compare_utils import add_physics_mode_arg, build_sim_cfg, make_hydro_shapes, validate_backend
 
 parser = argparse.ArgumentParser(description="Compare box-press contact behavior across physics modes.")
-parser.add_argument("--num_steps", type=int, default=180, help="Number of simulation steps to run.")
+parser.add_argument(
+    "--num_steps",
+    type=int,
+    default=240,
+    help="Number of simulation steps per cycle. Ignored when --loop is active unless used with --max_cycles.",
+)
+parser.add_argument("--loop", action="store_true", help="Repeat the box-press cycle until the viewer closes.")
+parser.add_argument("--max_cycles", type=int, default=0, help="Optional cap on repeated cycles when --loop is active.")
 AppLauncher.add_app_launcher_args(parser)
 add_physics_mode_arg(parser)
 args_cli = parser.parse_args()
@@ -93,20 +100,37 @@ def run_simulator(sim: SimulationContext, entities: dict[str, RigidObject]) -> N
     """Run the comparison and print top-box settling diagnostics."""
     top_box = entities["top_box"]
     sim_dt = sim.get_physics_dt()
-
-    configure_initial_state(entities)
     validate_backend(args_cli.physics, min_hydro_shapes=2)
+    cycle_count = 0
+    running = True
 
-    for step in range(args_cli.num_steps):
-        for entity in entities.values():
-            entity.write_data_to_sim()
-        sim.step()
-        for entity in entities.values():
-            entity.update(sim_dt)
+    while running and simulation_app.is_running():
+        configure_initial_state(entities)
+        print(f"[INFO]: Starting cycle {cycle_count}")
 
-        if step % 30 == 0 or step == args_cli.num_steps - 1:
-            pose = wp.to_torch(top_box.data.root_pose_w)[0]
-            print(f"[INFO]: step={step:03d} top_pos={pose[:3].cpu().tolist()} top_quat={pose[3:].cpu().tolist()}")
+        for step in range(args_cli.num_steps):
+            for entity in entities.values():
+                entity.write_data_to_sim()
+            sim.step()
+            for entity in entities.values():
+                entity.update(sim_dt)
+
+            if step % 30 == 0 or step == args_cli.num_steps - 1:
+                pose = wp.to_torch(top_box.data.root_pose_w)[0]
+                print(
+                    f"[INFO]: cycle={cycle_count} step={step:03d} "
+                    f"top_pos={pose[:3].cpu().tolist()} top_quat={pose[3:].cpu().tolist()}"
+                )
+
+            if not simulation_app.is_running():
+                running = False
+                break
+
+        cycle_count += 1
+        if not args_cli.loop:
+            running = False
+        elif args_cli.max_cycles > 0 and cycle_count >= args_cli.max_cycles:
+            running = False
 
 
 def main() -> None:

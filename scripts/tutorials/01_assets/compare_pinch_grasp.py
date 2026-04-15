@@ -12,8 +12,15 @@ from isaaclab.app import AppLauncher
 from physics_compare_utils import add_physics_mode_arg, build_sim_cfg, make_hydro_shapes, validate_backend
 
 parser = argparse.ArgumentParser(description="Compare pinch-grasp contact behavior across physics modes.")
-parser.add_argument("--num_steps", type=int, default=240, help="Number of simulation steps to run.")
+parser.add_argument(
+    "--num_steps",
+    type=int,
+    default=480,
+    help="Number of simulation steps per cycle. Ignored when --loop is active unless used with --max_cycles.",
+)
 parser.add_argument("--object", type=str, choices=("cube", "pen"), default="cube", help="Object to pinch.")
+parser.add_argument("--loop", action="store_true", help="Repeat the pinch-close-hold-lift cycle until the viewer closes.")
+parser.add_argument("--max_cycles", type=int, default=0, help="Optional cap on repeated cycles when --loop is active.")
 AppLauncher.add_app_launcher_args(parser)
 add_physics_mode_arg(parser)
 args_cli = parser.parse_args()
@@ -142,52 +149,71 @@ def run_simulator(sim: SimulationContext, entities: dict[str, RigidObject]) -> N
     grasped = entities["object"]
     sim_dt = sim.get_physics_dt()
 
-    configure_initial_state(entities)
     validate_backend(args_cli.physics, min_hydro_shapes=3)
-
-    left_pose = wp.to_torch(left_pad.data.root_pose_w).clone()
-    right_pose = wp.to_torch(right_pad.data.root_pose_w).clone()
-    zero_vel = torch.zeros((1, 6), device=left_pad.device)
-
-    close_steps = 120
+    settle_steps = 120
+    close_steps = 180
     hold_steps = 120
-    lift_steps = max(args_cli.num_steps - close_steps - hold_steps, 0)
+    lift_steps = max(args_cli.num_steps - settle_steps - close_steps - hold_steps, 0)
+    cycle_count = 0
+    running = True
 
-    for step in range(args_cli.num_steps):
-        if step < close_steps:
-            left_pose[:, 0] += 0.0015
-            right_pose[:, 0] -= 0.0015
-            left_pad.write_root_pose_to_sim_index(root_pose=left_pose)
-            right_pad.write_root_pose_to_sim_index(root_pose=right_pose)
-            left_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
-            right_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
-        elif step < close_steps + hold_steps:
-            left_pad.write_root_pose_to_sim_index(root_pose=left_pose)
-            right_pad.write_root_pose_to_sim_index(root_pose=right_pose)
-            left_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
-            right_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
-        elif lift_steps > 0:
-            left_pose[:, 2] += 0.0015
-            right_pose[:, 2] += 0.0015
-            left_pad.write_root_pose_to_sim_index(root_pose=left_pose)
-            right_pad.write_root_pose_to_sim_index(root_pose=right_pose)
-            left_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
-            right_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
+    while running and simulation_app.is_running():
+        configure_initial_state(entities)
+        left_pose = wp.to_torch(left_pad.data.root_pose_w).clone()
+        right_pose = wp.to_torch(right_pad.data.root_pose_w).clone()
+        zero_vel = torch.zeros((1, 6), device=left_pad.device)
+        print(f"[INFO]: Starting cycle {cycle_count}")
 
-        for entity in entities.values():
-            entity.write_data_to_sim()
-        sim.step()
-        for entity in entities.values():
-            entity.update(sim_dt)
+        for step in range(args_cli.num_steps):
+            if step < settle_steps:
+                left_pad.write_root_pose_to_sim_index(root_pose=left_pose)
+                right_pad.write_root_pose_to_sim_index(root_pose=right_pose)
+                left_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
+                right_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
+            elif step < settle_steps + close_steps:
+                left_pose[:, 0] += 0.0010
+                right_pose[:, 0] -= 0.0010
+                left_pad.write_root_pose_to_sim_index(root_pose=left_pose)
+                right_pad.write_root_pose_to_sim_index(root_pose=right_pose)
+                left_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
+                right_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
+            elif step < settle_steps + close_steps + hold_steps:
+                left_pad.write_root_pose_to_sim_index(root_pose=left_pose)
+                right_pad.write_root_pose_to_sim_index(root_pose=right_pose)
+                left_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
+                right_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
+            elif lift_steps > 0:
+                left_pose[:, 2] += 0.0008
+                right_pose[:, 2] += 0.0008
+                left_pad.write_root_pose_to_sim_index(root_pose=left_pose)
+                right_pad.write_root_pose_to_sim_index(root_pose=right_pose)
+                left_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
+                right_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
 
-        if step % 30 == 0 or step == args_cli.num_steps - 1:
-            object_pose = wp.to_torch(grasped.data.root_pose_w)[0]
-            gap = float(wp.to_torch(right_pad.data.root_pos_w)[0, 0] - wp.to_torch(left_pad.data.root_pos_w)[0, 0])
-            pad_height = float(wp.to_torch(left_pad.data.root_pos_w)[0, 2])
-            print(
-                f"[INFO]: step={step:03d} pad_gap={gap:.4f} pad_height={pad_height:.4f} "
-                f"object_pos={object_pose[:3].cpu().tolist()} object_quat={object_pose[3:].cpu().tolist()}"
-            )
+            for entity in entities.values():
+                entity.write_data_to_sim()
+            sim.step()
+            for entity in entities.values():
+                entity.update(sim_dt)
+
+            if step % 30 == 0 or step == args_cli.num_steps - 1:
+                object_pose = wp.to_torch(grasped.data.root_pose_w)[0]
+                gap = float(wp.to_torch(right_pad.data.root_pos_w)[0, 0] - wp.to_torch(left_pad.data.root_pos_w)[0, 0])
+                pad_height = float(wp.to_torch(left_pad.data.root_pos_w)[0, 2])
+                print(
+                    f"[INFO]: cycle={cycle_count} step={step:03d} pad_gap={gap:.4f} pad_height={pad_height:.4f} "
+                    f"object_pos={object_pose[:3].cpu().tolist()} object_quat={object_pose[3:].cpu().tolist()}"
+                )
+
+            if not simulation_app.is_running():
+                running = False
+                break
+
+        cycle_count += 1
+        if not args_cli.loop:
+            running = False
+        elif args_cli.max_cycles > 0 and cycle_count >= args_cli.max_cycles:
+            running = False
 
 
 def main() -> None:
