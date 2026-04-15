@@ -98,27 +98,27 @@ params:
     seq_length: 16
     bounds_loss_coef: 0.0001
 
-    # Asymmetric critic — only active when env state_space > 0
-    central_value_config:
-      minibatch_size: 98304
-      mini_epochs: 2
-      learning_rate: 1e-4
-      kl_threshold: 0.016
-      clip_value: True
-      normalize_input: True
-      truncate_grads: True
-
-      network:
-        name: actor_critic
-        central_value: True
-        mlp:
-          units: [1024, 1024, 512, 512]
-          activation: elu
-          d2rl: False
-          initializer:
-            name: default
-          regularizer:
-            name: None
+    # central_value_config is commented out because state_space=0 in env cfg.
+    # Uncomment and set state_space>0 to enable asymmetric actor-critic.
+    # central_value_config:
+    #   minibatch_size: 98304
+    #   mini_epochs: 2
+    #   learning_rate: 1e-4
+    #   kl_threshold: 0.016
+    #   clip_value: True
+    #   normalize_input: True
+    #   truncate_grads: True
+    #   network:
+    #     name: actor_critic
+    #     central_value: True
+    #     mlp:
+    #       units: [1024, 1024, 512, 512]
+    #       activation: elu
+    #       d2rl: False
+    #       initializer:
+    #         name: default
+    #       regularizer:
+    #         name: None
 
     player:
       deterministic: False
