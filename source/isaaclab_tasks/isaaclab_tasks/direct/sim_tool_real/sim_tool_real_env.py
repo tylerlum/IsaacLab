@@ -185,7 +185,7 @@ class SimToolRealEnv(DirectRLEnv):
     def _setup_scene(self):
         # Convert URDFs to USD (cached after first run)
         robot_usd = self._convert_urdf(self.cfg.robot_urdf_path, cache_subdir="robot", fix_base=True)
-        table_usd = self._convert_urdf(self.cfg.table_urdf_path, cache_subdir="table", fix_base=True)
+        table_usd = self._convert_urdf(self.cfg.table_urdf_path, cache_subdir="table", fix_base=False)
         object_usd = self._convert_urdf(self.cfg.object_urdf_path, cache_subdir="object", fix_base=False)
 
         # Robot articulation

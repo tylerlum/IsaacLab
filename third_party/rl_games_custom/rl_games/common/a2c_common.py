@@ -398,7 +398,8 @@ class A2CBase(BaseAlgorithm):
 
     def load_networks(self, params):
         builder = model_builder.ModelBuilder()
-        if self.config.get('expl_type').startswith('mixed_expl') and 'disjoint' in self.config.get('expl_type'):
+        expl_type = self.config.get('expl_type') or ''
+        if expl_type.startswith('mixed_expl') and 'disjoint' in expl_type:
             params['model']['name'] = 'multi_' + params['model']['name']
         self.config['network'] = builder.load(params)
         has_central_value_net = self.config.get('central_value_config') is not  None
