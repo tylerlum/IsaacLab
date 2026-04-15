@@ -40,22 +40,14 @@ def design_scene() -> dict[str, RigidObject]:
     light_cfg = sim_utils.DomeLightCfg(intensity=2200.0, color=(0.84, 0.84, 0.84))
     light_cfg.func("/World/Light", light_cfg)
 
-    material_cfg = sim_utils.RigidBodyMaterialCfg(
-        friction_combine_mode="multiply",
-        static_friction=1.3,
-        dynamic_friction=1.1,
-        restitution=0.0,
-    )
-
     entities: dict[str, RigidObject] = {}
     entities["base"] = RigidObject(
         cfg=RigidObjectCfg(
             prim_path="/World/Base",
             spawn=sim_utils.CuboidCfg(
-                size=(0.8, 0.8, 0.12),
+                size=(0.75, 0.75, 0.12),
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
                 collision_props=sim_utils.CollisionPropertiesCfg(),
-                physics_material=material_cfg,
                 visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.35, 0.35, 0.4)),
             ),
             init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.06)),
@@ -68,22 +60,14 @@ def design_scene() -> dict[str, RigidObject]:
                 prim_path=f"/World/Box{idx}",
                 spawn=sim_utils.CuboidCfg(
                     size=(0.18, 0.18, 0.18),
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                        disable_gravity=False,
-                        linear_damping=0.2,
-                        angular_damping=0.2,
-                        max_depenetration_velocity=1.5,
-                        solver_position_iteration_count=16,
-                        solver_velocity_iteration_count=4,
-                    ),
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
                     mass_props=sim_utils.MassPropertiesCfg(mass=0.6),
                     collision_props=sim_utils.CollisionPropertiesCfg(),
-                    physics_material=material_cfg,
                     visual_material=sim_utils.PreviewSurfaceCfg(
                         diffuse_color=(0.2 + 0.15 * idx, 0.6 - 0.08 * idx, 0.85 - 0.1 * idx)
                     ),
                 ),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.15 + 0.181 * idx)),
+                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.24 + 0.19 * idx)),
             )
         )
     return entities
@@ -96,11 +80,11 @@ def configure_initial_state(entities: dict[str, RigidObject]) -> None:
     base_pose[:, :3] = torch.tensor([[0.0, 0.0, 0.06]], device=entities["base"].device)
     entities["base"].write_root_pose_to_sim_index(root_pose=base_pose)
 
-    offsets = [(0.0, 0.0), (0.006, -0.004), (-0.005, 0.003), (0.004, 0.005)]
+    offsets = [(0.0, 0.0), (0.022, -0.015), (-0.018, 0.012), (0.015, 0.02)]
     for idx in range(4):
         box = entities[f"box_{idx}"]
         pose = wp.to_torch(box.data.default_root_pose).clone()
-        pose[:, :3] = torch.tensor([[offsets[idx][0], offsets[idx][1], 0.15 + 0.181 * idx]], device=box.device)
+        pose[:, :3] = torch.tensor([[offsets[idx][0], offsets[idx][1], 0.22 + 0.19 * idx]], device=box.device)
         box.write_root_pose_to_sim_index(root_pose=pose)
         box.write_root_velocity_to_sim_index(root_velocity=zero_vel)
 
