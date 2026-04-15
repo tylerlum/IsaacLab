@@ -257,6 +257,9 @@ class SimToolRealEnv(DirectRLEnv):
             prim_path="/World/envs/env_.*/Object",
             spawn=sim_utils.UsdFileCfg(
                 usd_path=object_usd,
+                articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                    articulation_enabled=False,
+                ),
             ),
         )
         self._object = RigidObject(object_cfg)
