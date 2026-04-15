@@ -132,6 +132,24 @@ def main():
 
         env_cfg.seed = agent_cfg["params"]["seed"]
 
+        # Clamp minibatch_size so num_minibatches >= 1.
+        # The YAML is tuned for large-scale training (4096+ envs). When running
+        # with fewer envs (e.g. smoke tests), batch_size < minibatch_size gives
+        # num_minibatches=0 and a ZeroDivisionError inside rl_games.
+        horizon = agent_cfg["params"]["config"]["horizon_length"]
+        num_envs_effective = env_cfg.scene.num_envs
+        batch_size = horizon * num_envs_effective
+        cfg_p = agent_cfg["params"]["config"]
+        if cfg_p.get("minibatch_size", batch_size) > batch_size:
+            # Snap to the largest power-of-2 that fits and satisfies seq_length
+            seq_len = cfg_p.get("seq_length", 1)
+            minibatch_size = batch_size - (batch_size % seq_len) if seq_len > 1 else batch_size
+            minibatch_size = max(minibatch_size, seq_len)
+            cfg_p["minibatch_size"] = minibatch_size
+            if "central_value_config" in cfg_p:
+                cfg_p["central_value_config"]["minibatch_size"] = minibatch_size
+            print(f"[INFO] minibatch_size clamped to {minibatch_size} (batch_size={batch_size})")
+
         config_name = agent_cfg["params"]["config"]["name"]
         log_root_path = os.path.abspath(os.path.join("logs", "rl_games", config_name))
         print(f"[INFO] Logging to: {log_root_path}")
