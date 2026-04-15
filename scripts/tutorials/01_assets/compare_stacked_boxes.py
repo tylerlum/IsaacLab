@@ -30,18 +30,21 @@ from isaaclab.sim import SimulationContext
 
 def design_scene() -> dict[str, RigidObject]:
     """Create a small stack of boxes on a static base."""
+    ground_cfg = sim_utils.GroundPlaneCfg()
+    ground_cfg.func("/World/defaultGroundPlane", ground_cfg)
+
     light_cfg = sim_utils.DomeLightCfg(intensity=2200.0, color=(0.84, 0.84, 0.84))
     light_cfg.func("/World/Light", light_cfg)
 
     entities: dict[str, RigidObject] = {}
     entities["base"] = RigidObject(
         cfg=RigidObjectCfg(
-            prim_path="/World/Base",
-            spawn=sim_utils.CuboidCfg(
-                size=(0.6, 0.6, 0.12),
-                rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
-                collision_props=sim_utils.CollisionPropertiesCfg(),
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.35, 0.35, 0.4)),
+                prim_path="/World/Base",
+                spawn=sim_utils.CuboidCfg(
+                    size=(0.75, 0.75, 0.12),
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
+                    collision_props=sim_utils.CollisionPropertiesCfg(),
+                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.35, 0.35, 0.4)),
             ),
             init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.06)),
         )
@@ -52,7 +55,7 @@ def design_scene() -> dict[str, RigidObject]:
             cfg=RigidObjectCfg(
                 prim_path=f"/World/Box{idx}",
                 spawn=sim_utils.CuboidCfg(
-                    size=(0.14, 0.14, 0.14),
+                    size=(0.18, 0.18, 0.18),
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
                     mass_props=sim_utils.MassPropertiesCfg(mass=0.6),
                     collision_props=sim_utils.CollisionPropertiesCfg(),
@@ -60,7 +63,7 @@ def design_scene() -> dict[str, RigidObject]:
                         diffuse_color=(0.2 + 0.15 * idx, 0.6 - 0.08 * idx, 0.85 - 0.1 * idx)
                     ),
                 ),
-                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.2 + 0.16 * idx)),
+                init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.24 + 0.19 * idx)),
             )
         )
     return entities
@@ -74,11 +77,11 @@ def configure_initial_state(entities: dict[str, RigidObject]) -> None:
     entities["base"].write_root_pose_to_sim_index(root_pose=base_pose)
     entities["base"].write_root_velocity_to_sim_index(root_velocity=zero_vel)
 
-    offsets = [(0.0, 0.0), (0.018, -0.012), (-0.014, 0.01), (0.012, 0.016)]
+    offsets = [(0.0, 0.0), (0.022, -0.015), (-0.018, 0.012), (0.015, 0.02)]
     for idx in range(4):
         box = entities[f"box_{idx}"]
         pose = wp.to_torch(box.data.default_root_pose).clone()
-        pose[:, :3] = torch.tensor([[offsets[idx][0], offsets[idx][1], 0.19 + 0.145 * idx]], device=box.device)
+        pose[:, :3] = torch.tensor([[offsets[idx][0], offsets[idx][1], 0.22 + 0.19 * idx]], device=box.device)
         box.write_root_pose_to_sim_index(root_pose=pose)
         box.write_root_velocity_to_sim_index(root_velocity=zero_vel)
 
@@ -122,7 +125,7 @@ def main() -> None:
         hydroelastic_shapes=hydro_shapes,
     )
     sim = SimulationContext(sim_cfg)
-    sim.set_camera_view(eye=[1.6, 1.1, 1.3], target=[0.0, 0.0, 0.35])
+    sim.set_camera_view(eye=[1.9, 1.35, 1.6], target=[0.0, 0.0, 0.45])
 
     entities = design_scene()
     sim.reset()

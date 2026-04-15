@@ -30,28 +30,32 @@ from isaaclab.sim import SimulationContext
 
 def design_scene() -> dict[str, RigidObject]:
     """Create a heavy support block and a tilted dynamic top box."""
-    sim_utils.DomeLightCfg(intensity=2200.0, color=(0.85, 0.85, 0.85)).func("/World/Light", sim_utils.DomeLightCfg())
+    ground_cfg = sim_utils.GroundPlaneCfg()
+    ground_cfg.func("/World/defaultGroundPlane", ground_cfg)
+
+    light_cfg = sim_utils.DomeLightCfg(intensity=2600.0, color=(0.85, 0.85, 0.85))
+    light_cfg.func("/World/Light", light_cfg)
 
     support_cfg = RigidObjectCfg(
         prim_path="/World/Support",
         spawn=sim_utils.CuboidCfg(
-            size=(0.7, 0.7, 0.14),
+            size=(1.1, 1.1, 0.18),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.35, 0.35, 0.4)),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.07)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.09)),
     )
     top_cfg = RigidObjectCfg(
         prim_path="/World/TopBox",
         spawn=sim_utils.CuboidCfg(
-            size=(0.24, 0.24, 0.12),
+            size=(0.32, 0.32, 0.16),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
             mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.2, 0.65, 0.9), metallic=0.1),
         ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.28)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.37)),
     )
     return {
         "support": RigidObject(cfg=support_cfg),
@@ -69,11 +73,11 @@ def configure_initial_state(entities: dict[str, RigidObject]) -> None:
     top_pose = wp.to_torch(top_box.data.default_root_pose).clone()
     top_vel = wp.to_torch(top_box.data.default_root_vel).clone()
 
-    support_pose[:, :3] = torch.tensor([[0.0, 0.0, 0.07]], device=support.device)
+    support_pose[:, :3] = torch.tensor([[0.0, 0.0, 0.09]], device=support.device)
     support_vel.zero_()
 
     tilt_quat = torch.tensor([[0.085, 0.03, 0.0, 0.9959]], device=top_box.device)
-    top_pose[:, :3] = torch.tensor([[0.03, 0.0, 0.28]], device=top_box.device)
+    top_pose[:, :3] = torch.tensor([[0.05, 0.0, 0.37]], device=top_box.device)
     top_pose[:, 3:] = tilt_quat
     top_vel.zero_()
 
@@ -115,7 +119,7 @@ def main() -> None:
         hydroelastic_shapes=hydro_shapes,
     )
     sim = SimulationContext(sim_cfg)
-    sim.set_camera_view(eye=[1.3, 0.9, 0.75], target=[0.0, 0.0, 0.15])
+    sim.set_camera_view(eye=[1.8, 1.25, 1.1], target=[0.0, 0.0, 0.2])
 
     entities = design_scene()
     sim.reset()

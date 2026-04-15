@@ -35,8 +35,8 @@ def _make_grasped_object_cfg() -> RigidObjectCfg:
     mass_props = sim_utils.MassPropertiesCfg(mass=0.3)
     if args_cli.object == "pen":
         spawn = sim_utils.CapsuleCfg(
-            radius=0.02,
-            height=0.20,
+            radius=0.03,
+            height=0.28,
             axis="Z",
             rigid_props=rigid_props,
             collision_props=collision_props,
@@ -45,7 +45,7 @@ def _make_grasped_object_cfg() -> RigidObjectCfg:
         )
     else:
         spawn = sim_utils.CuboidCfg(
-            size=(0.08, 0.08, 0.08),
+            size=(0.12, 0.12, 0.12),
             rigid_props=rigid_props,
             collision_props=collision_props,
             mass_props=mass_props,
@@ -60,11 +60,25 @@ def _make_grasped_object_cfg() -> RigidObjectCfg:
 
 def design_scene() -> dict[str, RigidObject]:
     """Create two kinematic pads and a central grasped object."""
+    ground_cfg = sim_utils.GroundPlaneCfg()
+    ground_cfg.func("/World/defaultGroundPlane", ground_cfg)
+
     light_cfg = sim_utils.DomeLightCfg(intensity=2200.0, color=(0.82, 0.82, 0.82))
     light_cfg.func("/World/Light", light_cfg)
 
+    table_cfg = RigidObjectCfg(
+        prim_path="/World/Table",
+        spawn=sim_utils.CuboidCfg(
+            size=(1.0, 0.8, 0.16),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.28, 0.28, 0.32)),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.08)),
+    )
+
     pad_spawn = sim_utils.CuboidCfg(
-        size=(0.06, 0.16, 0.16),
+        size=(0.08, 0.22, 0.22),
         rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
         collision_props=sim_utils.CollisionPropertiesCfg(),
         visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.25, 0.65, 0.9), metallic=0.1),
@@ -72,14 +86,15 @@ def design_scene() -> dict[str, RigidObject]:
     left_pad_cfg = RigidObjectCfg(
         prim_path="/World/LeftPad",
         spawn=pad_spawn,
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.17, 0.0, 0.0)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.22, 0.0, 0.22)),
     )
     right_pad_cfg = RigidObjectCfg(
         prim_path="/World/RightPad",
         spawn=pad_spawn.replace(visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.9, 0.45, 0.25), metallic=0.1)),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.17, 0.0, 0.0)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.22, 0.0, 0.22)),
     )
     return {
+        "table": RigidObject(cfg=table_cfg),
         "left_pad": RigidObject(cfg=left_pad_cfg),
         "right_pad": RigidObject(cfg=right_pad_cfg),
         "object": RigidObject(cfg=_make_grasped_object_cfg()),
@@ -92,16 +107,20 @@ def configure_initial_state(entities: dict[str, RigidObject]) -> None:
     right_pad = entities["right_pad"]
     grasped = entities["object"]
 
+    table_pose = wp.to_torch(entities["table"].data.default_root_pose).clone()
     left_pose = wp.to_torch(left_pad.data.default_root_pose).clone()
     right_pose = wp.to_torch(right_pad.data.default_root_pose).clone()
     object_pose = wp.to_torch(grasped.data.default_root_pose).clone()
     zero_vel = torch.zeros((1, 6), device=grasped.device)
 
-    left_pose[:, :3] = torch.tensor([[-0.17, 0.0, 0.0]], device=left_pad.device)
-    right_pose[:, :3] = torch.tensor([[0.17, 0.0, 0.0]], device=right_pad.device)
-    object_pose[:, :3] = torch.tensor([[0.0, 0.01, 0.0]], device=grasped.device)
+    table_pose[:, :3] = torch.tensor([[0.0, 0.0, 0.08]], device=entities["table"].device)
+    left_pose[:, :3] = torch.tensor([[-0.22, 0.0, 0.22]], device=left_pad.device)
+    right_pose[:, :3] = torch.tensor([[0.22, 0.0, 0.22]], device=right_pad.device)
+    object_pose[:, :3] = torch.tensor([[0.0, 0.01, 0.22]], device=grasped.device)
     object_pose[:, 3:] = torch.tensor([[0.0, 0.0, 0.08, 0.9968]], device=grasped.device)
 
+    entities["table"].write_root_pose_to_sim_index(root_pose=table_pose)
+    entities["table"].write_root_velocity_to_sim_index(root_velocity=zero_vel)
     left_pad.write_root_pose_to_sim_index(root_pose=left_pose)
     right_pad.write_root_pose_to_sim_index(root_pose=right_pose)
     left_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
@@ -129,8 +148,8 @@ def run_simulator(sim: SimulationContext, entities: dict[str, RigidObject]) -> N
 
     for step in range(args_cli.num_steps):
         if step < 90:
-            left_pose[:, 0] += 0.0012
-            right_pose[:, 0] -= 0.0012
+            left_pose[:, 0] += 0.0015
+            right_pose[:, 0] -= 0.0015
             left_pad.write_root_pose_to_sim_index(root_pose=left_pose)
             right_pad.write_root_pose_to_sim_index(root_pose=right_pose)
             left_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
@@ -152,7 +171,7 @@ def run_simulator(sim: SimulationContext, entities: dict[str, RigidObject]) -> N
 
 
 def main() -> None:
-    hydro_shapes = make_hydro_shapes(["/World/LeftPad", "/World/RightPad", "/World/Object"])
+    hydro_shapes = make_hydro_shapes(["/World/Table", "/World/LeftPad", "/World/RightPad", "/World/Object"])
     sim_cfg = build_sim_cfg(
         args_cli.physics,
         device=args_cli.device,
@@ -161,7 +180,7 @@ def main() -> None:
         hydroelastic_shapes=hydro_shapes,
     )
     sim = SimulationContext(sim_cfg)
-    sim.set_camera_view(eye=[1.0, 0.9, 0.5], target=[0.0, 0.0, 0.0])
+    sim.set_camera_view(eye=[1.45, 1.0, 0.8], target=[0.0, 0.0, 0.22])
 
     entities = design_scene()
     sim.reset()
