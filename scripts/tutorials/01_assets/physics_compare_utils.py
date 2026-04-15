@@ -45,8 +45,8 @@ def build_sim_cfg(
         physics = PhysxCfg(enable_ccd=False, enable_stabilization=False)
     else:
         solver_cfg = MJWarpSolverCfg(
-            njmax=512,
-            nconmax=512,
+            njmax=768,
+            nconmax=768,
             solver="newton",
             integrator="implicitfast",
             cone="elliptic",

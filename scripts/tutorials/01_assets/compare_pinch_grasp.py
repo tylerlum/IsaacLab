@@ -12,7 +12,7 @@ from isaaclab.app import AppLauncher
 from physics_compare_utils import add_physics_mode_arg, build_sim_cfg, make_hydro_shapes, validate_backend
 
 parser = argparse.ArgumentParser(description="Compare pinch-grasp contact behavior across physics modes.")
-parser.add_argument("--num_steps", type=int, default=180, help="Number of simulation steps to run.")
+parser.add_argument("--num_steps", type=int, default=240, help="Number of simulation steps to run.")
 parser.add_argument("--object", type=str, choices=("cube", "pen"), default="cube", help="Object to pinch.")
 AppLauncher.add_app_launcher_args(parser)
 add_physics_mode_arg(parser)
@@ -45,11 +45,11 @@ def _make_grasped_object_cfg() -> RigidObjectCfg:
         )
     else:
         spawn = sim_utils.CuboidCfg(
-            size=(0.12, 0.12, 0.12),
+            size=(0.14, 0.14, 0.14),
             rigid_props=rigid_props,
             collision_props=collision_props,
             mass_props=mass_props,
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.9, 0.75, 0.2), metallic=0.1),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.98, 0.9, 0.1), emissive_color=(0.08, 0.08, 0.0)),
         )
     return RigidObjectCfg(
         prim_path="/World/Object",
@@ -86,12 +86,12 @@ def design_scene() -> dict[str, RigidObject]:
     left_pad_cfg = RigidObjectCfg(
         prim_path="/World/LeftPad",
         spawn=pad_spawn,
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.22, 0.0, 0.22)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.24, 0.0, 0.32)),
     )
     right_pad_cfg = RigidObjectCfg(
         prim_path="/World/RightPad",
         spawn=pad_spawn.replace(visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.9, 0.45, 0.25), metallic=0.1)),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.22, 0.0, 0.22)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.24, 0.0, 0.32)),
     )
     return {
         "table": RigidObject(cfg=table_cfg),
@@ -114,9 +114,9 @@ def configure_initial_state(entities: dict[str, RigidObject]) -> None:
     zero_vel = torch.zeros((1, 6), device=grasped.device)
 
     table_pose[:, :3] = torch.tensor([[0.0, 0.0, 0.08]], device=entities["table"].device)
-    left_pose[:, :3] = torch.tensor([[-0.22, 0.0, 0.22]], device=left_pad.device)
-    right_pose[:, :3] = torch.tensor([[0.22, 0.0, 0.22]], device=right_pad.device)
-    object_pose[:, :3] = torch.tensor([[0.0, 0.01, 0.22]], device=grasped.device)
+    left_pose[:, :3] = torch.tensor([[-0.24, 0.0, 0.32]], device=left_pad.device)
+    right_pose[:, :3] = torch.tensor([[0.24, 0.0, 0.32]], device=right_pad.device)
+    object_pose[:, :3] = torch.tensor([[0.0, 0.01, 0.32]], device=grasped.device)
     object_pose[:, 3:] = torch.tensor([[0.0, 0.0, 0.08, 0.9968]], device=grasped.device)
 
     entities["table"].write_root_pose_to_sim_index(root_pose=table_pose)
@@ -130,6 +130,9 @@ def configure_initial_state(entities: dict[str, RigidObject]) -> None:
 
     for entity in entities.values():
         entity.reset()
+
+    object_pos = wp.to_torch(grasped.data.root_pos_w)[0].cpu().tolist()
+    print(f"[INFO]: Center object initialized at {object_pos} as '{args_cli.object}'.")
 
 
 def run_simulator(sim: SimulationContext, entities: dict[str, RigidObject]) -> None:
@@ -146,10 +149,26 @@ def run_simulator(sim: SimulationContext, entities: dict[str, RigidObject]) -> N
     right_pose = wp.to_torch(right_pad.data.root_pose_w).clone()
     zero_vel = torch.zeros((1, 6), device=left_pad.device)
 
+    close_steps = 120
+    hold_steps = 120
+    lift_steps = max(args_cli.num_steps - close_steps - hold_steps, 0)
+
     for step in range(args_cli.num_steps):
-        if step < 90:
+        if step < close_steps:
             left_pose[:, 0] += 0.0015
             right_pose[:, 0] -= 0.0015
+            left_pad.write_root_pose_to_sim_index(root_pose=left_pose)
+            right_pad.write_root_pose_to_sim_index(root_pose=right_pose)
+            left_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
+            right_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
+        elif step < close_steps + hold_steps:
+            left_pad.write_root_pose_to_sim_index(root_pose=left_pose)
+            right_pad.write_root_pose_to_sim_index(root_pose=right_pose)
+            left_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
+            right_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
+        elif lift_steps > 0:
+            left_pose[:, 2] += 0.0015
+            right_pose[:, 2] += 0.0015
             left_pad.write_root_pose_to_sim_index(root_pose=left_pose)
             right_pad.write_root_pose_to_sim_index(root_pose=right_pose)
             left_pad.write_root_velocity_to_sim_index(root_velocity=zero_vel)
@@ -164,14 +183,15 @@ def run_simulator(sim: SimulationContext, entities: dict[str, RigidObject]) -> N
         if step % 30 == 0 or step == args_cli.num_steps - 1:
             object_pose = wp.to_torch(grasped.data.root_pose_w)[0]
             gap = float(wp.to_torch(right_pad.data.root_pos_w)[0, 0] - wp.to_torch(left_pad.data.root_pos_w)[0, 0])
+            pad_height = float(wp.to_torch(left_pad.data.root_pos_w)[0, 2])
             print(
-                f"[INFO]: step={step:03d} pad_gap={gap:.4f} "
+                f"[INFO]: step={step:03d} pad_gap={gap:.4f} pad_height={pad_height:.4f} "
                 f"object_pos={object_pose[:3].cpu().tolist()} object_quat={object_pose[3:].cpu().tolist()}"
             )
 
 
 def main() -> None:
-    hydro_shapes = make_hydro_shapes(["/World/Table", "/World/LeftPad", "/World/RightPad", "/World/Object"])
+    hydro_shapes = make_hydro_shapes(["/World/LeftPad", "/World/RightPad", "/World/Object"])
     sim_cfg = build_sim_cfg(
         args_cli.physics,
         device=args_cli.device,
@@ -180,7 +200,7 @@ def main() -> None:
         hydroelastic_shapes=hydro_shapes,
     )
     sim = SimulationContext(sim_cfg)
-    sim.set_camera_view(eye=[1.45, 1.0, 0.8], target=[0.0, 0.0, 0.22])
+    sim.set_camera_view(eye=[1.45, 1.0, 0.95], target=[0.0, 0.0, 0.30])
 
     entities = design_scene()
     sim.reset()
