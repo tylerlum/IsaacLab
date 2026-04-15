@@ -165,3 +165,21 @@ class SimToolRealEnvCfg(DirectRLEnvCfg):
     torque_scale: float = 2.0
     torque_prob_range: tuple[float, float] = (0.001, 0.1)
     torque_only_when_lifted: bool = True
+
+    # ------------------------------------------------------------------
+    # Eval-mode overrides (set from play.py / eval scripts)
+    # ------------------------------------------------------------------
+    # Fixed initial object pose: [x, y, z, qx, qy, qz, qw] in env-local frame
+    # (xyzw quaternion convention, as in dextoolbench trajectory files).
+    # When use_fixed_object_pose=True, all envs start with this pose (no noise).
+    use_fixed_object_pose: bool = False
+    fixed_object_pose: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+
+    # Fixed goal sequence: list of [x, y, z, qx, qy, qz, qw] poses.
+    # When use_fixed_goals=True, goals cycle through this list in order
+    # instead of being sampled randomly.
+    use_fixed_goals: bool = False
+    fixed_goal_poses: tuple[tuple[float, ...], ...] = ()
+
+    # Disable all reset randomization for clean eval rollouts
+    eval_mode: bool = False

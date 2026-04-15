@@ -153,6 +153,9 @@ class SimToolRealEnv(DirectRLEnv):
         self._lifted_object = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._consecutive_successes = torch.zeros(self.num_envs, device=self.device)
 
+        # Fixed goal cycling index (eval mode)
+        self._goal_idx = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+
         # Object initial z on table (set at reset)
         self._object_table_z = torch.full((self.num_envs,), self.cfg.table_reset_z + self.cfg.table_object_z_offset, device=self.device)
 
@@ -438,30 +441,31 @@ class SimToolRealEnv(DirectRLEnv):
 
         # ---- Robot joint positions ----
         default_pos = wp.to_torch(self._robot.data.default_joint_pos)[env_ids].clone()
-        # Add noise
-        noise = sample_uniform(
-            -self.cfg.reset_dof_pos_noise_arm,
-            self.cfg.reset_dof_pos_noise_arm,
-            (n, len(self._arm_joint_ids)),
-            device=self.device,
-        )
-        default_pos[:, self._arm_joint_ids] += noise
-        noise_hand = sample_uniform(
-            -self.cfg.reset_dof_pos_noise_fingers,
-            self.cfg.reset_dof_pos_noise_fingers,
-            (n, len(self._hand_joint_ids)),
-            device=self.device,
-        )
-        default_pos[:, self._hand_joint_ids] += noise_hand
+        if not self.cfg.eval_mode:
+            noise = sample_uniform(
+                -self.cfg.reset_dof_pos_noise_arm,
+                self.cfg.reset_dof_pos_noise_arm,
+                (n, len(self._arm_joint_ids)),
+                device=self.device,
+            )
+            default_pos[:, self._arm_joint_ids] += noise
+            noise_hand = sample_uniform(
+                -self.cfg.reset_dof_pos_noise_fingers,
+                self.cfg.reset_dof_pos_noise_fingers,
+                (n, len(self._hand_joint_ids)),
+                device=self.device,
+            )
+            default_pos[:, self._hand_joint_ids] += noise_hand
 
         default_vel = torch.zeros_like(default_pos)
-        vel_noise = sample_uniform(
-            -self.cfg.reset_dof_vel_noise,
-            self.cfg.reset_dof_vel_noise,
-            default_vel.shape,
-            device=self.device,
-        )
-        default_vel += vel_noise
+        if not self.cfg.eval_mode:
+            vel_noise = sample_uniform(
+                -self.cfg.reset_dof_vel_noise,
+                self.cfg.reset_dof_vel_noise,
+                default_vel.shape,
+                device=self.device,
+            )
+            default_vel += vel_noise
 
         root_pose = wp.to_torch(self._robot.data.default_root_pose)[env_ids].clone()
         root_pose[:, :3] += self.scene.env_origins[env_ids]
@@ -476,28 +480,31 @@ class SimToolRealEnv(DirectRLEnv):
         self._prev_targets[env_ids] = default_pos
 
         # ---- Object pose ----
-        obj_pos = torch.zeros(n, 3, device=self.device)
-        obj_pos[:, 0] += sample_uniform(
-            -self.cfg.reset_position_noise_x, self.cfg.reset_position_noise_x, (n,), device=self.device
-        )
-        obj_pos[:, 1] += sample_uniform(
-            -self.cfg.reset_position_noise_y, self.cfg.reset_position_noise_y, (n,), device=self.device
-        )
-        obj_pos[:, 2] = self._object_table_z[env_ids] + sample_uniform(
-            -self.cfg.reset_position_noise_z, self.cfg.reset_position_noise_z, (n,), device=self.device
-        )
-        obj_pos[:, :3] += self.scene.env_origins[env_ids]
-
-        # Random object rotation
-        if self.cfg.randomize_object_rotation:
-            # Random quaternion (wxyz)
-            rand_quat = torch.randn(n, 4, device=self.device)
-            rand_quat = rand_quat / rand_quat.norm(dim=-1, keepdim=True)
+        if self.cfg.use_fixed_object_pose:
+            # Fixed pose from eval config: [x, y, z, qx, qy, qz, qw] (xyzw)
+            fp = self.cfg.fixed_object_pose
+            obj_pos = torch.tensor([fp[0], fp[1], fp[2]], device=self.device).unsqueeze(0).expand(n, 3).clone()
+            # Convert xyzw → wxyz for IsaacLab
+            obj_quat = torch.tensor([fp[6], fp[3], fp[4], fp[5]], device=self.device).unsqueeze(0).expand(n, 4).clone()
         else:
-            rand_quat = torch.zeros(n, 4, device=self.device)
-            rand_quat[:, 0] = 1.0
+            obj_pos = torch.zeros(n, 3, device=self.device)
+            noise_x = 0.0 if self.cfg.eval_mode else self.cfg.reset_position_noise_x
+            noise_y = 0.0 if self.cfg.eval_mode else self.cfg.reset_position_noise_y
+            noise_z = 0.0 if self.cfg.eval_mode else self.cfg.reset_position_noise_z
+            obj_pos[:, 0] += sample_uniform(-noise_x, noise_x, (n,), device=self.device)
+            obj_pos[:, 1] += sample_uniform(-noise_y, noise_y, (n,), device=self.device)
+            obj_pos[:, 2] = self._object_table_z[env_ids] + sample_uniform(-noise_z, noise_z, (n,), device=self.device)
 
-        obj_pose = torch.cat([obj_pos, rand_quat], dim=-1)
+            # Random object rotation
+            if self.cfg.randomize_object_rotation and not self.cfg.eval_mode:
+                obj_quat = torch.randn(n, 4, device=self.device)
+                obj_quat = obj_quat / obj_quat.norm(dim=-1, keepdim=True)
+            else:
+                obj_quat = torch.zeros(n, 4, device=self.device)
+                obj_quat[:, 0] = 1.0  # wxyz identity
+
+        obj_pos = obj_pos + self.scene.env_origins[env_ids]
+        obj_pose = torch.cat([obj_pos, obj_quat], dim=-1)
         self._write_obj_root_pose(root_pose=obj_pose, env_ids=env_ids)
         obj_vel = torch.zeros(n, 6, device=self.device)
         self._write_obj_root_vel(root_velocity=obj_vel, env_ids=env_ids)
@@ -566,15 +573,33 @@ class SimToolRealEnv(DirectRLEnv):
         return in_palm
 
     def _sample_goal(self, env_ids: torch.Tensor):
-        """Sample random goal poses for given envs."""
-        n = len(env_ids)
-        # Goal position: near object start position
-        goal_pos = torch.zeros(n, 3, device=self.device)
-        goal_pos[:, 2] = self._object_table_z[env_ids] + self.cfg.lifting_bonus_threshold + 0.05
-        goal_pos[:, :3] += self.scene.env_origins[env_ids]
-        self._goal_pos[env_ids] = goal_pos
+        """Sample goal poses for the given envs.
 
-        # Random goal orientation
-        rand_quat = torch.randn(n, 4, device=self.device)
-        rand_quat = rand_quat / rand_quat.norm(dim=-1, keepdim=True)
-        self._goal_quat[env_ids] = rand_quat
+        When :attr:`~SimToolRealEnvCfg.use_fixed_goals` is True, cycles through
+        :attr:`~SimToolRealEnvCfg.fixed_goal_poses` in sequence (each env
+        independently).  Otherwise samples a random orientation above the table.
+        """
+        n = len(env_ids)
+
+        if self.cfg.use_fixed_goals and len(self.cfg.fixed_goal_poses) > 0:
+            goals = self.cfg.fixed_goal_poses
+            num_goals = len(goals)
+            goal_pos = torch.zeros(n, 3, device=self.device)
+            goal_quat = torch.zeros(n, 4, device=self.device)
+            for i, env_id in enumerate(env_ids):
+                idx = int(self._goal_idx[env_id].item()) % num_goals
+                gp = goals[idx]
+                goal_pos[i] = torch.tensor([gp[0], gp[1], gp[2]], device=self.device)
+                # xyzw → wxyz
+                goal_quat[i] = torch.tensor([gp[6], gp[3], gp[4], gp[5]], device=self.device)
+                self._goal_idx[env_id] = (idx + 1) % num_goals
+            goal_pos = goal_pos + self.scene.env_origins[env_ids]
+        else:
+            goal_pos = torch.zeros(n, 3, device=self.device)
+            goal_pos[:, 2] = self._object_table_z[env_ids] + self.cfg.lifting_bonus_threshold + 0.05
+            goal_pos = goal_pos + self.scene.env_origins[env_ids]
+            goal_quat = torch.randn(n, 4, device=self.device)
+            goal_quat = goal_quat / goal_quat.norm(dim=-1, keepdim=True)
+
+        self._goal_pos[env_ids] = goal_pos
+        self._goal_quat[env_ids] = goal_quat
