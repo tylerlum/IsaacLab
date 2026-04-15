@@ -190,7 +190,10 @@ class SimToolRealEnv(DirectRLEnv):
 
         # Robot articulation
         # Physics settings from isaacsim_conversion/isaacsim_env.py:
-        #   disable_gravity=True, contact_offset=0.002, self_collision=False
+        #   disable_gravity=True, self_collision=False
+        # Note: contact_offset=0.002 cannot be set via UsdFileCfg on instanced prims
+        # (the URDF merge_fixed_joints=True produces instanced geometry). The default
+        # PhysX contact offset is used instead.
         robot_cfg = ArticulationCfg(
             prim_path="/World/envs/env_.*/Robot",
             spawn=sim_utils.UsdFileCfg(
@@ -198,10 +201,6 @@ class SimToolRealEnv(DirectRLEnv):
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(
                     disable_gravity=True,
                     max_depenetration_velocity=1000.0,
-                ),
-                collision_props=sim_utils.CollisionPropertiesCfg(
-                    contact_offset=0.002,
-                    rest_offset=0.0,
                 ),
                 articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                     enabled_self_collisions=False,
@@ -241,10 +240,6 @@ class SimToolRealEnv(DirectRLEnv):
             prim_path="/World/envs/env_.*/Table",
             spawn=sim_utils.UsdFileCfg(
                 usd_path=table_usd,
-                collision_props=sim_utils.CollisionPropertiesCfg(
-                    contact_offset=0.002,
-                    rest_offset=0.0,
-                ),
             ),
             init_state=ArticulationCfg.InitialStateCfg(pos=self.cfg.table_translation),
             actuators={},
@@ -256,10 +251,6 @@ class SimToolRealEnv(DirectRLEnv):
             prim_path="/World/envs/env_.*/Object",
             spawn=sim_utils.UsdFileCfg(
                 usd_path=object_usd,
-                collision_props=sim_utils.CollisionPropertiesCfg(
-                    contact_offset=0.002,
-                    rest_offset=0.0,
-                ),
             ),
         )
         self._object = RigidObject(object_cfg)
