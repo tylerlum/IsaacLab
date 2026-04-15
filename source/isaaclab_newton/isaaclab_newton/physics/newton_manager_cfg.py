@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from dataclasses import field
 from typing import TYPE_CHECKING
 
 from isaaclab.physics import PhysicsCfg
@@ -195,6 +196,81 @@ class FeatherstoneSolverCfg(NewtonSolverCfg):
 
 
 @configclass
+class HydroelasticCfg:
+    """Configuration for Newton hydroelastic contact generation."""
+
+    reduce_contacts: bool = True
+    """Whether to reduce hydroelastic contacts after generation."""
+
+    pre_prune_contacts: bool = True
+    """Whether to prune hydroelastic candidate contacts before reduction."""
+
+    buffer_fraction: float = 0.2
+    """Fraction of broad-phase capacity reserved for hydroelastic buffers."""
+
+    buffer_mult_broad: int = 8
+    """Multiplier for hydroelastic broad-phase buffers."""
+
+    buffer_mult_iso: int = 8
+    """Multiplier for hydroelastic iso-surface buffers."""
+
+    buffer_mult_contact: int = 8
+    """Multiplier for hydroelastic contact buffers."""
+
+    contact_buffer_fraction: float = 0.2
+    """Fraction of the contact buffer reserved for hydroelastic contacts."""
+
+    grid_size: int = 32
+    """Default hydroelastic SDF grid size."""
+
+    output_contact_surface: bool = False
+    """Whether to emit hydroelastic contact surface geometry."""
+
+    normal_matching: bool = True
+    """Whether to merge nearby contacts with aligned normals."""
+
+    anchor_contact: bool = True
+    """Whether to anchor hydroelastic contacts."""
+
+    margin_contact_area: float = 0.0
+    """Margin used during hydroelastic contact-area reduction."""
+
+    pre_prune_accumulate_all_penetrating_aggregates: bool = False
+    """Whether to accumulate all penetrating aggregates during pre-pruning."""
+
+
+@configclass
+class HydroelasticShapeCfg:
+    """Pattern-based hydroelastic overrides applied to imported Newton shapes."""
+
+    prim_path: str | list[str] = ""
+    """Isaac Lab shape prim path expression(s).
+
+    These use the same wildcard convention as other Isaac Lab path expressions:
+    ``*`` globs are supported directly and ``.*`` regex-style wildcards are converted to ``*``.
+    The expression is matched against imported Newton ``shape_label`` paths.
+    """
+
+    is_hydroelastic: bool = True
+    """Whether matching shapes should participate in hydroelastic contact."""
+
+    kh: float = 1.0e10
+    """Hydroelastic contact stiffness for matching shapes."""
+
+    sdf_narrow_band_range: tuple[float, float] = (-0.1, 0.1)
+    """Signed-distance narrow band range for matching shapes."""
+
+    sdf_target_voxel_size: float | None = None
+    """Optional hydroelastic SDF target voxel size for matching shapes."""
+
+    sdf_max_resolution: int | None = None
+    """Optional hydroelastic SDF max resolution for matching shapes."""
+
+    require_match: bool = True
+    """Whether to fail when no imported shapes match ``prim_path``."""
+
+
+@configclass
 class NewtonCfg(PhysicsCfg):
     """Configuration for Newton physics manager.
 
@@ -218,3 +294,13 @@ class NewtonCfg(PhysicsCfg):
 
     solver_cfg: NewtonSolverCfg = MJWarpSolverCfg()
     """Solver configuration. Default is MJWarpSolverCfg()."""
+
+    hydroelastic_cfg: HydroelasticCfg | None = None
+    """Optional hydroelastic collision-pipeline configuration.
+
+    When provided, Isaac Lab passes a ``HydroelasticSDF.Config`` into Newton's external collision pipeline.
+    This requires ``use_mujoco_contacts=False`` when using ``MJWarpSolverCfg``.
+    """
+
+    hydroelastic_shapes: list[HydroelasticShapeCfg] = field(default_factory=list)
+    """Optional pattern-based hydroelastic overrides for imported Newton shapes."""

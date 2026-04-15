@@ -21,6 +21,11 @@ from newton.solvers import SolverBase, SolverFeatherstone, SolverMuJoCo, SolverN
 from isaaclab.physics import PhysicsEvent, PhysicsManager
 from isaaclab.sim.utils.stage import get_current_stage
 from isaaclab.utils.timer import Timer
+from .hydroelastic_utils import (
+    apply_hydroelastic_shape_configs,
+    build_hydroelastic_sdf_config,
+    validate_hydroelastic_compatibility,
+)
 
 if TYPE_CHECKING:
     from isaaclab.sim.simulation_context import SimulationContext
@@ -269,6 +274,29 @@ class NewtonManager(PhysicsManager):
         cls._model_changes.add(change)
 
     @classmethod
+    def _configure_builder_hydroelastic_shapes(cls) -> None:
+        """Apply pattern-based hydroelastic overrides to the current builder."""
+        cfg = PhysicsManager._cfg
+        if cfg is None or cls._builder is None:
+            return
+
+        shape_cfgs = list(getattr(cfg, "hydroelastic_shapes", []) or [])
+        if not shape_cfgs:
+            if getattr(cfg, "hydroelastic_cfg", None) is not None:
+                logger.warning(
+                    "hydroelastic_cfg is enabled, but no hydroelastic_shapes were configured. "
+                    "The hydroelastic collision pipeline will only affect shapes that are already marked "
+                    "hydroelastic by the importer."
+                )
+            return
+
+        hydroelastic_count = apply_hydroelastic_shape_configs(cls._builder, shape_cfgs)
+        if hydroelastic_count == 0:
+            logger.warning(
+                "Hydroelastic shape overrides were configured, but no shapes ended up hydroelastic after matching."
+            )
+
+    @classmethod
     def start_simulation(cls) -> None:
         """Start simulation by finalizing model and initializing state.
 
@@ -284,6 +312,8 @@ class NewtonManager(PhysicsManager):
 
         logger.info("Dispatching MODEL_INIT callbacks")
         cls.dispatch_event(PhysicsEvent.MODEL_INIT)
+
+        cls._configure_builder_hydroelastic_shapes()
 
         device = PhysicsManager._device
         logger.info(f"Finalizing model on device: {device}")
@@ -398,7 +428,11 @@ class NewtonManager(PhysicsManager):
         if cls._needs_collision_pipeline:
             # Newton collision pipeline: create pipeline and generate contacts
             if cls._collision_pipeline is None:
-                cls._collision_pipeline = CollisionPipeline(cls._model, broad_phase="explicit")
+                hydroelastic_cfg = getattr(PhysicsManager._cfg, "hydroelastic_cfg", None)
+                collision_kwargs = {"broad_phase": "explicit"}
+                if hydroelastic_cfg is not None:
+                    collision_kwargs["sdf_hydroelastic_config"] = build_hydroelastic_sdf_config(hydroelastic_cfg)
+                cls._collision_pipeline = CollisionPipeline(cls._model, **collision_kwargs)
             if cls._contacts is None:
                 cls._contacts = cls._collision_pipeline.contacts()
 
@@ -470,8 +504,18 @@ class NewtonManager(PhysicsManager):
                     use_mujoco_contacts = solver_cfg.get("use_mujoco_contacts", False)
                 else:
                     use_mujoco_contacts = getattr(solver_cfg, "use_mujoco_contacts", False)
+                validate_hydroelastic_compatibility(
+                    solver_type=cls._solver_type,
+                    use_mujoco_contacts=use_mujoco_contacts,
+                    hydroelastic_cfg=getattr(cfg, "hydroelastic_cfg", None),
+                )
                 cls._needs_collision_pipeline = not use_mujoco_contacts
             else:
+                validate_hydroelastic_compatibility(
+                    solver_type=cls._solver_type,
+                    use_mujoco_contacts=False,
+                    hydroelastic_cfg=getattr(cfg, "hydroelastic_cfg", None),
+                )
                 cls._needs_collision_pipeline = True
 
             # Initialize contacts and collision pipeline
