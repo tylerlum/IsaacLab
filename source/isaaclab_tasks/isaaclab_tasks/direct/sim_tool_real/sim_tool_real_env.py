@@ -235,11 +235,18 @@ class SimToolRealEnv(DirectRLEnv):
         )
         self._robot = Articulation(robot_cfg)
 
-        # Table (static rigid body — no joints after merge_fixed_joints=True)
+        # Table (kinematic static body — URDF converter adds ArticulationRoot which
+        # must be disabled, then kinematic_enabled keeps it fixed in place)
         table_cfg = RigidObjectCfg(
             prim_path="/World/envs/env_.*/Table",
             spawn=sim_utils.UsdFileCfg(
                 usd_path=table_usd,
+                articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                    articulation_enabled=False,
+                ),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                    kinematic_enabled=True,
+                ),
             ),
             init_state=RigidObjectCfg.InitialStateCfg(pos=self.cfg.table_translation),
         )
