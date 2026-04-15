@@ -1,0 +1,126 @@
+# Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+# rl_games PPO config for Isaac-SimToolReal-Direct-v0
+#
+# Architecture: LSTM (1024) → MLP [1024, 1024, 512, 512] → policy head
+# Asymmetric actor-critic: shared policy LSTM+MLP, separate MLP critic
+# (state_space must be >0 in env cfg to activate the central value critic).
+#
+# Ported from:
+#   depthbasedRL/isaacgymenvs/cfg/train/SimToolRealLSTMAsymmetricPPO.yaml
+#   depthbasedRL/isaacgymenvs/cfg/train/SimToolRealPPO.yaml
+
+params:
+  seed: 42
+
+  # Observation / action clipping applied by the rl_games wrapper
+  env:
+    clip_observations: 10.0
+    clip_actions: 1.0
+
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+
+    mlp:
+      units: [1024, 1024, 512, 512]
+      activation: elu
+      d2rl: False
+      initializer:
+        name: default
+      regularizer:
+        name: None
+
+    rnn:
+      name: lstm
+      units: 1024
+      layers: 1
+      before_mlp: True
+      layer_norm: True
+
+  load_checkpoint: False
+  load_path: ''
+
+  config:
+    name: SimToolRealLSTMAsymmetricPPO
+    env_name: rlgpu
+    device: 'cuda:0'
+    device_name: 'cuda:0'
+    multi_gpu: False
+    ppo: True
+    mixed_precision: True
+    normalize_input: True
+    normalize_value: True
+    num_actors: -1  # set from script based on num_envs
+    reward_shaper:
+      scale_value: 0.01
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95
+    learning_rate: 1e-4
+    lr_schedule: adaptive
+    schedule_type: standard
+    kl_threshold: 0.016
+    score_to_win: 1000000
+    max_epochs: 1000000
+    save_best_after: 100
+    save_frequency: 3000
+    print_stats: True
+    grad_norm: 1.0
+    entropy_coef: 0.0
+    truncate_grads: True
+    e_clip: 0.1
+    horizon_length: 16
+    minibatch_size: 98304
+    mini_epochs: 2
+    critic_coef: 4.0
+    clip_value: True
+    seq_length: 16
+    bounds_loss_coef: 0.0001
+
+    # Asymmetric critic — only active when env state_space > 0
+    central_value_config:
+      minibatch_size: 98304
+      mini_epochs: 2
+      learning_rate: 1e-4
+      kl_threshold: 0.016
+      clip_value: True
+      normalize_input: True
+      truncate_grads: True
+
+      network:
+        name: actor_critic
+        central_value: True
+        mlp:
+          units: [1024, 1024, 512, 512]
+          activation: elu
+          d2rl: False
+          initializer:
+            name: default
+          regularizer:
+            name: None
+
+    player:
+      deterministic: False
+      games_num: 100000
+      print_stats: False
