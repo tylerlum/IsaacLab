@@ -10,8 +10,9 @@ from pathlib import Path
 
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sim import PhysxCfg, SimulationCfg
+from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
+from isaaclab_physx.physics import PhysxCfg
 
 # ---------------------------------------------------------------------------
 # Asset paths (absolute, pointing into the depthbasedRL repo)
